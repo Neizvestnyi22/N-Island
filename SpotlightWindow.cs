@@ -337,6 +337,8 @@ namespace NIsland
         {
             _list.Children.Clear();
             var accent = (UI.Res("AccentBrush") as SolidColorBrush)?.Color ?? Colors.DodgerBlue;
+            // светлый акцент (белый) под белым текстом не читается — выделяем мягкой подсветкой
+            if ((0.299 * accent.R + 0.587 * accent.G + 0.114 * accent.B) / 255 > 0.68) accent = Color.FromRgb(0x5A, 0x5A, 0x66);
             for (int i = 0; i < _hits.Count; i++)
             {
                 var h = _hits[i];

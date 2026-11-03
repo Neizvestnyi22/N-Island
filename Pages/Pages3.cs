@@ -186,6 +186,7 @@ namespace NIsland.Pages
                 Background = me ? UI.Res("AccentBrush") : UI.Hex("#22FFFFFF"),
                 BorderBrush = me ? null : UI.Hex("#26FFFFFF"), BorderThickness = new Thickness(me ? 0 : 1), Child = t,
             };
+            if (me) t.SetResourceReference(Control.ForegroundProperty, "AccentTextBrush");   // светлый акцент — тёмный текст
             if (me)
             {
                 b.Margin = new Thickness(50, 2, 0, 2);
@@ -447,7 +448,7 @@ namespace NIsland.Pages
                 var plan = p;
                 var row = Txt.Tile(p.Active ? "" : "", p.Name + (p.Active ? " — сейчас" : ""), () => { Maint.SetPowerPlan(plan.Guid); Show(PowerView()); }, null, true);
                 row.HorizontalAlignment = HorizontalAlignment.Left;
-                if (p.Active) row.Background = UI.Res("AccentBrush");
+                if (p.Active) { row.Background = UI.Res("AccentBrush"); row.OnAccent(); }
                 list.Children.Add(row);
             }
             list.Children.Add(Txt.Tile("", "Открыть настройки питания Windows", () => SystemService.Run("ms-settings:powersleep"), null, true).HA(HorizontalAlignment.Left));

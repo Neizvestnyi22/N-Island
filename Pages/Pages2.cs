@@ -79,6 +79,7 @@ namespace NIsland.Pages
                         Margin = new Thickness(0, 4, 0, 0),
                     }),
                 };
+                tile.OnAccent(on);
                 tile.MouseLeftButtonUp += (_, e) => { App.Island.SetMode(mode.Key); e.Handled = true; };
                 _modes.Children.Add(tile);
             }

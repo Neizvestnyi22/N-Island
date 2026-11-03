@@ -6,6 +6,7 @@
     <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
 
     <SolidColorBrush x:Key="AccentBrush" Color="#0A84FF"/>
+    <SolidColorBrush x:Key="AccentTextBrush" Color="White"/>
     <SolidColorBrush x:Key="DimBrush" Color="#A0FFFFFF"/>
     <SolidColorBrush x:Key="FaintBrush" Color="#5CFFFFFF"/>
     <SolidColorBrush x:Key="CardBrush" Color="#17FFFFFF"/>
@@ -172,6 +173,8 @@
 
     <Style x:Key="AccentPill" TargetType="Button" BasedOn="{StaticResource PillButton}">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+        <!-- текст тёмный, если акцент светлый (белый, жёлтый) — иначе надпись пропадала -->
+        <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}"/>
     </Style>
 
     <!-- Плитка (быстрые действия) -->
@@ -259,7 +262,7 @@
                     <Grid Width="18" Height="18" Background="Transparent">
                         <Ellipse x:Name="ring" Stroke="#80FFFFFF" StrokeThickness="1.5"/>
                         <Ellipse x:Name="fill" Fill="{DynamicResource AccentBrush}" Visibility="Collapsed"/>
-                        <TextBlock x:Name="mark" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="10" Foreground="White"
+                        <TextBlock x:Name="mark" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="10" Foreground="{DynamicResource AccentTextBrush}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
                     </Grid>
                     <ControlTemplate.Triggers>

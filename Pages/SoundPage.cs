@@ -74,6 +74,7 @@ namespace NIsland.Pages
                     ToolTip = d.IsDefault ? "Сейчас играет здесь" : "Переключить звук сюда",
                 };
                 ((TextBlock)((StackPanel)b.Child).Children[1]).MaxWidth = 200;
+                b.OnAccent(d.IsDefault);
                 b.MouseLeftButtonUp += (_, __) =>
                 {
                     if (AudioService.I.SetDefaultOutput(dev.Id)) App.Island.Toast("", "Звук переключён", dev.Name);

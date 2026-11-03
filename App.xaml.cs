@@ -144,6 +144,9 @@ namespace NIsland
         {
             var c = ColorUtil.Parse(Store.Settings.Accent, Color.FromRgb(0x0A, 0x84, 0xFF));
             Current.Resources["AccentBrush"] = new SolidColorBrush(c);
+            // на светлом акценте (белый, жёлтый, мятный) белый текст не виден — берём тёмный
+            double lum = (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255;
+            Current.Resources["AccentTextBrush"] = new SolidColorBrush(lum > 0.68 ? Color.FromRgb(0x12, 0x12, 0x14) : Colors.White);
             Current.Resources["ArtBrush"] = new SolidColorBrush(fromArt ?? c);
         }
 

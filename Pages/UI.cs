@@ -139,5 +139,13 @@ namespace NIsland.Pages
         }
 
         public static void Show(this UIElement e, bool v) => e.Visibility = v ? Visibility.Visible : Visibility.Collapsed;
+
+        /// <summary>Элемент с акцентным фоном: текст внутри тёмный, если акцент светлый (белый, жёлтый), иначе белый.</summary>
+        public static T OnAccent<T>(this T el, bool on = true) where T : FrameworkElement
+        {
+            if (on) el.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "AccentTextBrush");
+            else el.ClearValue(System.Windows.Documents.TextElement.ForegroundProperty);
+            return el;
+        }
     }
 }

@@ -80,6 +80,7 @@ namespace NIsland.Pages
                 var d = start.AddDays(i);
                 bool cur = d.Month == _month.Month, today = d == DateTime.Today, sel = d == _sel;
                 var tb = UI.Text(d.Day.ToString(), 11, today || sel, cur ? Brushes.White : UI.Faint).HA(HorizontalAlignment.Center);
+                if (today) tb.SetResourceReference(TextBlock.ForegroundProperty, "AccentTextBrush");
                 var cell = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand };
                 var bg = new Border
                 {
@@ -391,6 +392,7 @@ namespace NIsland.Pages
                         UI.Text(name, 12, false, next ? Brushes.White : UI.Dim).HA(HorizontalAlignment.Center),
                         UI.Text(at.ToString(@"hh\:mm"), 17, true, past && !next ? UI.Faint : Brushes.White).HA(HorizontalAlignment.Center)),
                 };
+                if (next) foreach (var x in ((StackPanel)card.Child).Children.OfType<TextBlock>()) x.SetResourceReference(TextBlock.ForegroundProperty, "AccentTextBrush");
                 _cards.Children.Add(card);
             }
             if (nextIdx >= 0)
@@ -633,6 +635,7 @@ namespace NIsland.Pages
             _volText.Text = a.Muted ? "выкл" : Math.Round(a.Volume * 100) + "%";
             _volIcon.Content = a.Muted || a.Volume < 0.01 ? "" : "";
             _awakeTile.Background = SystemService.I.KeepAwake ? UI.Res("AccentBrush") : UI.Res("CardBrush");
+            _awakeTile.OnAccent(SystemService.I.KeepAwake);
             bool micOff = a.MicMuted;
             _micTile.Background = micOff ? UI.Hex("#FF453A") : UI.Res("CardBrush");
             ((TextBlock)((StackPanel)_micTile.Child).Children[1]).Text = micOff ? "Микр. выкл" : "Микрофон";
