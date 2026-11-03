@@ -59,7 +59,7 @@ namespace NIsland
         public static void Explain(string title, string explain, string effect = null)
         {
             var p = Ai.Current;
-            if (!Ai.Ready(p, out var why)) { MessageBox.Show(why + "\n\nНастрой ИИ в «Настройки → ИИ» (бесплатный вариант работает без ключа).", "N-Island"); return; }
+            if (!Ai.Ready(p, out var why)) { MessageBox.Show(I18n.T(why) + I18n.T("\n\nНастрой ИИ в «Настройки → ИИ» (бесплатный вариант работает без ключа)."), "N-Island"); return; }
             _aiWin?.Close();
             var lang = I18n.Current == "ru" ? "" : $" Ответь на языке: {I18n.Languages.First(l => l.Code == I18n.Current).Name}.";
             var prompt = $"Ты помощник внутри приложения N-Island для Windows. Объясни простыми словами для новичка пункт «{title}».\n" +

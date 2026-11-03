@@ -1,7 +1,7 @@
 // I18nGen — собирает все строки интерфейса N-Island (русский текст из .cs и .xaml) и делает словари переводов
 // Assets/i18n/<язык>.json. Уже переведённые строки не трогает — можно запускать после каждого изменения интерфейса.
 //
-//   dotnet run --project tools/I18nGen -- <папка проекта> en uk de es fr pt pl tr
+//   dotnet run --project tools/I18nGen -- <папка проекта> en uk
 //
 // Перевод — бесплатный ИИ Pollinations с контекстом приложения, запасной — Google Translate (оба без ключа). Ручные правки в json сохраняются при следующих запусках.
 
@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 
 var root = Path.GetFullPath(args.Length > 0 ? args[0] : ".");
 var langs = args.Skip(1).ToArray();
-if (langs.Length == 0) langs = new[] { "en", "uk", "de", "es", "fr", "pt", "pl", "tr" };
+if (langs.Length == 0) langs = new[] { "en", "uk" };
 
 var cyr = new Regex("[А-Яа-яЁё]");
 var keys = new SortedSet<string>(StringComparer.Ordinal);
@@ -38,6 +38,35 @@ Console.WriteLine($"строк интерфейса: {keys.Count}");
 
 var outDir = Path.Combine(root, "Assets", "i18n");
 Directory.CreateDirectory(outDir);
+var jsonOut = new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+// Перевод файлом (например, DeepL):  -- <проект> --export strings.json  →  перевести файл  →  -- <проект> --import en strings.en.json
+if (langs.Length >= 2 && langs[0] == "--export")
+{
+    var list = keys.ToList();
+    var doc = new SortedDictionary<string, string>(StringComparer.Ordinal);
+    for (int i = 0; i < list.Count; i++) doc[$"s{i:D4}"] = Glossary.Prepare(list[i].Trim());
+    File.WriteAllText(langs[1], JsonSerializer.Serialize(doc, jsonOut));
+    File.WriteAllText(langs[1] + ".keys", JsonSerializer.Serialize(list, jsonOut));
+    Console.WriteLine($"экспорт: {list.Count} строк → {langs[1]}");
+    return;
+}
+if (langs.Length >= 3 && langs[0] == "--import")
+{
+    string lang = langs[1], src = langs[2];
+    var exportKeys = Directory.GetFiles(Path.GetDirectoryName(Path.GetFullPath(src)) ?? ".", "*.keys").First();
+    var list = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(exportKeys));
+    var tr = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(src));
+    var file = Path.Combine(outDir, lang + ".json");
+    var dict = File.Exists(file) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? new() : new();
+    for (int i = 0; i < list.Count; i++)
+        if (tr.TryGetValue($"s{i:D4}", out var v) && !string.IsNullOrWhiteSpace(v)) dict[list[i]] = Keep(list[i], v);
+    foreach (var (ru, terms) in Glossary.Terms)
+        if (terms.TryGetValue(lang, out var t)) foreach (var k in list.Where(k => k.Trim() == ru)) dict[k] = Keep(k, t);
+    File.WriteAllText(file, JsonSerializer.Serialize(new SortedDictionary<string, string>(dict, StringComparer.Ordinal), jsonOut));
+    Console.WriteLine($"[{lang}] импортировано: {dict.Count} из {list.Count}");
+    return;
+}
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
 http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (N-Island i18n generator)");
 var json = new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -46,6 +75,89 @@ var names = new Dictionary<string, string> { ["en"] = "English", ["uk"] = "Ukrai
 var gate = new SemaphoreSlim(1);   // бесплатные сервисы — по одному запросу за раз, иначе 429/402
 var lastLlm = DateTime.MinValue;
 
+// Проход 1: пачки строк сразу на все языки одним запросом к ИИ — при лимите «1 ответ в 45 с» это в разы быстрее.
+// Если тем временем заработал Google — переходим к проходу 2 (по языкам, через Google).
+var dicts = langs.ToDictionary(l => l, l =>
+{
+    var f = Path.Combine(outDir, l + ".json");
+    return File.Exists(f) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(f)) ?? new() : new Dictionary<string, string>();
+});
+var todo = keys.Where(k => langs.Any(l => !dicts[l].ContainsKey(k))).ToList();
+Console.WriteLine($"без перевода хотя бы на один язык: {todo.Count}");
+var nextProbe = DateTime.Now;
+for (int i = 0; i < todo.Count;)
+{
+    if (DateTime.Now >= nextProbe)
+    {
+        nextProbe = DateTime.Now.AddMinutes(10);
+        try { await Google("проверка", "en"); Console.WriteLine("Google снова доступен — перевожу через него"); break; } catch { }
+    }
+    var items = new List<string>();
+    int len = 0;
+    // чем меньше языков в запросе, тем больше строк влезает в один ответ
+    int maxItems = langs.Length <= 2 ? 32 : 18, maxLen = langs.Length <= 2 ? 1900 : 1000;
+    while (i < todo.Count && items.Count < maxItems && (items.Count == 0 || len + todo[i].Length < maxLen)) { items.Add(todo[i]); len += todo[i].Length; i++; }
+    await Multi(items);
+    Console.WriteLine($"  {i}/{todo.Count}");
+}
+
+async Task Multi(List<string> items)
+{
+    var need = langs.Where(l => items.Any(k => !dicts[l].ContainsKey(k))).ToList();
+    if (need.Count == 0) return;
+    Dictionary<string, List<string>> res = null;
+    for (int attempt = 0; attempt < 6 && res == null; attempt++)
+    {
+        var pause = lastLlm.AddSeconds(46) - DateTime.Now;
+        if (pause > TimeSpan.Zero) await Task.Delay(pause);
+        lastLlm = DateTime.Now;
+        try { res = await LlmMulti(items.Select(x => x.Trim()).ToList(), need); if (res == null) break; }
+        catch (Exception e) { Console.WriteLine($"  ИИ: {e.Message}"); await Task.Delay(30000); }
+    }
+    if (res == null)
+    {
+        // не поместилось или не разобралось — делим пачку пополам
+        if (items.Count > 1) { await Multi(items.Take(items.Count / 2).ToList()); await Multi(items.Skip(items.Count / 2).ToList()); }
+        return;
+    }
+    foreach (var l in need)
+    {
+        if (!res.TryGetValue(l, out var arr) || arr == null || arr.Count != items.Count) continue;
+        for (int j = 0; j < items.Count; j++) if (!string.IsNullOrWhiteSpace(arr[j])) dicts[l][items[j]] = Keep(items[j], arr[j]);
+        File.WriteAllText(Path.Combine(outDir, l + ".json"), JsonSerializer.Serialize(new SortedDictionary<string, string>(dicts[l], StringComparer.Ordinal), json));
+    }
+}
+
+async Task<Dictionary<string, List<string>>> LlmMulti(List<string> items, List<string> need)
+{
+    var system =
+        "You translate the user interface of N-Island, a Windows app that imitates the iPhone Dynamic Island, from Russian. " +
+        "Context: «чёлка» always means the island/notch at the top of the screen (never hair); «Корзина» is the Windows Recycle Bin; " +
+        "«Сон» is sleep mode. Keep emoji, symbols, numbers, units, program names, paths, shortcuts and punctuation like «·», «—», «✓». " +
+        "Keep it short like real UI text, friendly informal tone. " +
+        "Reply with ONLY a JSON object whose keys are these language codes: " + string.Join(", ", need.Select(l => $"\"{l}\" ({names[l]})")) +
+        "; each value is an array with exactly one translation per input string, in the same order.";
+    var payload = JsonSerializer.Serialize(new
+    {
+        model = "openai-fast", reasoning_effort = "low", max_tokens = 12000,
+        messages = new object[] { new { role = "system", content = system }, new { role = "user", content = JsonSerializer.Serialize(items, json) } },
+    });
+    using var resp = await http.PostAsync("https://text.pollinations.ai/openai", new StringContent(payload, Encoding.UTF8, "application/json"));
+    var body = await resp.Content.ReadAsStringAsync();
+    if (!resp.IsSuccessStatusCode)
+    {
+        if (body.Contains("output_token_limit")) return null;
+        throw new HttpRequestException($"{(int)resp.StatusCode} {body[..Math.Min(160, body.Length)]}");
+    }
+    using var doc = JsonDocument.Parse(body);
+    var text = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+    int a = text.IndexOf('{'), b = text.LastIndexOf('}');
+    if (a < 0 || b <= a) return null;
+    try { return JsonSerializer.Deserialize<Dictionary<string, List<string>>>(text[a..(b + 1)]); }
+    catch { return null; }
+}
+
+// Проход 2: по языкам — добивает пропуски (Google, если доступен, иначе ИИ) и применяет глоссарий
 foreach (var lang in langs) await Run(lang);
 
 async Task Run(string lang)

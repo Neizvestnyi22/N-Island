@@ -6,7 +6,7 @@
 
 **Dynamic Island для Windows — и Центр управления ноутбуком, понятный даже новичку**
 
-[English](../../README.md) · **Русский** · [Українська](README.uk.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Polski](README.pl.md) · [Türkçe](README.tr.md)
+[English](../../README.md) · **Русский** · [Українська](README.uk.md)
 
 [![Скачать](https://img.shields.io/github/v/release/Neizvestnyi22/N-Island?label=скачать&color=0A84FF)](https://github.com/Neizvestnyi22/N-Island/releases/latest)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
@@ -80,7 +80,7 @@
 **Лёгкий режим** выключает стеклянное размытие, эквалайзер и тени и включается сам на ноутбуках с 4 ГБ памяти, 2 потоками или без видеоускорения. Страницы создаются только при открытии; в простое — около 15–40 МБ памяти.
 
 ### Языки
-Русский, English, Українська, Deutsch, Español, Français, Português, Polski, Türkçe — встроены и работают без интернета («Настройки → Язык»).
+Русский, English, Українська — встроены и работают без интернета («Настройки → Язык»).
 
 ## ⌨️ Горячие клавиши
 

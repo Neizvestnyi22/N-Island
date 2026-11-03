@@ -6,7 +6,7 @@
 
 **Dynamic Island для Windows — і Центр керування ноутбуком, зрозумілий навіть новачку**
 
-[English](../../README.md) · [Русский](README.ru.md) · **Українська** · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português](README.pt.md) · [Polski](README.pl.md) · [Türkçe](README.tr.md)
+[English](../../README.md) · [Русский](README.ru.md) · **Українська**
 
 [![Завантажити](https://img.shields.io/github/v/release/Neizvestnyi22/N-Island?label=завантажити&color=0A84FF)](https://github.com/Neizvestnyi22/N-Island/releases/latest)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
@@ -73,7 +73,7 @@
 
 ### Для слабких ПК і мови
 **Легкий режим** вимикає скляне розмиття, еквалайзер і тіні та вмикається сам на 4 ГБ пам'яті / 2 потоках / без відеоприскорення.
-Мови: Русский, English, Українська, Deutsch, Español, Français, Português, Polski, Türkçe — вбудовані, працюють без інтернету.
+Мови: Русский, English, Українська — вбудовані, працюють без інтернету.
 
 ## 🖥 Вимоги
 Windows 10 версії 2004 (збірка 19041) і новіша або Windows 11; x64 або x86; достатньо 4 ГБ пам'яті.

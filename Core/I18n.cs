@@ -23,8 +23,7 @@ namespace NIsland.Core
     {
         public static readonly (string Code, string Name)[] Languages =
         {
-            ("ru", "Русский"), ("en", "English"), ("uk", "Українська"), ("de", "Deutsch"), ("es", "Español"),
-            ("fr", "Français"), ("pt", "Português"), ("pl", "Polski"), ("tr", "Türkçe"),
+            ("ru", "Русский"), ("en", "English"), ("uk", "Українська"),
         };
 
         public static string Current { get; private set; } = "ru";
@@ -53,7 +52,7 @@ namespace NIsland.Core
             var avail = Available.Select(l => l.Code).ToList();
             if (!string.IsNullOrEmpty(setting) && setting != "auto" && avail.Contains(setting)) return setting;
             var sys = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
-            if (sys is "ru" or "be" or "kk" or "ky" or "uz" or "tg" or "hy" or "az") return "ru";
+            if (sys is "ru" or "be" or "kk" or "ky" or "uz" or "tg" or "hy" or "az" or "ka") return "ru";
             return avail.Contains(sys) ? sys : avail.Contains("en") ? "en" : "ru";
         }
 

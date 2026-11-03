@@ -13,7 +13,7 @@ Unzip → run `NIsland.exe`. SmartScreen: **More info → Run anyway**.
 Распакуй → запусти `NIsland.exe`. Если Windows ругается: **Подробнее → Выполнить в любом случае**.
 
 ### ✨ What's new · Что нового
-- 🌍 **9 languages** — Русский, English, Українська, Deutsch, Español, Français, Português, Polski, Türkçe (offline).
+- 🌍 **3 languages** — Русский, English, Українська (offline) · **3 языка** интерфейса.
 - ⚡ **Optimization** — 20 real Windows settings, profiles *Weak laptop / Games / Battery*, per-app GPU, CPU priority and compatibility. Everything reversible.
   **Оптимизация** — 20 настоящих параметров Windows, профили, тонкая настройка программ. Всё с откатом.
 - 🕵️ **Activity journal** — who used camera/mic/location and for how long, site permissions in browsers, program launches, notifications, installs, USB drives.
