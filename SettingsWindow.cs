@@ -81,6 +81,8 @@ namespace NIsland
                 new("ring", "Кольцо статуса", "◎", "#30D158", Ring, "Segoe UI Symbol"),
                 new("display", "Экран", "", "#0A84FF", Display),
                 new("music", "Музыка и тексты", "", "#FF375F", Music),
+                new("eq", "Эквалайзер", "\uE9E9", "#FF9F0A", EqSec),
+                new("visual", "Визуализатор", "\uE9D9", "#BF5AF2", VizSec),
                 new("calls", "Звонки и уведомления", "", "#30D158", Calls),
                 new("clip", "Буфер и заметки", "", "#5E5CE6", ClipSec),
                 new("weather", "Погода и часы", "", "#0A84FF", WeatherSec),
@@ -97,6 +99,7 @@ namespace NIsland
                 new("vpn", "VPN", "", "#30B0C7", VpnSec),
                 new("spotlight", "Быстрый поиск", "", "#AF52DE", SpotlightSec),
                 new("dedupe", "Без дублей", "", "#FF9500", DedupeSec),
+                new("windows", "Windows", "\uE770", "#0078D4", WindowsSec),
                 new("language", "Язык", "", "#0A84FF", LanguageSec),
                 new("hud", "HUD и клавиатура","", "#64D2FF", Hud),
             };
@@ -140,7 +143,9 @@ namespace NIsland
             Content = root;
 
             KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
-            Open(center ? "overview" : "appearance");
+            // открываемся там, где закрыли в прошлый раз
+            var last = center ? S.LastCenterSection : S.LastSettingsSection;
+            Open(!string.IsNullOrEmpty(last) && _sections.Any(x => x.Key == last) ? last : center ? "overview" : "appearance");
             Closed += (_, __) => _live?.Stop();
         }
 
@@ -210,6 +215,7 @@ namespace NIsland
         {
             var s = _sections.FirstOrDefault(x => x.Key == key) ?? (key == "about" ? (Section)_navItems["about"].Tag : _sections[0]);
             _current = s.Key;
+            if (s.Key != "about") { if (_center) S.LastCenterSection = s.Key; else S.LastSettingsSection = s.Key; }
             var accent = (UI.Res("AccentBrush") as SolidColorBrush)?.Color ?? Colors.DodgerBlue;
             foreach (var (k, b) in _navItems)
                 b.Background = k == s.Key ? new SolidColorBrush(ColorUtil.WithAlpha(accent, 0.28)) : Brushes.Transparent;
@@ -235,6 +241,7 @@ namespace NIsland
 
         static UIElement Group(string label, params UIElement[] rows)
         {
+            rows = rows.Where(r => r != null).ToArray();   // необязательные строки (зависят от состояния) передаются как null
             var list = new StackPanel();
             for (int i = 0; i < rows.Length; i++)
             {
@@ -420,9 +427,13 @@ namespace NIsland
                 Row("Намаз", "Время молитв по городу", Toggle(nameof(Settings.PgPrayer))),
                 Row("Полка", "Временное место для файлов", Toggle(nameof(Settings.PgShelf))),
                 Row("Пульт", "Громкость, яркость, быстрые действия", Toggle(nameof(Settings.PgQuick))),
+                Row("Эквалайзер", "Кривая с живым спектром и пресеты для всего звука Windows", Toggle(nameof(Settings.PgEq))),
                 Row("Wi-Fi", "Сигнал вживую, качество связи, сети рядом и устройства в сети", Toggle(nameof(Settings.PgWifi))),
                 Row("VPN", "Включать и выключать установленные VPN, IP и страна", Toggle(nameof(Settings.PgVpn))),
                 Row("Сервисы", "Home Assistant, Todoist, календарь, новости, курсы, посылки и другие интеграции", Toggle(nameof(Settings.PgHub)))),
+            Group("Запоминать",
+                Row("Последнюю страницу чёлки", "Чёлка открывается там, где ты был в прошлый раз — даже после перезапуска", Toggle(nameof(Settings.RememberPage))),
+                Row("Закрепление чёлки", "Закрепил открытой — останется закреплённой после перезапуска", Toggle(nameof(Settings.RememberPin)))),
             BackupGroup());
 
         UIElement Ring() => Panel(
@@ -528,7 +539,9 @@ namespace NIsland
                 Row("Колонка с текстом", "Показывать текст песни справа от плеера", Toggle(nameof(Settings.LyricsOn))),
                 Row("Всплывашка при смене трека", "Обложка и название на пару секунд", Toggle(nameof(Settings.TrackPopup))),
                 Row("Обложка в чёлке", "Маленькая обложка слева, пока играет музыка", Toggle(nameof(Settings.ArtInNotch))),
-                Row("Эквалайзер", "Пляшущие полоски справа", Toggle(nameof(Settings.Visualizer)))),
+                Row("Полоски в чёлке", "Пляшут справа, пока играет музыка", Toggle(nameof(Settings.Visualizer))),
+                Row("Полоски слушают звук", "Двигаются под настоящую музыку, а не случайно", Toggle(nameof(Settings.LiveBars))),
+                Row("Эквалайзер и визуализатор", "Кривая эквалайзера для всего звука Windows и 13 визуализаторов", UI.Pill("Открыть", () => Open("eq")))),
             Group("Плеер",
                 Row("Размер обложки", null, Stepper(nameof(Settings.PlayerArtSize), 40, 80, 4, v => v + " px")),
                 Row("Подсветка под цвет обложки", "Мягкое свечение снизу плеера", Toggle(nameof(Settings.PlayerGlow))),
@@ -547,6 +560,8 @@ namespace NIsland
                     Stepper(nameof(Settings.LyricsOffsetMs), -5000, 5000, 250, v => (v > 0 ? "+" : "") + (v / 1000.0).ToString("0.##") + " с", () => MediaService.I.Resync())),
                 Row("Опережение строки", "Насколько раньше подсвечивать строку, чтобы успеть её прочитать до того, как её споют",
                     Stepper(nameof(Settings.LyricsLeadMs), 0, 1000, 50, v => v == 0 ? "нет" : (v / 1000.0).ToString("0.##") + " с", () => MediaService.I.Resync())),
+                Row("Сдвиг для приложения", "Подвинул текст пару раз в Chrome — новые песни из Chrome сразу идут с этой поправкой", Toggle(nameof(Settings.LyricsAppOffset))),
+                Row("Ловить начало трека по звуку", "Для приложений, которые не сообщают время (Firefox и др.): отсчёт начинается, когда после тишины пошёл звук", Toggle(nameof(Settings.LyricsAutoAlign))),
                 Row("Перевод строчек", "Под каждой строкой — перевод (Google Переводчик)", Toggle(nameof(Settings.LyricsTranslate))),
                 Row("Язык перевода", null, Seg(nameof(Settings.LyricsTranslateTo), ("ru", "RU"), ("uk", "UA"), ("en", "EN"), ("de", "DE"), ("es", "ES"), ("tr", "TR"))),
                 Row("Хранить тексты на диске", "Знакомые песни открываются мгновенно и без интернета", Toggle(nameof(Settings.LyricsCache))),
@@ -724,10 +739,13 @@ namespace NIsland
         UIElement WeatherSec() => Panel(
             Group("Погода",
                 Row("Город", $"Пусто — по часовому поясу ({WeatherService.DefaultCity()})", Input(nameof(Settings.WeatherCity))),
-                Row("Погода в чёлке", "Температура справа в свёрнутой чёлке", Toggle(nameof(Settings.WeatherInNotch)))),
+                Row("Погода в чёлке", "Температура справа в свёрнутой чёлке", Toggle(nameof(Settings.WeatherInNotch))),
+                Row("Предупреждать о дожде", "За 15–45 минут до дождя или снега — всплывашка «возьми зонт» (по прогнозу осадков на каждые 15 минут)", Toggle(nameof(Settings.WeatherRainAlert))),
+                Row("Утренняя сводка", "Первый раз после 7 утра: погода на день и совет, что надеть", Toggle(nameof(Settings.WeatherMorning))),
+                Row("Вид страницы погоды", null, Seg(nameof(Settings.WeatherView), ("hours", "По часам"), ("days", "7 дней")))),
             Group("Мировые часы",
                 Row("Города", "Формат: Europe/Moscow|Москва;Asia/Tokyo|Токио", Input(nameof(Settings.WorldClocks), 300))),
-            Note("Погода — open-meteo.com, без ключей и регистрации."));
+            Note("Погода, осадки по 15 минутам и качество воздуха — open-meteo.com, без ключей и регистрации."));
 
         UIElement TimerSec() => Panel(
             Group("Здоровье",

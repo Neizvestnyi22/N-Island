@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -390,7 +390,10 @@ namespace NIsland.Services
             var table = ChannelTable(aps, link);
             if (link == null)
             {
-                Add(2, "Wi-Fi не подключён", HasAdapter ? "Подключись к сети, чтобы проверить её." : "На этом компьютере нет Wi-Fi адаптера или он выключен в Диспетчере устройств.");
+                bool wired = NetworkInterface.GetIsNetworkAvailable();
+                Add(wired ? 0 : 2, wired ? "Подключение по кабелю (или Wi-Fi выключен)" : "Wi-Fi не подключён",
+                    wired ? "Проверяю интернет, DNS и задержки." : HasAdapter ? "Подключись к сети, чтобы проверить её." : "На этом компьютере нет Wi-Fi адаптера или он выключен в Диспетчере устройств.");
+                if (wired) await NetChecks(items, progress);
                 return (items, table, null);
             }
 
@@ -473,6 +476,8 @@ namespace NIsland.Services
                 else Add(0, $"DNS {dns[0]} отвечает за {mineMs:0} мс", bestPublic > 0 ? $"Публичные: Cloudflare {cf:0} мс, Google {gg:0} мс — менять не нужно." : "");
             }
 
+            await NetChecks(items, progress);
+
             // драйвер
             var (ver, date) = Driver(link.Adapter);
             if (date is DateTime d && (DateTime.Now - d).TotalDays > 730)
@@ -484,6 +489,114 @@ namespace NIsland.Services
                 Add(1, "Сеть помечена как лимитная", "Windows экономит трафик: не скачивает обновления и ограничивает фоновые приложения. Для домашнего безлимита выключи: Параметры → Wi-Fi → свойства сети → «Лимитное подключение».");
 
             return (items, table, q);
+        }
+
+        // ------------------------------------------------------------------
+        //  Интернет глубже: страница входа, подмена DNS, IPv6, лаги под нагрузкой, MTU, часы
+        // ------------------------------------------------------------------
+
+        static readonly System.Net.Http.HttpClient Probe = new(new System.Net.Http.SocketsHttpHandler { AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(6) }) { Timeout = TimeSpan.FromSeconds(30) };
+
+        static async Task NetChecks(List<HealthItem> items, Action<string> progress)
+        {
+            void Add(int lvl, string title, string advice) => items.Add(new HealthItem(lvl, title, advice));
+
+            // 1. настоящий ли это интернет (кафе, отели, метро подсовывают страницу входа)
+            progress?.Invoke("Проверяю, нет ли страницы входа…");
+            try
+            {
+                using var r = await Probe.GetAsync("http://www.msftconnecttest.com/connecttest.txt");
+                var body = await r.Content.ReadAsStringAsync();
+                if ((int)r.StatusCode is >= 300 and < 400 || body.Trim() != "Microsoft Connect Test")
+                    Add(2, "Сеть просит войти (страница входа)", "Это сеть кафе, отеля или провайдера с авторизацией: открой любой сайт в браузере и войди. До этого интернет не работает или работает частично.");
+                else Add(0, "Интернет настоящий", "Сеть не подменяет страницы и не требует входа.");
+            }
+            catch { Add(2, "Нет доступа в интернет", "До роутера связь есть, а дальше — нет. Перезагрузи роутер; если не поможет — проблема у провайдера."); }
+
+            // 2. подмена ответов DNS: несуществующий сайт должен давать «не найдено», а не рекламу провайдера
+            try
+            {
+                var fake = "nisland-check-" + Guid.NewGuid().ToString("N")[..10] + ".com";
+                var addrs = await Dns.GetHostAddressesAsync(fake);
+                if (addrs.Length > 0)
+                    Add(1, "DNS подменяет ответы", $"Несуществующий адрес открылся как {addrs[0]} — провайдер или роутер перенаправляет ошибки на свою страницу (часто с рекламой). Поставь DNS Cloudflare или Google в разделе «Интернет и Wi-Fi».");
+                else Add(0, "DNS честный", "Несуществующие сайты не перенаправляются на рекламу.");
+            }
+            catch (SocketException) { Add(0, "DNS честный", "Несуществующие сайты не перенаправляются на рекламу."); }
+            catch { }
+
+            // 3. IPv6
+            try
+            {
+                using var tcp = new TcpClient(AddressFamily.InterNetworkV6);
+                var c = tcp.ConnectAsync(IPAddress.Parse("2606:4700:4700::1111"), 443);
+                bool v6 = await Task.WhenAny(c, Task.Delay(3000)) == c && tcp.Connected;
+                Add(0, v6 ? "IPv6 работает" : "IPv6 нет", v6 ? "Новый протокол интернета доступен — некоторые сайты и игры работают через него быстрее." : "Провайдер или роутер не даёт IPv6. Ничего страшного — почти всё работает по IPv4.");
+            }
+            catch { Add(0, "IPv6 нет", "Провайдер или роутер не даёт IPv6. Ничего страшного — почти всё работает по IPv4."); }
+
+            // 4. MTU: самый большой пакет без дробления
+            try
+            {
+                using var ping = new Ping();
+                int lo = 1200, hi = 1472, best = 0;
+                var opts = new PingOptions(64, true);
+                while (lo <= hi)
+                {
+                    int mid = (lo + hi) / 2;
+                    var r = await ping.SendPingAsync(IPAddress.Parse("1.1.1.1"), 1500, new byte[mid], opts);
+                    if (r.Status == IPStatus.Success) { best = mid; lo = mid + 1; } else hi = mid - 1;
+                }
+                if (best > 0)
+                {
+                    int mtu = best + 28;
+                    if (mtu >= 1500) Add(0, "MTU 1500", "Пакеты идут без дробления — оптимально.");
+                    else if (mtu >= 1400) Add(0, $"MTU {mtu}", "Немного меньше 1500 — обычно из-за PPPoE у провайдера или VPN. Это нормально.");
+                    else Add(1, $"MTU {mtu} — маленький", "Часть сайтов может открываться долго или «висеть». Проверь настройки MTU в роутере (для PPPoE обычно 1492).");
+                }
+            }
+            catch { }
+
+            // 5. часы: сильно сбитое время ломает HTTPS («сертификат недействителен»)
+            try
+            {
+                using var r = await Probe.SendAsync(new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Head, "https://www.cloudflare.com/"));
+                if (r.Headers.Date is DateTimeOffset srv)
+                {
+                    var diff = (DateTimeOffset.UtcNow - srv).TotalSeconds;
+                    if (Math.Abs(diff) > 120) Add(1, $"Часы ПК сбиты на {Math.Abs(diff) / 60:0} мин", "Из-за этого сайты пишут «соединение не защищено». Параметры → Время и язык → «Синхронизировать сейчас».");
+                    else Add(0, "Часы ПК точные", $"Расхождение с интернетом {Math.Abs(diff):0} с.");
+                }
+            }
+            catch { }
+
+            // 6. лаги под нагрузкой (bufferbloat) и скорость загрузки
+            progress?.Invoke("Качаю тестовый файл и меряю задержку под нагрузкой…");
+            try
+            {
+                var idle = await PingSeries(IPAddress.Parse("1.1.1.1"), 6);
+                var dl = Task.Run(async () =>
+                {
+                    var sw = Stopwatch.StartNew();
+                    long total = 0;
+                    using var resp = await Probe.GetAsync("https://speed.cloudflare.com/__down?bytes=40000000", System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
+                    using var s = await resp.Content.ReadAsStreamAsync();
+                    var buf = new byte[81920];
+                    int n;
+                    while ((n = await s.ReadAsync(buf)) > 0 && sw.Elapsed.TotalSeconds < 12) total += n;
+                    return total * 8 / Math.Max(0.1, sw.Elapsed.TotalSeconds) / 1e6;
+                });
+                await Task.Delay(800);
+                var load = await PingSeries(IPAddress.Parse("1.1.1.1"), 10);
+                double mbps = await dl;
+                double extra = load.Avg - idle.Avg;
+                string grade = extra < 20 ? "A" : extra < 60 ? "B" : extra < 150 ? "C" : "D";
+                Add(0, $"Скорость загрузки ≈ {mbps:0} Мбит/с", "Быстрый тест через Cloudflare. Точнее — «Тест скорости» в этом разделе.");
+                if (grade is "A" or "B") Add(0, $"Лаги под нагрузкой: {grade} (+{Math.Max(0, extra):0} мс)", "Когда кто-то качает файлы, задержка почти не растёт — игры и звонки не лагают.");
+                else Add(grade == "C" ? 1 : 2, $"Лаги под нагрузкой: {grade} (+{extra:0} мс)",
+                    "Пока что-то скачивается, задержка сильно растёт — в играх и звонках будут лаги (bufferbloat). Включи в роутере SQM / Smart QoS или ограничь скорость загрузки на 10% ниже тарифа.");
+            }
+            catch (Exception e) { Log.Info("bufferbloat: " + e.Message); }
         }
 
         // ------------------------------------------------------------------

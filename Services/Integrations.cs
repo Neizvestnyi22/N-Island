@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -108,12 +108,16 @@ namespace NIsland.Services
         {
             new TelegramHub(), new NtfyHub(), new DiscordHub(), new WebhookHub(), new HomeAssistantHub(), new GitHubHub(), new TodoistHub(),
             new CalendarHub(), new RssHub(), new ListenBrainzHub(), new LastFmHub(), new RatesHub(), new AlertsHub(), new NovaPoshtaHub(), new UptimeHub(),
+            new MailHub(), new MonobankHub(), new SlackHub(), new GotifyHub(), new TogglHub(), new WakaTimeHub(),
+            new PushoverHub(), new PushbulletHub(), new MatrixHub(), new NotionHub(), new TrelloHub(), new LinearHub(), new JiraHub(), new GitLabHub(),
+            new TwitchHub(), new SteamHub(), new MastodonHub(), new BlueskyHub(), new HackerNewsHub(), new HueHub(), new StocksHub(),
         };
 
         public static readonly (string Key, string Name)[] EventKinds =
         {
             ("timer", "Таймер и помодоро"), ("reminder", "Напоминания и календарь"), ("call", "Звонки"), ("notify", "Уведомления приложений"),
             ("track", "Сейчас играет"), ("vpn", "VPN"), ("battery", "Батарея и устройства"), ("alert", "Важное от сервисов"),
+            ("net", "Интернет пропал или появился"), ("parcel", "Посылки"), ("mail", "Новые письма"), ("money", "Деньги (Монобанк)"),
         };
 
         public static event Action Changed;
@@ -184,6 +188,23 @@ namespace NIsland.Services
             _timer.Start();
             MediaService.I.TrackChanged += OnTrack;
             MediaService.I.Changed += OnTrackMaybeStarted;
+            ClipboardService.I.Copied += c => NovaPoshtaHub.OnCopied(c?.Text);
+            // интернет пропал / появился — можно переслать на телефон (сообщение уйдёт, когда связь вернётся)
+            System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += (_, e) =>
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() => OnNetwork(e.IsAvailable)));
+        }
+
+        static DateTime _netLostAt;
+
+        static void OnNetwork(bool up)
+        {
+            if (!up) { _netLostAt = DateTime.Now; return; }
+            if (_netLostAt == default) return;
+            var off = DateTime.Now - _netLostAt;
+            _netLostAt = default;
+            if (off.TotalSeconds < 20) return;   // короткие переподключения Wi-Fi не считаем
+            // пока связи не было, сообщение всё равно не дошло бы — отправляем одно, когда она вернулась
+            Publish("net", "Интернет снова есть", $"Связи не было {(off.TotalMinutes < 1 ? (int)off.TotalSeconds + " с" : (int)off.TotalMinutes + " мин")} (с {DateTime.Now - off:HH:mm})");
         }
 
         static void Tick()
@@ -392,72 +413,6 @@ namespace NIsland.Services
     // =====================================================================
     //  Пересылка: Telegram, ntfy, Discord, вебхук
     // =====================================================================
-
-    public class TelegramHub : Integration
-    {
-        public override string Key => "telegram";
-        public override string Name => "Telegram";
-        public override string Glyph => "";
-        public override string Color => "#2AABEE";
-        public override string Desc => "Пересылает события острова в Telegram (таймер, звонки, напоминания…), а сообщения, которые ты пишешь своему боту, появляются в острове";
-        public override string Help => "Создай бота у @BotFather, вставь токен, напиши боту любое сообщение и нажми «Проверить» — чат найдётся сам";
-        public override string HelpUrl => "https://t.me/BotFather";
-        public override HubField[] Fields => new[]
-        {
-            new HubField("token", "Токен бота", "123456:ABC-DEF…", "secret"),
-            new HubField("chat", "ID чата", "Найдётся сам после «Проверить»", Required: false),
-        };
-        public override string[] CanSend => Integrations.EventKinds.Select(e => e.Key).ToArray();
-        public override int PollSeconds => 20;
-
-        string Api(string method) => $"https://api.telegram.org/bot{V("token")}/{method}";
-
-        public override async Task<string> Test()
-        {
-            using var me = await Integrations.GetJson(Api("getMe"));
-            var bot = Integrations.S(me.RootElement.GetProperty("result"), "username");
-            if (string.IsNullOrEmpty(V("chat")))
-            {
-                using var up = await Integrations.GetJson(Api("getUpdates?limit=20"));
-                var last = up.RootElement.GetProperty("result").EnumerateArray().LastOrDefault();
-                if (last.ValueKind == JsonValueKind.Undefined || !last.TryGetProperty("message", out var msg))
-                    return $"Бот @{bot} работает. Напиши ему любое сообщение в Telegram и нажми «Проверить» ещё раз";
-                var chat = msg.GetProperty("chat").GetProperty("id").ToString();
-                Integrations.SetValue(this, "chat", chat);
-            }
-            await Send(new HubEvent("test", "N-Island подключён ✓", "Сюда будут приходить события острова"));
-            return $"Работает ✓ Бот @{bot}, сообщение отправлено в чат {V("chat")}";
-        }
-
-        public override async Task Send(HubEvent e)
-        {
-            if (string.IsNullOrEmpty(V("chat"))) return;
-            var text = $"<b>{System.Net.WebUtility.HtmlEncode(e.Title)}</b>" + (e.Text != "" ? "\n" + System.Net.WebUtility.HtmlEncode(e.Text) : "");
-            using var _ = await Integrations.PostJson(Api("sendMessage"), new { chat_id = V("chat"), text, parse_mode = "HTML", disable_web_page_preview = true });
-            Status = "Отправлено " + DateTime.Now.ToString("HH:mm");
-        }
-
-        /// <summary>Сообщения боту от своего чата — в остров (удобно скинуть ссылку или текст с телефона на ПК).</summary>
-        public override async Task Poll()
-        {
-            if (string.IsNullOrEmpty(V("chat"))) return;
-            long.TryParse(St("offset"), out var offset);
-            using var doc = await Integrations.GetJson(Api($"getUpdates?timeout=0&limit=20&offset={offset}"));
-            foreach (var u in doc.RootElement.GetProperty("result").EnumerateArray())
-            {
-                offset = Math.Max(offset, u.GetProperty("update_id").GetInt64() + 1);
-                if (!u.TryGetProperty("message", out var m) || m.GetProperty("chat").GetProperty("id").ToString() != V("chat")) continue;
-                var text = Integrations.S(m, "text");
-                if (text == "" || text.StartsWith("/start")) continue;
-                bool link = text.StartsWith("http://") || text.StartsWith("https://");
-                Rows.Insert(0, new HubRow { Title = text.Length > 120 ? text[..120] + "…" : text, Sub = "из Telegram · " + DateTime.Now.ToString("HH:mm"), Url = link ? text : null,
-                    ActionText = "Копировать", Action = () => { ClipboardService.I.CopyBack(text); return Task.FromResult<string>("Скопировано"); } });
-                if (Rows.Count > 8) Rows.RemoveAt(Rows.Count - 1);
-                Notify("Telegram", text, link ? text : null);
-            }
-            if (offset.ToString() != St("offset")) SetSt("offset", offset.ToString());
-        }
-    }
 
     public class NtfyHub : Integration
     {
@@ -1010,84 +965,6 @@ namespace NIsland.Services
                         Notify($"{Fmt.Cap(c)} {(ch >= 0 ? "вырос" : "упал")} на {Math.Abs(ch):0.0}%", $"${usd:N0} · за сутки", "https://www.coingecko.com/en/coins/" + c);
                     }
                 }
-            }
-            Rows = rows;
-            Status = "Обновлено " + DateTime.Now.ToString("HH:mm");
-        }
-    }
-
-    public class AlertsHub : Integration
-    {
-        public override string Key => "alerts";
-        public override string Name => "Повітряна тривога (alerts.in.ua)";
-        public override string Glyph => "";
-        public override string Color => "#FF453A";
-        public override string Desc => "Сигнал в острове при начале и отбое воздушной тревоги в твоей области. Дополнение к официальному приложению «Повітряна тривога», не замена ему";
-        public override string Help => "Токен выдаёт alerts.in.ua по запросу (форма на сайте для разработчиков). Если связи нет — остров честно пишет «нет данных», а не «тревоги нет»";
-        public override string HelpUrl => "https://devs.alerts.in.ua/";
-        public override HubField[] Fields => new[]
-        {
-            new HubField("token", "Токен alerts.in.ua", "", "secret"),
-            new HubField("oblast", "Область", "Миколаївська область", Default: "Київ"),
-        };
-        public override string[] DefaultSend => Array.Empty<string>();
-        public override int PollSeconds => 20;
-
-        public override async Task Poll()
-        {
-            using var doc = await Integrations.GetJson("https://api.alerts.in.ua/v1/alerts/active.json", r => r.Headers.Authorization = new AuthenticationHeaderValue("Bearer", V("token")));
-            var want = V("oblast").Trim();
-            var mine = doc.RootElement.GetProperty("alerts").EnumerateArray()
-                .Where(a => Integrations.S(a, "alert_type") == "air_raid" &&
-                            (Integrations.S(a, "location_oblast").Contains(want, StringComparison.OrdinalIgnoreCase) || Integrations.S(a, "location_title").Contains(want, StringComparison.OrdinalIgnoreCase)))
-                .Select(a => Integrations.S(a, "location_title")).Distinct().ToList();
-            bool on = mine.Count > 0;
-            var prev = St("on");
-            if (prev != null && prev != (on ? "1" : "0"))
-                Notify(on ? "Повітряна тривога" : "Відбій тривоги", on ? string.Join(", ", mine.Take(3)) : want, null, true);
-            if (prev != (on ? "1" : "0")) SetSt("on", on ? "1" : "0");
-            Rows = on ? mine.Select(m => new HubRow { Title = "Тривога: " + m, Sub = "alerts.in.ua · " + DateTime.Now.ToString("HH:mm") }).ToList()
-                      : new List<HubRow> { new() { Title = "Тривоги немає · " + want, Sub = "alerts.in.ua · " + DateTime.Now.ToString("HH:mm") } };
-            Status = on ? "Тривога!" : "Спокійно · " + DateTime.Now.ToString("HH:mm");
-        }
-    }
-
-    public class NovaPoshtaHub : Integration
-    {
-        public override string Key => "novaposhta";
-        public override string Name => "Нова пошта";
-        public override string Glyph => "";
-        public override string Color => "#DA291C";
-        public override string Desc => "Следит за посылками по номеру ТТН и сообщает, когда меняется статус (прибыла в отделение, получена…)";
-        public override string Help => "Номера ТТН — по одному в строке; через пробел можно добавить телефон получателя, тогда статус подробнее. API-ключ не обязателен";
-        public override HubField[] Fields => new[]
-        {
-            new HubField("ttn", "Номера ТТН", "20400048799000 0671234567", "multi"),
-            new HubField("key", "API-ключ", "необязательно", "secret", Required: false),
-        };
-        public override int PollSeconds => 1800;
-
-        public override async Task Poll()
-        {
-            var docs = (V("ttn") ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Where(p => p.Length > 0)
-                .Select(p => new { DocumentNumber = p[0], Phone = p.Length > 1 ? p[1] : "" }).Take(20).ToArray();
-            if (docs.Length == 0) { Rows = new(); return; }
-            using var doc = await Integrations.PostJson("https://api.novaposhta.ua/v2.0/json/", new
-            {
-                apiKey = V("key"), modelName = "TrackingDocument", calledMethod = "getStatusDocuments", methodProperties = new { Documents = docs },
-            });
-            var rows = new List<HubRow>();
-            foreach (var d in doc.RootElement.GetProperty("data").EnumerateArray())
-            {
-                var num = Integrations.S(d, "Number");
-                var status = Integrations.S(d, "Status");
-                var where = Integrations.S(d, "WarehouseRecipient");
-                var date = Integrations.S(d, "ScheduledDeliveryDate");
-                rows.Add(new HubRow { Title = num + " · " + status, Sub = string.Join(" · ", new[] { where, date != "" ? "доставка " + date : "" }.Where(s => s != "")), Url = "https://novaposhta.ua/tracking/?cargo_number=" + num });
-                var key = "st:" + num;
-                if (St(key) != null && St(key) != status) Notify("Нова пошта · " + num, status, "https://novaposhta.ua/tracking/?cargo_number=" + num);
-                if (St(key) != status) SetSt(key, status);
             }
             Rows = rows;
             Status = "Обновлено " + DateTime.Now.ToString("HH:mm");

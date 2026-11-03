@@ -120,6 +120,7 @@ namespace NIsland
                 new() { Key = "media", Title = "Музыка", Glyph = "", On = () => S.PgMedia, Make = () => new MediaPage() },
                 new() { Key = "ai", Title = "ИИ", Glyph = "", On = () => S.PgAi, Make = () => new AiPage() },
                 new() { Key = "sound", Title = "Звук", Glyph = "", On = () => S.PgSound, Make = () => new SoundPage() },
+                new() { Key = "eq", Title = "Эквалайзер", Glyph = "", On = () => S.PgEq, Make = () => new EqPage() },
                 new() { Key = "wifi", Title = "Wi-Fi", Glyph = "", On = () => S.PgWifi, Make = () => new WifiPage() },
                 new() { Key = "vpn", Title = "VPN", Glyph = "", On = () => S.PgVpn, Make = () => new VpnPage() },
                 new() { Key = "hub", Title = "Сервисы", Glyph = "", On = () => S.PgHub, Make = () => new HubPage() },
@@ -285,7 +286,8 @@ namespace NIsland
                 a?.Action?.Invoke();
             };
             BubHide.Click += (_, __) => HideIsland();
-            BubPin.Click += (_, __) => { _pinned = !_pinned; UpdateBubble(); };
+            BubPin.Click += (_, __) => { _pinned = !_pinned; if (S.RememberPin) S.IslandPinned = _pinned; UpdateBubble(); };
+            _pinned = S.RememberPin && S.IslandPinned;
             BubDnd.Click += (_, __) => SetMode(Modes.Dnd ? "normal" : "dnd");
             BubModes.Click += (_, __) => { if (S.PgModes) Expand("modes"); else App.ShowSettings("modes"); };
 
@@ -296,6 +298,7 @@ namespace NIsland
             S.PropertyChanged += OnSetting;
             ApplyDelays();
             ApplyPreset();
+            Bars.Live = S.LiveBars;
         }
 
         // ================== сервисы ==================
@@ -674,7 +677,7 @@ namespace NIsland
         {
             if (_mode != Mode.Expanded) return;
             if (!force && (_pinned || Hold || _dragInside || (IsActive && Keyboard.FocusedElement is TextBox or PasswordBox))) return;
-            if (force) _pinned = false;
+            if (force) { _pinned = false; if (S.IslandPinned) S.IslandPinned = false; }
             _mode = Mode.Collapsed;
             _collapsedAt = DateTime.Now;
             if (Current?.Created == true) Current.Instance.OnHidden();
@@ -803,6 +806,12 @@ namespace NIsland
                          .OrderBy(p => { int i = order.IndexOf(p.Key); return i < 0 ? 1000 + _all.IndexOf(p) : i; })
                          .ToList();
             _idx = cur != null && _pages.Contains(cur) ? _pages.IndexOf(cur) : 0;
+            // при запуске открываемся на той странице, где были в прошлый раз
+            if (cur == null && S.RememberPage && !string.IsNullOrEmpty(S.LastPage))
+            {
+                int last = _pages.FindIndex(p => p.Key == S.LastPage);
+                if (last >= 0) _idx = last;
+            }
             var p0 = Current;
             PageHost.Content = p0 != null && (p0.Created || _mode == Mode.Expanded) ? p0.Instance : null;
             if (_mode == Mode.Expanded && p0 != null && p0 != cur) p0.Instance.OnShown();
@@ -840,6 +849,7 @@ namespace NIsland
             if (dir == 0) dir = i > _idx ? 1 : -1;
             if (_mode == Mode.Expanded && Current?.Created == true) Current.Instance.OnHidden();
             _idx = i;
+            if (S.RememberPage) S.LastPage = _pages[i].Key;
             var p = _pages[i].Instance;
             PageHost.Content = p;
             UpdateTitle();
@@ -1253,6 +1263,13 @@ namespace NIsland
 
         // ================== содержимое свёрнутой чёлки ==================
 
+        /// <summary>Службы (тревога, VPN) поменяли то, что видно в свёрнутой чёлке.</summary>
+        public void RefreshCollapsed()
+        {
+            UpdateCollapsed();
+            if (_mode == Mode.Collapsed) Retarget();
+        }
+
         void UpdateCollapsed()
         {
             var m = MediaService.I;
@@ -1278,7 +1295,7 @@ namespace NIsland
             ColArtBrush.ImageSource = art ? m.Art : null;
             ColNote.Visibility = !call && lyric ? Visibility.Visible : Visibility.Collapsed;
 
-            bool bars = !call && playing && S.Visualizer && !S.LiteMode;
+            bool bars = !call && playing && S.Visualizer && !S.LiteMode && !AlertsHub.ShowInNotch;   // тревога важнее полосок
             Bars.IsPlaying = playing;
             Bars.Visibility = bars ? Visibility.Visible : Visibility.Collapsed;
             ColRight.Visibility = bars ? Visibility.Collapsed : Visibility.Visible;
@@ -1333,6 +1350,8 @@ namespace NIsland
             else text = sys.HasBattery && S.ShowBattery ? (sys.Charging ? "⚡" : "") + sys.BatteryPercent + "%" : "";
             if (S.Mode == "minimal" && !c.InCall && !t.Running) text = "";
             if (S.VpnInNotch && Vpn.Active && S.Mode != "minimal") text = "🔒 " + text;
+            // идёт воздушная тревога в «моём месте» — красный значок, пока не будет отбоя
+            if (AlertsHub.ShowInNotch) { text = "⚠ Тривога"; color = Color.FromRgb(0xFF, 0x45, 0x3A); }
             ColRight.Text = text;
             if (color is Color col) ColRight.Foreground = new SolidColorBrush(col);
             else ColRight.SetResourceReference(TextBlock.ForegroundProperty, "DimBrush");
@@ -1662,6 +1681,7 @@ namespace NIsland
                 case nameof(Settings.PgVpn):
                 case nameof(Settings.PgWifi):
                 case nameof(Settings.PgHub):
+                case nameof(Settings.PgEq):
                 case nameof(Settings.PageOrder):
                     BuildPages();
                     break;
@@ -1673,7 +1693,11 @@ namespace NIsland
                     UpdateNotchProgress();
                     break;
                 case nameof(Settings.LyricsFocus):
+                case nameof(Settings.MediaVisual):
                     Retarget();
+                    break;
+                case nameof(Settings.LiveBars):
+                    Bars.Live = S.LiveBars;
                     break;
                 case nameof(Settings.CustomBg1):
                 case nameof(Settings.CustomBg2):

@@ -61,7 +61,10 @@ namespace NIsland.Controls
         }
     }
 
-    /// <summary>Пляшущие полоски «эквалайзера», пока играет музыка.</summary>
+    /// <summary>
+    /// Полоски «эквалайзера» в свёрнутой чёлке. Пока играет музыка — пляшут по настоящему звуку (бас, середина, верха);
+    /// если звук недоступен — мягко пляшут сами.
+    /// </summary>
     public class EqBars : FrameworkElement
     {
         public static readonly DependencyProperty IsPlayingProperty = DependencyProperty.Register(nameof(IsPlaying), typeof(bool), typeof(EqBars),
@@ -71,13 +74,18 @@ namespace NIsland.Controls
 
         public bool IsPlaying { get => (bool)GetValue(IsPlayingProperty); set => SetValue(IsPlayingProperty, value); }
         public Brush BarBrush { get => (Brush)GetValue(BarBrushProperty); set => SetValue(BarBrushProperty, value); }
+        /// <summary>Слушать настоящий звук (иначе — просто анимация).</summary>
+        public bool Live { get; set; } = true;
 
         const int N = 4;
         readonly double[] _h = { 0.3, 0.5, 0.4, 0.6 };
         readonly double[] _t = new double[N];
         readonly double[] _speed = { 0.35, 0.5, 0.42, 0.3 };
+        static readonly (double From, double To)[] Ranges = { (40, 180), (180, 900), (900, 4000), (4000, 14000) };
         readonly Random _rnd = new();
-        readonly DispatcherTimer _timer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(45) };
+        readonly DispatcherTimer _timer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(40) };
+        IDisposable _lease;
+        int _lastFrame, _stale;
 
         public EqBars()
         {
@@ -88,19 +96,29 @@ namespace NIsland.Controls
         void Update()
         {
             if (IsVisible) _timer.Start(); else _timer.Stop();
+            bool listen = IsVisible && IsPlaying && Live;
+            if (listen && _lease == null) _lease = NIsland.Services.AudioCapture.I.Use();
+            else if (!listen && _lease != null) { _lease.Dispose(); _lease = null; }
         }
 
         void Step()
         {
             bool settled = true;
+            var cap = NIsland.Services.AudioCapture.I;
+            int frame = cap.Frame;
+            _stale = frame != _lastFrame ? 0 : _stale + 1;
+            _lastFrame = frame;
+            // звук есть и анализ идёт — полоски повторяют его; тишина при «играет» (видео без звука, ошибка) — своя анимация
+            bool real = _lease != null && cap.Running && _stale < 5 && cap.Level > 0.02;
             for (int i = 0; i < N; i++)
             {
-                if (IsPlaying)
+                if (IsPlaying && real) _t[i] = Math.Clamp(0.15 + cap.Range(Ranges[i].From, Ranges[i].To) * 1.05, 0.15, 1);
+                else if (IsPlaying)
                 {
                     if (Math.Abs(_h[i] - _t[i]) < 0.06) _t[i] = 0.2 + _rnd.NextDouble() * 0.8;
                 }
                 else _t[i] = 0.18;
-                _h[i] += (_t[i] - _h[i]) * _speed[i];
+                _h[i] += (_t[i] - _h[i]) * (real ? 0.6 : _speed[i]);
                 if (Math.Abs(_h[i] - _t[i]) > 0.01) settled = false;
             }
             InvalidateVisual();

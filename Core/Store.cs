@@ -321,6 +321,56 @@ namespace NIsland.Core
         // Быстрый поиск (отдельное окно, Ctrl+Alt+Space)
         public bool Spotlight { get => _spot; set => Set(ref _spot, value); } bool _spot = true;
 
+        // 1.7: визуализаторы и эквалайзер
+        /// <summary>Справа от плеера — визуализатор вместо текста песни.</summary>
+        public bool MediaVisual { get => _mVis; set => Set(ref _mVis, value); } bool _mVis;
+        public string VizStyle { get => _vizStyle; set => Set(ref _vizStyle, value); } string _vizStyle = "radial";
+        public string VizPalette { get => _vizPal; set => Set(ref _vizPal, value); } string _vizPal = "art";
+        public string VizWinStyle { get => _vizWinStyle; set => Set(ref _vizWinStyle, value); } string _vizWinStyle = "ambience";
+        public string VizWinPalette { get => _vizWinPal; set => Set(ref _vizWinPal, value); } string _vizWinPal = "art";
+        /// <summary>Окно визуализатора само меняет стиль каждые 30 секунд.</summary>
+        public bool VizAuto { get => _vizAuto; set => Set(ref _vizAuto, value); } bool _vizAuto;
+        public bool VizLyrics { get => _vizLyr; set => Set(ref _vizLyr, value); } bool _vizLyr = true;
+        public bool VizTrack { get => _vizTrack; set => Set(ref _vizTrack, value); } bool _vizTrack = true;
+        public int VizQuality { get => _vizQ; set => Set(ref _vizQ, value); } int _vizQ = 2;
+        public string VizBounds { get => _vizBounds; set => Set(ref _vizBounds, value); } string _vizBounds = "";
+        /// <summary>Полоски в свёрнутой чёлке слушают настоящий звук.</summary>
+        public bool LiveBars { get => _liveBars; set => Set(ref _liveBars, value); } bool _liveBars = true;
+        public bool PgEq { get => _pgEq; set => Set(ref _pgEq, value); } bool _pgEq = true;
+        public bool EqOn { get => _eqOn; set => Set(ref _eqOn, value); } bool _eqOn;
+        public string EqGains { get => _eqGains; set => Set(ref _eqGains, value); } string _eqGains = "";
+        public string EqPreset { get => _eqPreset; set => Set(ref _eqPreset, value); } string _eqPreset = "flat";
+        /// <summary>Свой профиль эквалайзера для каждого устройства вывода (наушники, колонки).</summary>
+        public bool EqPerDevice { get => _eqDev; set => Set(ref _eqDev, value); } bool _eqDev = true;
+
+        // 1.7: синхронизация текста
+        /// <summary>Запоминать сдвиг текста для приложения (браузеры часто сообщают время с опозданием).</summary>
+        public bool LyricsAppOffset { get => _lyrApp; set => Set(ref _lyrApp, value); } bool _lyrApp = true;
+        /// <summary>Приложение не сообщает время — ловить начало трека по звуку.</summary>
+        public bool LyricsAutoAlign { get => _lyrAlign; set => Set(ref _lyrAlign, value); } bool _lyrAlign = true;
+
+        // 1.7: запоминание состояния
+        public bool RememberPage { get => _remPage; set => Set(ref _remPage, value); } bool _remPage = true;
+        public string LastPage { get => _lastPage; set => Set(ref _lastPage, value); } string _lastPage = "";
+        public bool RememberPin { get => _remPin; set => Set(ref _remPin, value); } bool _remPin = true;
+        public bool IslandPinned { get => _islPin; set => Set(ref _islPin, value); } bool _islPin;
+        public string LastSettingsSection { get => _lastSet; set => Set(ref _lastSet, value); } string _lastSet = "";
+        public string LastCenterSection { get => _lastCen; set => Set(ref _lastCen, value); } string _lastCen = "";
+        public string WifiTab { get => _wifiTab; set => Set(ref _wifiTab, value); } string _wifiTab = "";
+        public string WeatherView { get => _wView; set => Set(ref _wView, value); } string _wView = "hours";
+
+        // 1.7: погода
+        public bool WeatherRainAlert { get => _wRain; set => Set(ref _wRain, value); } bool _wRain = true;
+        public bool WeatherMorning { get => _wMorn; set => Set(ref _wMorn, value); } bool _wMorn;
+        public string WeatherMorningDay { get => _wMornDay; set => Set(ref _wMornDay, value); } string _wMornDay = "";
+
+        // 1.7: интеграция с Windows
+        public bool ShellMenu { get => _shellMenu; set => Set(ref _shellMenu, value); } bool _shellMenu;
+        public bool UrlProtocol { get => _urlProto; set => Set(ref _urlProto, value); } bool _urlProto;
+        public bool FollowFocusAssist { get => _focusAssist; set => Set(ref _focusAssist, value); } bool _focusAssist;
+        public bool WindowsAccent { get => _winAccent; set => Set(ref _winAccent, value); } bool _winAccent;
+        public bool MediaKeysHud { get => _mkHud; set => Set(ref _mkHud, value); } bool _mkHud = true;
+
         // HUD
         public bool HudVolume { get => _hudVol; set => Set(ref _hudVol, value); } bool _hudVol = true;
         public bool HudBrightness { get => _hudBri; set => Set(ref _hudBri, value); } bool _hudBri = true;
@@ -426,6 +476,10 @@ namespace NIsland.Core
         public List<ActivityRecord> ActivityLog { get; set; } = new();
         /// <summary>Быстрый поиск: что и сколько раз запускали — частое поднимается выше.</summary>
         public Dictionary<string, int> SpotlightUsage { get; set; } = new();
+        /// <summary>Эквалайзер для каждого устройства вывода: имя → «пресет|полосы|вкл».</summary>
+        public Dictionary<string, string> EqProfiles { get; set; } = new();
+        /// <summary>Выученный сдвиг текста для приложения (Chrome, Spotify…), секунды.</summary>
+        public Dictionary<string, double> AppLyricOffsets { get; set; } = new();
     }
 
     public static class Store
@@ -462,6 +516,9 @@ namespace NIsland.Core
             Data.Launch ??= DefaultLaunch();
             Data.Played ??= new();
             Data.Favorites ??= new();
+            Data.EqProfiles ??= new();
+            Data.AppLyricOffsets ??= new();
+            Data.SpotlightUsage ??= new();
             if (!Settings.ClipSave) Data.Clips.Clear();
             // обновление 1.1: делаем остров стеклянным
             if (!Settings.PresetMigrated)

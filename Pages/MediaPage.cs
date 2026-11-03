@@ -29,7 +29,20 @@ namespace NIsland.Pages
         readonly TextBlock _pos = UI.Text("0:00", 12);
         readonly TextBlock _rem = UI.Text("-0:00", 12);
         readonly Slider _seek = UI.Slider();
-        readonly Button _play, _prev, _next, _lyricsBtn, _volBtn, _source, _shuffle, _repeat, _back10, _fwd10, _rate, _fav;
+        readonly Button _play, _prev, _next, _lyricsBtn, _volBtn, _source, _shuffle, _repeat, _back10, _fwd10, _rate, _fav, _vizBtn, _sleep;
+
+        // визуализатор в колонке справа
+        readonly Grid _vizPane = new();
+        readonly NIsland.Controls.Visualizer _viz = new() { Fps = 40 };
+        readonly TextBlock _vizName = UI.Text("", 11, true);
+        /// <summary>Текущая строка песни поверх визуализатора — текст не теряется, когда колонка занята визуализатором.</summary>
+        readonly TextBlock _vizLyric = new()
+        {
+            FontSize = 14, FontWeight = FontWeights.Bold, Foreground = Brushes.White, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10, 0, 10, 0),
+            IsHitTestVisible = false, Tag = "no-translate",
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 10, ShadowDepth = 0, Opacity = 0.95, Color = Colors.Black },
+        };
         readonly Slider _vol = UI.Slider();
         readonly Grid _player;
         readonly ColumnDefinition _mainCol = new(), _lyricsCol = new() { Width = new GridLength(0) };
@@ -64,9 +77,10 @@ namespace NIsland.Pages
         readonly GradientStop _glowStop = new(Colors.Transparent, 1);
         bool _seeking, _volSetting, _linesDirty = true;
 
-        bool LyricsOn => S.LyricsOn && M.HasSession;
+        bool VisualOn => S.MediaVisual && M.HasSession;
+        bool LyricsOn => S.LyricsOn && M.HasSession && !S.MediaVisual;
         bool FocusMode => LyricsOn && S.LyricsFocus;
-        public override double ExtraWidth => LyricsOn && !FocusMode ? LyricsW : 0;
+        public override double ExtraWidth => VisualOn || (LyricsOn && !FocusMode) ? LyricsW : 0;
 
         static Button Small(string glyph, Action click, string tip, double size = 11, double box = 24) => UI.IconBtn(glyph, click, size, box, tip);
 
@@ -109,8 +123,11 @@ namespace NIsland.Pages
                 App.Island.Toast(on ? "" : "", on ? "Добавлено в избранное" : "Убрано из избранного", M.TrackLine);
             }, "В избранное", 12, 26);
 
+            _vizBtn = UI.IconBtn("\uE9D9", ToggleVisual, 13, 30, "Визуализатор под музыку");
+            _sleep = Label("", CycleSleep, "Таймер сна: остановить музыку через 15, 30, 60 минут или после этого трека");
             var extras = UI.Row(
                 _rate.M(0, 0, 2, 0),
+                _sleep,
                 _fav,
                 Small("", () =>
                 {
@@ -119,13 +136,14 @@ namespace NIsland.Pages
                 }, "Скопировать «Исполнитель — Название»", 12, 26),
                 Small("", () => SystemService.Run("https://www.google.com/search?q=" + Uri.EscapeDataString(M.TrackLine)), "Найти трек в интернете", 12, 26),
                 Small("", () => ShowHistory(false), "История и избранное", 12, 26),
+                Small("", () => { if (S.PgEq) App.Island.Expand("eq"); else App.ShowSettings("eq"); }, "Эквалайзер", 12, 26),
                 Small("", () => App.Island.Expand("sound"), "Микшер и устройство вывода", 12, 26));
             extras.VerticalAlignment = VerticalAlignment.Top;
 
             var top = UI.Grid("a,*,a").Add(_art, UI.Col(_title, _artist).At(0, 1).M(14, 0, 4, 0), extras.At(0, 2));
             var prog = UI.Grid("a,*,a").M(0, 8, 0, 0).Add(_pos, _seek.At(0, 1).M(8, 0, 8, 0), _rem.At(0, 2));
             var ctrl = UI.Grid("*,a,*").M(0, 2, 0, 0).Add(
-                UI.Row(_lyricsBtn, _source.M(4, 0, 0, 0)),
+                UI.Row(_lyricsBtn, _vizBtn, _source.M(4, 0, 0, 0)),
                 UI.Row(_shuffle, _back10, _prev, _play.M(4, 0, 4, 0), _next, _fwd10, _repeat).At(0, 1),
                 UI.Row(_volBtn, _vol.M(2, 0, 0, 0)).At(0, 2).HA(HorizontalAlignment.Right));
             _main = UI.Grid(null, "a,a,a").M(6, 0, 4, 0).VA(VerticalAlignment.Center);
@@ -179,10 +197,31 @@ namespace NIsland.Pages
             _picker.Background = UI.Hex("#F0141418");
             _picker.Add(pickHead, new ScrollViewer { Content = _pickList, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 4, 0, 0) }.At(1, 0));
 
+            // ----- визуализатор -----
+            var vizBar = UI.Row(
+                Small("\uE76B", () => StepViz(-1), "Предыдущий стиль", 10, 22),
+                _vizName,
+                Small("\uE76C", () => StepViz(1), "Следующий стиль", 10, 22),
+                Small("\uE790", NextVizPalette, "Палитра", 11, 22),
+                Small("\uE740", () => VisualizerWindow.Open(), "Открыть на весь экран", 11, 22));
+            _vizName.MinWidth = 96;
+            _vizName.TextAlignment = TextAlignment.Center;
+            vizBar.HorizontalAlignment = HorizontalAlignment.Center;
+            vizBar.VerticalAlignment = VerticalAlignment.Bottom;
+            vizBar.Opacity = 0;
+            _viz.Cursor = Cursors.Hand;
+            _viz.ToolTip = I18n.T("Колесо — сменить стиль, двойной клик — на весь экран");
+            _viz.MouseWheel += (_, e) => { StepViz(e.Delta > 0 ? -1 : 1); e.Handled = true; };
+            _viz.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) { VisualizerWindow.Open(); e.Handled = true; } };
+            _vizPane.MouseEnter += (_, __) => vizBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(180)));
+            _vizPane.MouseLeave += (_, __) => vizBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(400)));
+            _vizPane.Add(new Border { CornerRadius = new CornerRadius(12), ClipToBounds = true, Child = _viz }, _vizLyric, vizBar);
+            _vizPane.Visibility = Visibility.Collapsed;
+
             _player = new Grid();
             _player.ColumnDefinitions.Add(_mainCol);
             _player.ColumnDefinitions.Add(_lyricsCol);
-            _player.Add(_main, _lyricsPane.At(0, 1).M(8, 0, 4, 0));
+            _player.Add(_main, _lyricsPane.At(0, 1).M(8, 0, 4, 0), _vizPane.At(0, 1).M(10, 0, 4, 2));
 
             // ----- история -----
             BuildHistory();
@@ -217,7 +256,7 @@ namespace NIsland.Pages
             M.PlaybackChanged += () => { if (Visible) { UpdatePlay(); Karaoke(true); } };
             M.Tick += () => { if (Visible) UpdatePos(); };
             M.LyricsChanged += () => { _linesDirty = true; if (Visible) RefreshLyrics(); };
-            M.LyricIndexChanged += () => { if (Visible) Highlight(true); };
+            M.LyricIndexChanged += () => { if (Visible) { Highlight(true); UpdateVizLyric(); } };
             M.OffsetChanged += () => { if (Visible) { Karaoke(true); RenderLyricsTools(); } };
             AudioService.I.Changed += (_, __, ___) => { if (Visible) UpdateVol(); };
         }
@@ -234,6 +273,7 @@ namespace NIsland.Pages
 
         public override void OnHidden()
         {
+            _vizPane.Show(false);   // визуализатор перестаёт слушать звук, пока чёлка свёрнута
             _artBrush.ImageSource = null; // обложку держит сервис, страница — нет
             _wordTimer.Stop();
             _k1?.BeginAnimation(GradientStop.OffsetProperty, null);
@@ -242,18 +282,84 @@ namespace NIsland.Pages
 
         void ToggleLyrics()
         {
-            S.LyricsOn = !S.LyricsOn;
+            // кнопка «текст» при открытом визуализаторе — переключает колонку на текст
+            if (S.MediaVisual) { S.MediaVisual = false; S.LyricsOn = true; }
+            else S.LyricsOn = !S.LyricsOn;
             RefreshLyrics();
             Relayout();
         }
 
+        void ToggleVisual()
+        {
+            S.MediaVisual = !S.MediaVisual;
+            RefreshLyrics();
+            Relayout();
+        }
+
+        void StepViz(int dir)
+        {
+            S.VizStyle = NIsland.Controls.Visualizer.Next(S.VizStyle, dir);
+            SyncViz();
+        }
+
+        void NextVizPalette()
+        {
+            var all = NIsland.Controls.Visualizer.Palettes;
+            int i = Array.FindIndex(all, p => p.Key == S.VizPalette);
+            S.VizPalette = all[(i + 1) % all.Length].Key;
+            SyncViz();
+            App.Island.Toast("\uE790", "Палитра: " + all[(i + 1) % all.Length].Name, null);
+        }
+
+        void SyncViz()
+        {
+            _viz.VisualStyle = S.VizStyle;
+            _viz.Palette = S.VizPalette;
+            _viz.BaseColor = M.Art != null ? M.ArtColor : (UI.Res("AccentBrush") as SolidColorBrush)?.Color ?? Colors.DodgerBlue;
+            _vizName.Text = I18n.T(NIsland.Controls.Visualizer.NameOf(S.VizStyle));
+        }
+
+        void UpdateVizLyric()
+        {
+            if (!VisualOn) return;
+            var line = M.CurrentLyric ?? "";
+            if (_vizLyric.Text == line) return;
+            _vizLyric.Text = line;
+            _vizLyric.BeginAnimation(OpacityProperty, new DoubleAnimation(0.15, 1, TimeSpan.FromMilliseconds(260)));
+        }
+
+        static readonly int[] SleepSteps = { 0, 15, 30, 60, -1 };
+
+        void CycleSleep()
+        {
+            var t = TimerService.I;
+            int cur = t.SleepAfterTrack ? -1 : t.SleepAt is DateTime d ? (int)Math.Round((d - DateTime.Now).TotalMinutes) : 0;
+            int i = Array.FindIndex(SleepSteps, s => s == cur || (s > 0 && cur > 0 && cur <= s));
+            int next = SleepSteps[(i + 1) % SleepSteps.Length];
+            if (next == -1) t.SetSleepAfterTrack(true);
+            else t.SetSleep(next);
+            App.Island.Toast("\uE708", next == 0 ? "Таймер сна выключен" : next == -1 ? "Музыка остановится после этого трека" : $"Музыка остановится через {next} мин", null);
+            UpdateSleep();
+        }
+
+        void UpdateSleep()
+        {
+            var t = TimerService.I;
+            bool on = t.SleepAfterTrack || t.SleepAt != null;
+            ((TextBlock)_sleep.Content).Text = t.SleepAfterTrack ? "⏾ ♪" : t.SleepAt is DateTime d ? "⏾ " + Math.Max(1, (int)Math.Ceiling((d - DateTime.Now).TotalMinutes)) : "⏾";
+            _sleep.Foreground = on ? UI.Res("AccentBrush") : Brushes.White;
+        }
+
         void ApplyLayout()
         {
-            bool on = LyricsOn, focus = FocusMode;
+            bool on = LyricsOn, focus = FocusMode, viz = VisualOn;
             _mainCol.Width = focus ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
             _main.Show(!focus);
-            _lyricsCol.Width = !on ? new GridLength(0) : focus ? new GridLength(1, GridUnitType.Star) : new GridLength(LyricsW);
+            _lyricsCol.Width = viz ? new GridLength(LyricsW) : !on ? new GridLength(0) : focus ? new GridLength(1, GridUnitType.Star) : new GridLength(LyricsW);
             _lyricsPane.Show(on);
+            _vizPane.Show(viz && Visible);
+            _vizBtn.Foreground = viz ? UI.Res("AccentBrush") : Brushes.White;
+            if (viz) { SyncViz(); UpdateVizLyric(); }
             _focusPlay.Show(focus);
             _focusTitle.Show(focus);
             _focusTitle.Text = M.TrackLine;
@@ -289,6 +395,8 @@ namespace NIsland.Pages
             UpdatePlay();
             UpdatePos();
             UpdateVol();
+            UpdateSleep();
+            if (VisualOn) SyncViz();
             Relayout();
         }
 
@@ -338,7 +446,8 @@ namespace NIsland.Pages
         {
             double off = M.LyricsOffset;
             var src = M.LyricsLoading ? "ищу…" : M.Lyrics == null ? "" : (M.LyricsSynced ? "синхр." : "без синхр.") + (M.LyricsSource != null ? " · " + M.LyricsSource : "");
-            _lyrInfo.Text = src + (Math.Abs(off) > 0.01 ? $" · сдвиг {(off > 0 ? "+" : "")}{off:0.0} с" : "");
+            _lyrInfo.Text = src + (Math.Abs(off) > 0.01 ? $" · сдвиг {(off > 0 ? "+" : "")}{off:0.0} с" : "")
+                            + (!M.HasTrackOffset && Math.Abs(M.AppOffset) > 0.01 ? " (" + I18n.T("для ") + M.AppName + ")" : "");
             _trBtn.Foreground = S.LyricsTranslate ? UI.Res("AccentBrush") : Brushes.White;
         }
 

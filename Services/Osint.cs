@@ -23,7 +23,7 @@ namespace NIsland.Services
     /// поддомены по Certificate Transparency, архив Wayback), IP-адреса, заголовки безопасности сайтов, утечка пароля (k-анонимность —
     /// пароль никуда не уходит), метаданные и GPS в фото, хэш файла для VirusTotal. Только публичные данные, без ключей.
     /// </summary>
-    public static class Osint
+    public static partial class Osint
     {
         static readonly HttpClient Http = Make(true);
         static readonly HttpClient NoRedirect = Make(false);

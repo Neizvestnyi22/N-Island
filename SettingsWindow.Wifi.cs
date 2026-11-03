@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -333,6 +333,7 @@ namespace NIsland
                 return sp;
             })).M(0, 0, 6, 6));
             domButtons.Children.Add(Act("Безопасность сайта", Show("Проверяю заголовки", async d => Table(await Osint.Headers(d)))).M(0, 0, 6, 6));
+            domButtons.Children.Add(Act("Технологии и robots.txt", Show("Смотрю, на чём сделан сайт", async d => Table(await Osint.SiteTech(d)))).M(0, 0, 6, 6));
             page.Children.Add(Group("Домен и сайт",
                 Wide("Домен", "Кто и когда зарегистрировал, DNS и почта, сертификат, поддомены (Certificate Transparency), как сайт выглядел раньше и насколько он защищён.",
                      UI.Col(domBox, domButtons)),
@@ -412,23 +413,114 @@ namespace NIsland
 
             // файл
             var fileRes = new StackPanel();
-            page.Children.Add(Group("Файл: проверка на вирусы",
-                Item("Хэш файла и VirusTotal", "Посчитаю отпечаток SHA-256 и открою отчёт VirusTotal по нему — если файл уже проверяли 70 антивирусов, увидишь результат. Сам файл никуда не загружается.", Safety.Safe,
-                     UI.Pill("Выбрать файл…", async () =>
+            async void RunFile(string path)
+            {
+                fileRes.Children.Clear();
+                fileRes.Children.Add(Loading("Проверяю файл…"));
+                try
+                {
+                    var r = await Task.Run(() => Osint.CheckFile(path));
+                    fileRes.Children.Clear();
+                    bool bad = r.Signals.Any(s => s.Bad);
+                    fileRes.Children.Add(Info(bad ? "Есть признаки опасности — смотри ниже" : "Явных признаков обмана нет", bad ? "#FF9F0A" : "#30D158"));
+                    fileRes.Children.Add(Table(r.Items));
+                    foreach (var (b, t) in r.Signals) fileRes.Children.Add(Info((b ? "⚠ " : "✓ ") + t, b ? "#FF9F0A" : null).M(14, 1, 14, 1));
+                    if (r.Sha256 != null)
+                        fileRes.Children.Add(UI.Row(
+                            UI.Pill("Отчёт VirusTotal", () => SystemService.Run("https://www.virustotal.com/gui/file/" + r.Sha256), true),
+                            UI.Pill("Скопировать хэш", () => { ClipboardService.I.CopyBack(r.Sha256); App.Island?.Toast("", "Скопировано", r.Sha256[..16] + "…"); }).M(8, 0, 0, 0)).M(14, 6, 0, 10));
+                }
+                catch (Exception e) { fileRes.Children.Clear(); fileRes.Children.Add(Info(I18n.T("Не удалось прочитать файл: ") + e.Message, "#FF9F0A")); }
+            }
+            page.Children.Add(Group("Файл: можно ли открывать",
+                Item("Проверка файла", "Настоящий тип по содержимому (не по расширению), двойное расширение «.pdf.exe», цифровая подпись и издатель, " +
+                     "откуда файл скачан, отпечаток для VirusTotal. Файл никуда не отправляется. То же — правым кликом по файлу в Проводнике (включи в «Настройки → Windows»).", Safety.Safe,
+                     UI.Pill("Выбрать файл…", () =>
                      {
                          var dlg = new Microsoft.Win32.OpenFileDialog();
-                         if (dlg.ShowDialog(this) != true) return;
-                         fileRes.Children.Clear();
-                         fileRes.Children.Add(Loading("Считаю хэш…"));
-                         var path = dlg.FileName;
-                         var hash = await Task.Run(() => Osint.Sha256(path));
-                         fileRes.Children.Clear();
-                         fileRes.Children.Add(Table(new[] { ("Файл", System.IO.Path.GetFileName(path)), ("SHA-256", hash) }));
-                         fileRes.Children.Add(UI.Row(
-                             UI.Pill("Открыть отчёт VirusTotal", () => SystemService.Run("https://www.virustotal.com/gui/file/" + hash), true),
-                             UI.Pill("Скопировать хэш", () => { ClipboardService.I.CopyBack(hash); App.Island?.Toast("", "Скопировано", hash[..16] + "…"); }).M(8, 0, 0, 0)).M(14, 0, 0, 10));
+                         if (dlg.ShowDialog(this) == true) RunFile(dlg.FileName);
                      })),
                 fileRes));
+            if (Osint.PendingFile != null) { var pf = Osint.PendingFile; Osint.PendingFile = null; Dispatcher.BeginInvoke(new Action(() => RunFile(pf))); }
+
+            // письмо
+            var hdrBox = new TextBox
+            {
+                AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, Height = 110, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Foreground = Brushes.White, CaretBrush = Brushes.White, FontSize = 11.5, FontFamily = new FontFamily("Consolas"), Template = Ago.PlainBox(),
+                Tag = "Вставь сюда исходный текст письма (Gmail: ⋮ → «Показать оригинал»; Outlook: «Просмотреть исходный код»)",
+            };
+            var hdrRes = new StackPanel();
+            var mailBox = UI.Box("name@example.com", 300);
+            var mailRes = new StackPanel();
+            page.Children.Add(Group("Письмо и почтовый адрес",
+                Wide("Откуда на самом деле пришло письмо", "Разберу заголовки: настоящий отправитель, путь через серверы, IP, проверки SPF/DKIM/DMARC и подмену адреса для ответа.",
+                     UI.Col(hdrBox, Act("Разобрать", () =>
+                     {
+                         hdrRes.Children.Clear();
+                         var (items, sig) = Osint.EmailHeaders(hdrBox.Text);
+                         if (items.Count > 0) hdrRes.Children.Add(Table(items));
+                         foreach (var (b, t) in sig) hdrRes.Children.Add(Info((b ? "⚠ " : "✓ ") + t, b ? "#FF9F0A" : null).M(14, 1, 14, 1));
+                         return Task.FromResult<string>(null);
+                     }, null, true).HA(HorizontalAlignment.Left).M(0, 6, 0, 0))),
+                hdrRes,
+                Wide("Почтовый адрес", "Существует ли домен и принимает ли он почту, не одноразовый ли ящик, защищён ли домен от подделки писем и сколько ему лет.",
+                     UI.Row(mailBox, Act("Проверить", async () =>
+                     {
+                         mailRes.Children.Clear();
+                         mailRes.Children.Add(Loading());
+                         try { var r = await Osint.EmailCheck(mailBox.Text); mailRes.Children.Clear(); mailRes.Children.Add(Table(r)); }
+                         catch (Exception e) { mailRes.Children.Clear(); mailRes.Children.Add(Info(I18n.T("Не получилось: ") + Integrations.Reason(e), "#FF9F0A")); }
+                         return null;
+                     }, null, true).M(8, 0, 0, 0))),
+                mailRes));
+
+            // сеть: порты и MAC
+            var portBox = UI.Box("IP или домен — пусто: мой роутер", 300);
+            var portRes = new StackPanel();
+            var macBox = UI.Box("3C:22:FB:12:34:56", 220);
+            var macRes = Info("");
+            page.Children.Add(Group("Сеть: порты и устройства",
+                Wide("Открытые порты", "Проверю 25 популярных портов одного адреса: удалённый доступ, общие папки, базы данных, камеры. Полезно для своего роутера и сервера — " +
+                     "открытый наружу RDP или SMB легко взломать. Проверяй только свои устройства.",
+                     UI.Row(portBox, Act("Проверить", async () =>
+                     {
+                         if (!string.IsNullOrWhiteSpace(portBox.Text) && !Osint.LooksLikeHost(portBox.Text)) { portRes.Children.Clear(); portRes.Children.Add(Info("Это не похоже на IP или домен", "#FF9F0A")); return null; }
+                         portRes.Children.Clear();
+                         portRes.Children.Add(Loading("Проверяю порты…"));
+                         try { var r = await Osint.Ports(portBox.Text); portRes.Children.Clear(); portRes.Children.Add(Table(r)); }
+                         catch (Exception e) { portRes.Children.Clear(); portRes.Children.Add(Info(I18n.T("Не получилось: ") + Integrations.Reason(e), "#FF9F0A")); }
+                         return null;
+                     }, null, true).M(8, 0, 0, 0))),
+                portRes,
+                Wide("Производитель по MAC-адресу", "Кто сделал устройство из списка «Устройства в сети»: телефон, камера, роутер, умная розетка.",
+                     UI.Row(macBox, Act("Узнать", async () =>
+                     {
+                         try { macRes.Text = await Osint.MacVendor(macBox.Text); macRes.Foreground = Brushes.White; }
+                         catch (Exception e) { macRes.Text = I18n.T("Не получилось: ") + (e is InvalidOperationException ? I18n.T(e.Message) : Integrations.Reason(e)); macRes.Foreground = UI.Hex("#FF9F0A"); }
+                         return null;
+                     }, null, true).M(8, 0, 0, 0))),
+                macRes));
+
+            // текст
+            var txtBox = new TextBox
+            {
+                AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 70, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Foreground = Brushes.White, CaretBrush = Brushes.White, FontSize = 12.5, Template = Ago.PlainBox(), Tag = "Вставь текст, ссылку или логин…",
+            };
+            var txtRes = new StackPanel();
+            page.Children.Add(Group("Текст: невидимые символы и подмена букв",
+                Wide("Проверка текста", "Найду невидимые символы, разворот текста и слова, где латинские буквы подменяют кириллицу («аррlе», «рауpal») — так подделывают ссылки и логины и метят текст.",
+                     UI.Col(txtBox, Act("Проверить", () =>
+                     {
+                         txtRes.Children.Clear();
+                         var r = Osint.HiddenChars(txtBox.Text);
+                         foreach (var f in r.Found) txtRes.Children.Add(Info(f, f.EndsWith("✓") ? "#30D158" : "#FF9F0A").M(14, 1, 14, 1));
+                         if (r.Clean != txtBox.Text)
+                             txtRes.Children.Add(UI.Pill("Скопировать очищенный текст", () => { ClipboardService.I.CopyBack(r.Clean); App.Island?.Toast("", "Очищенный текст скопирован", null); }, true).HA(HorizontalAlignment.Left).M(14, 4, 0, 8));
+                         return Task.FromResult<string>(null);
+                     }, null, true).HA(HorizontalAlignment.Left).M(0, 6, 0, 0))),
+                txtRes));
             return page;
         }
     }

@@ -28,17 +28,36 @@ namespace NIsland
         {
             var groups = new (string Title, string[] Keys)[]
             {
-                ("Уведомления и пересылка", new[] { "telegram", "ntfy", "discord", "webhook" }),
-                ("Данные в острове", new[] { "ha", "todoist", "ics", "github", "rss", "rates", "novaposhta", "uptime", "alerts" }),
+                ("Телефон и уведомления", new[] { "telegram", "ntfy", "pushover", "pushbullet", "gotify", "discord", "slack", "matrix", "webhook" }),
+                ("Украина", new[] { "alerts", "novaposhta", "monobank", "rates" }),
+                ("Почта, работа и задачи", new[] { "mail", "ics", "todoist", "notion", "trello", "linear", "jira", "github", "gitlab", "toggl", "wakatime" }),
+                ("Дом и сайты", new[] { "ha", "hue", "uptime" }),
+                ("Новости, соцсети, игры, рынки", new[] { "rss", "hn", "mastodon", "bluesky", "twitch", "steam", "stocks" }),
                 ("Музыка", new[] { "listenbrainz", "lastfm" }),
             };
             var panel = new StackPanel();
-            panel.Children.Add(Group(null, Row("Страница «Сервисы» в острове", "Данные подключённых сервисов с кнопками: свет, задачи, события, курсы, посылки…", Toggle(nameof(Settings.PgHub)))));
+            int on = Integrations.All.Count(i => i.Enabled);
+            panel.Children.Add(Group(null,
+                Row("Страница «Сервисы» в острове", "Данные подключённых сервисов с кнопками: свет, задачи, события, курсы, посылки…", Toggle(nameof(Settings.PgHub)))));
+            // поиск по сервисам: их больше 30
+            var find = UI.Box(I18n.T("Найти сервис: почта, банк, свет, задачи…"), 360);
+            panel.Children.Add(UI.Row(find, UI.Text($"{Integrations.All.Count} {I18n.T("сервисов")} · {I18n.T("подключено")}: {on}", 12, false, UI.Dim).M(12, 0, 0, 0)).M(4, 0, 0, 10));
+            var cards = new List<(UIElement Card, UIElement Header, Integration It)>();
             foreach (var (title, keys) in groups)
             {
-                panel.Children.Add(UI.Text(title, 12, true, UI.Dim).M(4, 6, 0, 6));
-                foreach (var k in keys) if (Integrations.Get(k) is { } it) panel.Children.Add(HubCard(it));
+                var header = UI.Text(title, 12, true, UI.Dim).M(4, 6, 0, 6);
+                panel.Children.Add(header);
+                foreach (var k in keys)
+                    if (Integrations.Get(k) is { } it) { var c = HubCard(it); panel.Children.Add(c); cards.Add((c, header, it)); }
             }
+            find.TextChanged += (_, __) =>
+            {
+                var q = find.Text.Trim();
+                foreach (var (c, _, it) in cards)
+                    c.Show(q == "" || (it.Name + " " + I18n.T(it.Name) + " " + it.Desc + " " + I18n.T(it.Desc) + " " + it.Key).Contains(q, StringComparison.OrdinalIgnoreCase));
+                foreach (var h in cards.Select(x => x.Header).Distinct())
+                    h.Show(cards.Any(x => x.Header == h && x.Card.Visibility == Visibility.Visible));
+            };
             panel.Children.Add(Note("Ключи и токены хранятся только на этом компьютере в зашифрованном виде (DPAPI) и уходят только в свой сервис. " +
                                     "Пересылка событий работает и в режиме «Не беспокоить» — так уведомление о таймере или звонке дойдёт до телефона.").M(4, 8, 4, 0));
             return panel;

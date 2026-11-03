@@ -24,13 +24,64 @@ namespace NIsland.Services
                 return args[1] switch
                 {
                     "lyrics" => Task.Run(() => Lyrics(args[2], args[3])).GetAwaiter().GetResult(),
-                    "hub" => Task.Run(() => Hub(args[2])).GetAwaiter().GetResult(),
+                    "hub" => Task.Run(() => { args2 = args.Length > 3 ? args[3].Split(',') : null; return Hub(args[2]); }).GetAwaiter().GetResult(),
                     "dedupe" => DedupeTest(args[2]),
                     "net" => Task.Run(() => NetTest(args[2])).GetAwaiter().GetResult(),
+                    "audio" => AudioTest(args[2]),
+                    "osint2" => Task.Run(() => Osint2Test(args[2])).GetAwaiter().GetResult(),
                     _ => 2,
                 };
             }
             catch (Exception e) { File.WriteAllText(args[^1], e.ToString()); return 1; }
+        }
+
+        /// <summary>Какие интеграции проверять (selftest hub out ключ1,ключ2) — по умолчанию все из списка.</summary>
+        static string[] args2;
+
+        /// <summary>Захват звука 4 секунды: кадры, частота, громкость, удары, спектр по полосам.</summary>
+        static int AudioTest(string output)
+        {
+            var sb = new StringBuilder();
+            using (AudioCapture.I.Use())
+            {
+                var bands = new float[AudioCapture.BandCount];
+                double maxLevel = 0;
+                for (int i = 0; i < 40; i++)
+                {
+                    System.Threading.Thread.Sleep(100);
+                    maxLevel = Math.Max(maxLevel, AudioCapture.I.Level);
+                }
+                AudioCapture.I.Read(bands, null, null);
+                sb.AppendLine($"running={AudioCapture.I.Running} rate={AudioCapture.I.SampleRate} frames={AudioCapture.I.Frame} maxLevel={maxLevel:0.00} beats={AudioCapture.I.Beats} bpm={AudioCapture.I.Bpm} error={AudioCapture.I.Error}");
+                sb.AppendLine("bands: " + string.Join(" ", bands.Select(b => ((int)(b * 9)).ToString())));
+            }
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        static async Task<int> Osint2Test(string output)
+        {
+            var sb = new StringBuilder();
+            async Task T(string name, Func<Task<string>> f)
+            {
+                try { sb.AppendLine($"== {name}\n{await f()}"); }
+                catch (Exception e) { sb.AppendLine($"== {name} FAIL {e.Message}"); }
+            }
+            string Tab(IEnumerable<(string K, string V)> r) => string.Join("\n", r.Select(x => $"  {x.K}: {x.V}"));
+            await T("file exe", () => Task.FromResult(Tab(Osint.CheckFile(Environment.ProcessPath).Items) + "\n" + string.Join("\n", Osint.CheckFile(Environment.ProcessPath).Signals)));
+            await T("file notepad", () => Task.FromResult(Tab(Osint.CheckFile(@"C:\Windows\System32\notepad.exe").Items)));
+            await T("email", async () => Tab(await Osint.EmailCheck("test@gmail.com")));
+            await T("email disposable", async () => Tab(await Osint.EmailCheck("x@mailinator.com")));
+            await T("tech", async () => Tab(await Osint.SiteTech("wordpress.org")));
+            await T("ports", async () => Tab(await Osint.Ports("scanme.nmap.org")));
+            await T("mac", async () => await Osint.MacVendor("3C:22:FB:00:00:00"));
+            await T("hidden", () => Task.FromResult(string.Join("\n", Osint.HiddenChars("pаypal\u200B.com тест").Found)));
+            var hdr = "Received: from mail-sor-f41.google.com (mail-sor-f41.google.com [209.85.220.41])\n by mx.example.com with SMTPS id x; Tue, 03 Nov 2026 10:00:05 +0000\n" +
+                      "Received: from [10.0.0.5] by smtp.gmail.com; Tue, 03 Nov 2026 10:00:01 +0000\nAuthentication-Results: mx.example.com; spf=pass smtp.mailfrom=x@gmail.com; dkim=pass; dmarc=fail\n" +
+                      "From: =?UTF-8?B?0J/RgNC40LLQtdGC?= <a@gmail.com>\nReply-To: <b@evil.xyz>\nSubject: Hello\nDate: Tue, 03 Nov 2026 10:00:00 +0000\n\nbody";
+            await T("headers", () => { var (i, s) = Osint.EmailHeaders(hdr); return Task.FromResult(Tab(i) + "\n" + string.Join("\n", s)); });
+            File.WriteAllText(output, sb.ToString());
+            return 0;
         }
 
         /// <summary>Интеграции на живых сервисах: открытые — должны работать, с ключами — понятная ошибка при неверном токене.</summary>
@@ -54,8 +105,15 @@ namespace NIsland.Services
             Cfg("todoist", ("token", "wrong"));
             Cfg("listenbrainz", ("token", "wrong"));
             Cfg("ha", ("url", "http://127.0.0.1:59999"), ("token", "x"), ("entities", "light.kitchen"));
-            Cfg("alerts", ("token", "wrong"), ("oblast", "Миколаївська область"));
+            Cfg("alerts", ("oblast", "Миколаївська область"), ("places", "м. Київ\nНікопольський район\nНеіснуюче місце"));
             Cfg("discord", ("url", "https://discord.com/api/webhooks/0/wrong"));
+            Cfg("stocks", ("symbols", "AAPL, ^GSPC, EURUSD=X"));
+            Cfg("hn", ("score", "300"));
+            Cfg("monobank", ("token", "wrong"));
+            Cfg("mail", ("host", "imap.gmail.com"), ("user", "nisland.selftest@gmail.com"), ("password", "wrong"));
+            Cfg("toggl", ("token", "wrong"));
+            Cfg("linear", ("key", "wrong"));
+            Cfg("bluesky", ("handle", "nisland-selftest.bsky.social"), ("password", "wrong-wrong"));
             {
                 var n = Integrations.Get("ntfy");
                 var sw0 = Stopwatch.StartNew();
@@ -65,7 +123,8 @@ namespace NIsland.Services
                 try { await n.Poll(); sb.AppendLine($"ntfy poll {sw0.ElapsedMilliseconds} ms"); }
                 catch (Exception e) { sb.AppendLine($"ntfy poll FAIL {sw0.ElapsedMilliseconds} ms {e.GetType().Name}: {e.Message} {e.InnerException?.Message}"); }
             }
-            foreach (var key in new[] { "ntfy", "rates", "novaposhta", "uptime", "rss", "ics", "telegram", "github", "todoist", "listenbrainz", "ha", "alerts", "discord" })
+            foreach (var key in args2 ?? new[] { "ntfy", "rates", "novaposhta", "uptime", "rss", "ics", "telegram", "github", "todoist", "listenbrainz", "ha", "alerts", "discord",
+                                                 "stocks", "hn", "monobank", "mail", "toggl", "linear", "bluesky" })
             {
                 var it = Integrations.Get(key);
                 var sw = Stopwatch.StartNew();

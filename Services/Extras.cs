@@ -184,6 +184,17 @@ namespace NIsland.Services
         public void SetSleep(int minutes)
         {
             SleepAt = minutes <= 0 ? null : DateTime.Now.AddMinutes(minutes);
+            SleepAfterTrack = false;
+            Kick();
+        }
+
+        /// <summary>Пауза, когда закончится текущий трек (MediaService ставит паузу при смене трека).</summary>
+        public bool SleepAfterTrack { get; private set; }
+
+        public void SetSleepAfterTrack(bool on)
+        {
+            SleepAfterTrack = on;
+            if (on) SleepAt = null;
             Kick();
         }
 
@@ -215,6 +226,16 @@ namespace NIsland.Services
         public int Code;
         public List<(DateTime Day, double Max, double Min, int Code)> Days = new();
         public DateTime At;
+        // 1.7: подробности
+        public double Gusts, Pressure, Precip;
+        public bool IsDay = true;
+        public List<int> DayRain = new();                 // вероятность осадков по дням, %
+        public List<double> DayUv = new();
+        public DateTime? Sunrise, Sunset;
+        public List<(DateTime T, double Temp, int Rain, int Code)> Hours = new();
+        public List<(DateTime T, double Mm)> Minutes = new();   // осадки по 15 минут на 2 часа вперёд
+        public int? Aqi;
+        public double? Pm25;
     }
 
     public static class WeatherService
@@ -293,8 +314,13 @@ namespace NIsland.Services
                 if (geo == null) { LastError = $"Город «{key}» не найден. Напиши его по-другому, например по-английски, в «Настройки → Погода и часы»."; return _cache; }
                 var (lat, lon, name) = geo.Value;
                 var url = string.Format(CultureInfo.InvariantCulture,
-                    "https://api.open-meteo.com/v1/forecast?latitude={0}&longitude={1}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=5&wind_speed_unit=ms",
+                    "https://api.open-meteo.com/v1/forecast?latitude={0}&longitude={1}" +
+                    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code,surface_pressure,precipitation,is_day" +
+                    "&hourly=temperature_2m,precipitation_probability,weather_code&forecast_hours=25" +
+                    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max" +
+                    "&minutely_15=precipitation&forecast_minutely_15=9&timezone=auto&forecast_days=7&wind_speed_unit=ms",
                     lat, lon);
+                var aqTask = AirQuality(lat, lon);
                 using var d = JsonDocument.Parse(await Http.GetStringAsync(url));
                 var cur = d.RootElement.GetProperty("current");
                 var w = new WeatherNow
@@ -317,7 +343,28 @@ namespace NIsland.Services
                         daily.GetProperty("temperature_2m_max")[i].GetDouble(),
                         daily.GetProperty("temperature_2m_min")[i].GetDouble(),
                         daily.GetProperty("weather_code")[i].GetInt32()));
+                    w.DayRain.Add(Int(daily, "precipitation_probability_max", i));
+                    w.DayUv.Add(Num(daily, "uv_index_max", i));
                 }
+                w.Gusts = Num(cur, "wind_gusts_10m");
+                w.Pressure = Num(cur, "surface_pressure") * 0.750062;   // гПа → мм рт. ст.
+                w.Precip = Num(cur, "precipitation");
+                w.IsDay = Num(cur, "is_day") > 0.5 || !cur.TryGetProperty("is_day", out _);
+                if (daily.TryGetProperty("sunrise", out var sr) && DateTime.TryParse(sr[0].GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var r0)) w.Sunrise = r0;
+                if (daily.TryGetProperty("sunset", out var ss) && DateTime.TryParse(ss[0].GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var s0)) w.Sunset = s0;
+                if (d.RootElement.TryGetProperty("hourly", out var hourly))
+                {
+                    var ht = hourly.GetProperty("time");
+                    for (int i = 0; i < ht.GetArrayLength(); i++)
+                        w.Hours.Add((DateTime.Parse(ht[i].GetString(), CultureInfo.InvariantCulture), Num(hourly, "temperature_2m", i), Int(hourly, "precipitation_probability", i), Int(hourly, "weather_code", i)));
+                }
+                if (d.RootElement.TryGetProperty("minutely_15", out var mins))
+                {
+                    var mt = mins.GetProperty("time");
+                    for (int i = 0; i < mt.GetArrayLength(); i++)
+                        w.Minutes.Add((DateTime.Parse(mt[i].GetString(), CultureInfo.InvariantCulture), Num(mins, "precipitation", i)));
+                }
+                (w.Aqi, w.Pm25) = await aqTask;
                 _cache = w;
                 _cacheKey = key;
                 LastError = null;
@@ -331,6 +378,125 @@ namespace NIsland.Services
                 return _cache;
             }
         }
+
+        static double Num(JsonElement o, string k, int i = -1)
+        {
+            if (!o.TryGetProperty(k, out var v)) return 0;
+            if (i >= 0) { if (v.ValueKind != JsonValueKind.Array || i >= v.GetArrayLength()) return 0; v = v[i]; }
+            return v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+        }
+
+        static int Int(JsonElement o, string k, int i) => (int)Math.Round(Num(o, k, i));
+
+        static async Task<(int?, double?)> AirQuality(double lat, double lon)
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(await Http.GetStringAsync(string.Format(CultureInfo.InvariantCulture,
+                    "https://air-quality-api.open-meteo.com/v1/air-quality?latitude={0}&longitude={1}&current=european_aqi,pm2_5", lat, lon)));
+                var c = d.RootElement.GetProperty("current");
+                return (c.TryGetProperty("european_aqi", out var a) && a.ValueKind == JsonValueKind.Number ? (int)a.GetDouble() : null,
+                        c.TryGetProperty("pm2_5", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDouble() : null);
+            }
+            catch { return (null, null); }
+        }
+
+        /// <summary>Качество воздуха по европейскому индексу: словами и цветом.</summary>
+        public static (string Text, string Color) AqiText(int aqi) => aqi switch
+        {
+            <= 20 => ("отличный", "#30D158"), <= 40 => ("хороший", "#A4D65E"), <= 60 => ("средний", "#FFD60A"),
+            <= 80 => ("плохой", "#FF9F0A"), <= 100 => ("очень плохой", "#FF453A"), _ => ("опасный", "#BF5AF2"),
+        };
+
+        /// <summary>
+        /// Осадки в ближайшие 2 часа по 15-минутному прогнозу: «Дождь начнётся около 14:30» / «Дождь закончится около 15:15».
+        /// null — сухо.
+        /// </summary>
+        public static string Nowcast(WeatherNow w)
+        {
+            if (w?.Minutes == null || w.Minutes.Count == 0) return null;
+            string what = w.Temp <= 0 ? "Снег" : "Дождь";
+            var now = DateTime.Now;
+            var next = w.Minutes.Where(m => m.T.AddMinutes(15) > now).ToList();
+            if (next.Count == 0) return null;
+            bool wetNow = next[0].Mm >= 0.05 || w.Precip >= 0.1;
+            if (wetNow)
+            {
+                var dry = next.FirstOrDefault(m => m.Mm < 0.05);
+                return dry.T == default ? $"{what} ещё минимум 2 часа" : $"{what} закончится около {dry.T:HH:mm}";
+            }
+            var start = next.FirstOrDefault(m => m.Mm >= 0.1);
+            if (start.T != default) return $"{what} начнётся около {(start.T < now ? now : start.T):HH:mm}";
+            var soon = w.Hours.Where(h => h.T > now && h.T < now.AddHours(4) && h.Rain >= 60).Select(h => (DateTime?)h.T).FirstOrDefault();
+            return soon is DateTime s ? $"Вероятность осадков {w.Hours.First(h => h.T == s).Rain}% к {s:HH:mm}" : null;
+        }
+
+        /// <summary>Короткий совет: как одеться и что взять с собой.</summary>
+        public static List<string> Advice(WeatherNow w)
+        {
+            var list = new List<string>();
+            if (w == null) return list;
+            int todayRain = w.DayRain.Count > 0 ? w.DayRain[0] : 0;
+            if (Nowcast(w) is { } nc && !nc.StartsWith("Вероятность")) list.Add("☔ " + nc + " — возьми зонт");
+            else if (todayRain >= 50) list.Add($"☔ Днём осадки до {todayRain}% — зонт пригодится");
+            if (w.Feels <= -10) list.Add("🧣 Очень холодно — шапка, перчатки, тёплая куртка");
+            else if (w.Feels <= 3) list.Add("🧥 Холодно — тёплая куртка");
+            else if (w.Feels <= 12) list.Add("🧥 Прохладно — куртка или худи");
+            else if (w.Feels >= 30) list.Add("🥵 Жарко — вода и лёгкая одежда");
+            if (w.Gusts >= 14) list.Add($"💨 Сильный ветер, порывы до {Math.Round(w.Gusts)} м/с");
+            double uv = w.DayUv.Count > 0 ? w.DayUv[0] : 0;
+            if (uv >= 6) list.Add($"🧴 UV {uv:0} — нужен крем от солнца и очки");
+            if (w.Aqi is int a && a > 60) list.Add($"😷 Воздух {AqiText(a).Text} — меньше гуляй, проветривай реже");
+            if (Math.Abs(w.Pressure - 760) >= 12 && w.Pressure > 0) list.Add($"🌡 Давление {(w.Pressure > 760 ? "повышенное" : "пониженное")}: {Math.Round(w.Pressure)} мм рт. ст.");
+            return list;
+        }
+
+        // ------------------------------------------------------------------
+        //  Предупреждения: скоро дождь, утренняя сводка
+        // ------------------------------------------------------------------
+
+        static System.Windows.Threading.DispatcherTimer _watch;
+        static string _rainSaid;
+
+        public static void Start()
+        {
+            _watch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+            int tick = 0;
+            _watch.Tick += async (_, __) =>
+            {
+                var s = Store.Settings;
+                if (!s.WeatherRainAlert && !s.WeatherMorning) return;
+                tick++;
+                if (_cache == null || (DateTime.Now - _cache.At).TotalMinutes >= 15) { if (tick % 5 != 1 && _cache != null) return; await Get(true); }
+                var w = _cache;
+                if (w == null) return;
+                if (s.WeatherRainAlert && Nowcast(w) is { } nc && nc.Contains("начнётся"))
+                {
+                    var key = DateTime.Today.ToString("yyyyMMdd") + nc[..Math.Min(nc.Length, 12)];
+                    // раз в 3 часа, не чаще: одна туча — одно предупреждение
+                    if (_rainSaid == null || !_rainSaid.StartsWith(DateTime.Today.ToString("yyyyMMdd")) || (DateTime.Now - _rainAt).TotalHours > 3)
+                    {
+                        _rainSaid = key; _rainAt = DateTime.Now;
+                        App.Island?.ShowActivity(new Activity { Kind = "event", Glyph = "☔", GlyphFont = "Segoe UI Emoji", Title = nc, Sub = w.City + " · возьми зонт", Seconds = 8, Wide = true, Page = "weather" });
+                        Integrations.Publish("reminder", nc, w.City);
+                    }
+                }
+                if (s.WeatherMorning && DateTime.Now.Hour is >= 7 and < 12 && s.WeatherMorningDay != DateTime.Today.ToString("yyyyMMdd") && w.Days.Count > 0)
+                {
+                    s.WeatherMorningDay = DateTime.Today.ToString("yyyyMMdd");
+                    var d = w.Days[0];
+                    var adv = Advice(w);
+                    App.Island?.ShowActivity(new Activity
+                    {
+                        Kind = "event", Glyph = Describe(d.Code).Icon, GlyphFont = "Segoe UI Emoji", Title = $"Сегодня {Math.Round(d.Max)}° / {Math.Round(d.Min)}° · {Describe(d.Code).Text}",
+                        Sub = adv.Count > 0 ? adv[0] : w.City, Seconds = 9, Wide = true, Page = "weather",
+                    });
+                }
+            };
+            _watch.Start();
+        }
+
+        static DateTime _rainAt;
 
         /// <summary>Значок (Segoe UI Emoji) и описание по коду WMO.</summary>
         public static (string Icon, string Text) Describe(int code) => code switch

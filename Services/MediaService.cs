@@ -106,16 +106,30 @@ namespace NIsland.Services
         static Dictionary<string, double> _offsets => Store.Data.LyricOffsets;
         string TrackKey => Title + "|" + Artist;
         public string TrackKeyForUi => AppId + "|" + TrackKey;
-        /// <summary>Сдвиг текста относительно музыки, с: общий из настроек + подстройка для этого трека.</summary>
-        public double LyricsOffset => Store.Settings.LyricsOffsetMs / 1000.0 + TrackOffset;
+        /// <summary>Сдвиг текста относительно музыки, с: общий из настроек + подстройка для этого трека (или выученная для приложения).</summary>
+        public double LyricsOffset => Store.Settings.LyricsOffsetMs / 1000.0 + (HasTrackOffset ? TrackOffset : AppOffset);
         public double TrackOffset => _offsets.TryGetValue(TrackKey, out var v) ? v : 0;
+        public bool HasTrackOffset => _offsets.ContainsKey(TrackKey);
+        /// <summary>
+        /// Выученный сдвиг для приложения: если в Chrome текст всегда спешит на 0,5 с — после пары подстроек
+        /// новые песни из Chrome сразу идут с поправкой.
+        /// </summary>
+        public double AppOffset => Store.Settings.LyricsAppOffset && !string.IsNullOrEmpty(AppName) && Store.Data.AppLyricOffsets.TryGetValue(AppName, out var v) ? v : 0;
+        public void ResetAppOffset() { Store.Data.AppLyricOffsets.Remove(AppName ?? ""); Store.SaveData(); UpdateLyricIndex(true); }
         /// <summary>Строка появляется чуть раньше, чем её начнут петь (глаз успевает прочитать).</summary>
         static TimeSpan Lead => TimeSpan.FromMilliseconds(Math.Clamp(Store.Settings.LyricsLeadMs, 0, 1000));
 
         public void AdjustOffset(double seconds)
         {
-            _offsets[TrackKey] = Math.Round(TrackOffset + seconds, 2);
+            double now = Math.Round((HasTrackOffset ? TrackOffset : AppOffset) + seconds, 2);
+            _offsets[TrackKey] = now;
             if (_offsets.Count > 500) _offsets.Remove(_offsets.Keys.First());   // помним последние 500 песен
+            if (Store.Settings.LyricsAppOffset && !string.IsNullOrEmpty(AppName) && LyricsSynced)
+            {
+                // плавное среднее: одна странная песня не ломает поправку для всего приложения
+                var app = Store.Data.AppLyricOffsets;
+                app[AppName] = Math.Round(app.TryGetValue(AppName, out var old) ? old * 0.6 + now * 0.4 : now * 0.5, 2);
+            }
             Store.SaveData();
             UpdateLyricIndex(true);
         }
@@ -170,6 +184,7 @@ namespace NIsland.Services
             _onTimeline = (s, e) => D.BeginInvoke(new Action(() => { if (Same(s)) LoadTimeline(); }));
             _tick.Tick += (_, __) => OnTick();
             _tick.Start();
+            _lineT.Tick += (_, __) => { _lineT.Stop(); UpdateLyricIndex(); };
             _confirm.Tick += (_, __) => { _confirm.Stop(); LoadPlayback(); LoadTimeline(); };
             // после сна Windows иногда «теряет» подписку на медиасессии — переподключаемся
             SystemEvents.PowerModeChanged += (_, e) =>
@@ -324,9 +339,18 @@ namespace NIsland.Services
             {
                 // новый трек: пока приложение не прислало свежее время, считаем от нуля и длительность не знаем
                 _trackAt = DateTimeOffset.Now;
+                _trackAtClock = AudioService.Clock;
                 _timelineFresh = false;
                 _estDuration = 0;
                 LoadTimeline(trackChange: true);
+                _ = AlignByAudio(TrackKey);
+                // таймер сна «после этого трека»: начался следующий — ставим паузу
+                if (TimerService.I.SleepAfterTrack)
+                {
+                    TimerService.I.SetSleepAfterTrack(false);
+                    Pause();
+                    App.Island?.Toast("", "Таймер сна", "Трек закончился — музыка на паузе");
+                }
             }
 
             BitmapSource art = null;
@@ -533,6 +557,46 @@ namespace NIsland.Services
                 LyricIndexChanged?.Invoke();
             }
             else if (resync) OffsetChanged?.Invoke();
+            ScheduleLine();
+        }
+
+        /// <summary>
+        /// Точный момент следующей строки: таймер ставится ровно на её начало, а не ждёт плановой проверки раз в 0,2 с —
+        /// строка загорается вовремя, без запаздывания до 200 мс.
+        /// </summary>
+        readonly DispatcherTimer _lineT = new(DispatcherPriority.Render);
+
+        void ScheduleLine()
+        {
+            _lineT.Stop();
+            var lines = Lyrics;
+            if (lines == null || !LyricsSynced || !IsPlaying) return;
+            int next = LyricIndex + 1;
+            if (next >= lines.Count) return;
+            double wait = (lines[next].Time - (LyricsPosition + Lead)).TotalSeconds / EffRate;
+            if (wait < 0.005 || wait > 1.5) return;   // далёкие строки поймает обычная проверка
+            _lineT.Interval = TimeSpan.FromSeconds(wait + 0.004);
+            _lineT.Start();
+        }
+
+        double _trackAtClock;
+
+        /// <summary>
+        /// Приложение не сообщает время (Firefox, часть плееров): ловим момент, когда после тишины пошёл звук, —
+        /// это и есть начало трека. Иначе отсчёт шёл от прихода названия, а оно у браузеров опаздывает на 0,5–2 с.
+        /// </summary>
+        async Task AlignByAudio(string key)
+        {
+            if (!Store.Settings.LyricsAutoAlign) return;
+            await Task.Delay(1500);
+            if (key != TrackKey || !TimeEstimated || !IsPlaying) return;
+            double st = AudioService.I.SoundStartedAt;
+            if (st < 0 || st < _trackAtClock - 4 || st > _trackAtClock + 1.4) return;
+            double pos = (AudioService.Clock - st) * EffRate;
+            if (Math.Abs(pos - Position.TotalSeconds) < 0.15) return;
+            SetPos(pos);
+            Tick?.Invoke();
+            UpdateLyricIndex(true);
         }
 
         /// <summary>Поставить выбранный вручную текст (и запомнить его для трека).</summary>

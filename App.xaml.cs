@@ -80,6 +80,9 @@ namespace NIsland
             Safe("vpn", Vpn.Watch);
             Safe("dedupe", Dedupe.Start);
             Safe("hub", Integrations.Start);
+            Safe("eq", Equalizer.Start);
+            Safe("windows", WinShell.Start);
+            Safe("weather", WeatherService.Start);
 
             Island = new IslandWindow();
             Island.Show();
@@ -88,6 +91,15 @@ namespace NIsland
             var vpnScan = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
             vpnScan.Tick += async (_, __) => { vpnScan.Stop(); try { await Vpn.Detect(); } catch (Exception ex) { Log.Info("vpn detect: " + ex.Message); } };
             vpnScan.Start();
+
+            // запуск из меню Проводника, по ссылке nisland:// или из трея другого окна — те же команды, что и у второй копии
+            if (Array.Exists(e.Args, a => a is "--check-file" or "--strip-photo" or "--url" or "--visualizer"))
+            {
+                try { System.IO.File.WriteAllLines(SignalFile, e.Args); } catch { }
+                var st = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
+                st.Tick += (_, __) => { st.Stop(); OnSignal(); };
+                st.Start();
+            }
 
             int open = Array.IndexOf(e.Args, "--open");
             int ai = Array.IndexOf(e.Args, "--ai");
@@ -136,6 +148,10 @@ namespace NIsland
             else if (Arg("--open") is string page) Island?.Expand(page == "" ? null : page, true);
             else if (Arg("--ai") is string q && q != "") { NIsland.Pages.AiPage.PendingPrompt = q; Island?.Expand("ai", true); }
             else if (Arg("--spotlight") is string sq) SpotlightWindow.Toggle(sq);
+            else if (Arg("--visualizer") != null) VisualizerWindow.Open();
+            else if (Arg("--check-file") is string cf && cf != "") { Osint.PendingFile = cf; ShowCenter("osint"); }
+            else if (Arg("--strip-photo") is string sp && sp != "") WinShell.StripPhoto(sp);
+            else if (Arg("--url") is string url && url != "") WinShell.HandleUrl(url);
             else ShowSettings(Arg("--settings") is string s && s != "" ? s : null);
         }
 
@@ -190,6 +206,7 @@ namespace NIsland
             };
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("Быстрый поиск (Ctrl+Alt+Space)", null, (_, __) => SpotlightWindow.Toggle());
+            menu.Items.Add("Визуализатор музыки", null, (_, __) => VisualizerWindow.Open());
             menu.Items.Add("Центр управления ноутбуком", null, (_, __) => ShowCenter());
             menu.Items.Add("Настройки", null, (_, __) => ShowSettings());
             menu.Items.Add(new WinForms.ToolStripSeparator());

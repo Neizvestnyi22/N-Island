@@ -105,6 +105,15 @@ namespace NIsland.Services
             void Note<T>(Res<T> r) { if (!r.Ok) failed = true; }
             bool Done() => found.Any(f => f.R.Synced && f.Score >= 85);
 
+            // запасные источники спрашиваем сразу, параллельно с LRCLIB: если LRCLIB не знает песню или тормозит,
+            // ответ NetEase/Kugou уже готов — текст появляется на 1–3 секунды раньше
+            Task<Res<List<(LyricsResult, double)>>> ne = null, kg = null;
+            if (Store.Settings.LyricsFallback)
+            {
+                ne = Try(() => NetEase(q, dur));
+                kg = Try(() => Kugou(q, dur));
+            }
+
             // 1) LRCLIB: точный запрос (название + исполнитель + альбом + длительность) и поиск — параллельно
             var main = q.Variants[0];
             var exact = Try(() => LrcLibGet(main.Title, main.Artist, q.Album, dur));
@@ -126,10 +135,8 @@ namespace NIsland.Services
             }
 
             // 3) запасные синхронные источники
-            if (!Done() && Store.Settings.LyricsFallback)
+            if (!Done() && ne != null)
             {
-                var ne = Try(() => NetEase(q, dur));
-                var kg = Try(() => Kugou(q, dur));
                 await Task.WhenAll(ne, kg);
                 Note(ne.Result); Note(kg.Result);
                 if (ne.Result.Ok) Take(ne.Result.Value, ref reached);

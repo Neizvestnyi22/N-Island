@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using NIsland.Core;
@@ -10,8 +10,14 @@ namespace NIsland.Services
     {
         public static AudioService I { get; } = new();
 
-        [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-        class MMDeviceEnumeratorCo { }
+        static readonly Type EnumeratorType = Type.GetTypeFromCLSID(new Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"));
+
+        /// <summary>
+        /// Перечислитель устройств звука. Создаём через общий тип COM, а не через свой класс-обёртку: Windows отдаёт один и тот же объект
+        /// в одном потоке, и если две службы объявят по своему классу, вторая получит чужую обёртку и упадёт на приведении типа.
+        /// Приведение к интерфейсу работает всегда.
+        /// </summary>
+        internal static object NewEnumerator() => Activator.CreateInstance(EnumeratorType);
 
         [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         interface IMMDeviceEnumerator
@@ -46,6 +52,8 @@ namespace NIsland.Services
 
         string _outId;
         public string OutputName { get; private set; }
+        /// <summary>Идентификатор устройства вывода по умолчанию ({0.0.0.00000000}.{guid}).</summary>
+        public string OutputId => _outId;
         /// <summary>Сменилось устройство вывода звука (наушники, колонки, Bluetooth).</summary>
         public event Action<string> OutputChanged;
 
@@ -145,7 +153,7 @@ namespace NIsland.Services
             IMMDeviceEnumerator en = null; IMMDevice dev = null; IAudioSessionManager2 mgr = null; IAudioSessionEnumerator list = null;
             try
             {
-                en = (IMMDeviceEnumerator)new MMDeviceEnumeratorCo();
+                en = (IMMDeviceEnumerator)AudioService.NewEnumerator();
                 if (en.GetDefaultAudioEndpoint(0, 1, out dev) != 0 || dev == null) return;
                 var iid = typeof(IAudioSessionManager2).GUID;
                 if (dev.Activate(ref iid, 23, IntPtr.Zero, out var o) != 0) return;
@@ -220,7 +228,7 @@ namespace NIsland.Services
             IMMDeviceEnumerator en = null; IMMDeviceCollection col = null;
             try
             {
-                en = (IMMDeviceEnumerator)new MMDeviceEnumeratorCo();
+                en = (IMMDeviceEnumerator)AudioService.NewEnumerator();
                 string def = null;
                 if (en.GetDefaultAudioEndpoint(0, 1, out var d) == 0 && d != null) { d.GetId(out def); Marshal.ReleaseComObject(d); }
                 if (en.EnumAudioEndpoints(0, 1, out var ptr) != 0 || ptr == IntPtr.Zero) return res;
@@ -269,7 +277,7 @@ namespace NIsland.Services
             IMMDeviceCollection col = null;
             try
             {
-                en = (IMMDeviceEnumerator)new MMDeviceEnumeratorCo();
+                en = (IMMDeviceEnumerator)AudioService.NewEnumerator();
                 if (en.EnumAudioEndpoints(1 /*capture*/, 1 /*active*/, out var colPtr) != 0 || colPtr == IntPtr.Zero) return pids;
                 col = (IMMDeviceCollection)Marshal.GetObjectForIUnknown(colPtr);
                 Marshal.Release(colPtr);
@@ -334,8 +342,25 @@ namespace NIsland.Services
             int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
         }
 
+        [ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IAudioMeterInformation
+        {
+            int GetPeakValue(out float peak);
+        }
+
         IAudioEndpointVolume _vol;
+        IAudioMeterInformation _meter;
         readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(150) };
+        double _silentSince = -1;
+
+        /// <summary>Монотонные часы в секундах (общие для всех служб).</summary>
+        public static double Clock => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
+        /// <summary>Пиковый уровень того, что сейчас звучит (0…1).</summary>
+        public float Peak { get; private set; }
+        /// <summary>Когда (по <see cref="Clock"/>) звук появился после тишины от 0,6 с — так ловим начало трека у приложений, которые не сообщают время.</summary>
+        public double SoundStartedAt { get; private set; } = -1;
+        /// <summary>Сейчас тишина (дольше 0,6 с).</summary>
+        public bool Silent => _silentSince >= 0 && Clock - _silentSince >= 0.6;
         int _n;
         bool _init;
         DateTime _selfChange;
@@ -358,11 +383,14 @@ namespace NIsland.Services
             try
             {
                 if (_vol != null) { Marshal.ReleaseComObject(_vol); _vol = null; }
-                var en = (IMMDeviceEnumerator)new MMDeviceEnumeratorCo();
+                if (_meter != null) { Marshal.ReleaseComObject(_meter); _meter = null; }
+                var en = (IMMDeviceEnumerator)AudioService.NewEnumerator();
                 if (en.GetDefaultAudioEndpoint(0 /*render*/, 1 /*multimedia*/, out var dev) != 0 || dev == null) return;
                 var iid = typeof(IAudioEndpointVolume).GUID;
                 dev.Activate(ref iid, 23, IntPtr.Zero, out var o);
                 _vol = (IAudioEndpointVolume)o;
+                var miid = typeof(IAudioMeterInformation).GUID;
+                if (dev.Activate(ref miid, 23, IntPtr.Zero, out var mo) == 0) _meter = mo as IAudioMeterInformation;
                 if (dev.GetId(out var id) == 0 && id != _outId)
                 {
                     bool first = _outId == null;
@@ -379,6 +407,23 @@ namespace NIsland.Services
         void Poll()
         {
             if (++_n % 20 == 0) Acquire(); // смена устройства вывода
+            if (_meter != null)
+            {
+                try
+                {
+                    _meter.GetPeakValue(out var pk);
+                    Peak = pk;
+                    double t = Clock;
+                    if (pk < 0.003) { if (_silentSince < 0) _silentSince = t; }
+                    else
+                    {
+                        // звук после паузы: начало трека где-то между прошлым опросом и этим — берём середину
+                        if (_silentSince >= 0 && t - _silentSince >= 0.6) SoundStartedAt = t - 0.075;
+                        _silentSince = -1;
+                    }
+                }
+                catch { _meter = null; }
+            }
             if (_vol == null) return;
             try
             {
@@ -417,7 +462,7 @@ namespace NIsland.Services
         {
             try
             {
-                var en = (IMMDeviceEnumerator)new MMDeviceEnumeratorCo();
+                var en = (IMMDeviceEnumerator)AudioService.NewEnumerator();
                 if (en.GetDefaultAudioEndpoint(1 /*capture*/, 2 /*communications*/, out var dev) != 0 || dev == null) return null;
                 var iid = typeof(IAudioEndpointVolume).GUID;
                 dev.Activate(ref iid, 23, IntPtr.Zero, out var o);
