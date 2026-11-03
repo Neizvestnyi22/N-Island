@@ -384,7 +384,7 @@ namespace NIsland.Pages
             if (w == null && WeatherService.Cached == null)
             {
                 _desc.Text = "Не удалось загрузить погоду";
-                _meta.Text = $"Город: {WeatherService.City}. Проверь интернет или название города в настройках.";
+                _meta.Text = WeatherService.LastError ?? $"Город: {WeatherService.City}. Проверь интернет или название города в настройках.";
                 _meta.TextWrapping = TextWrapping.Wrap;
             }
             if (Visible) Render();

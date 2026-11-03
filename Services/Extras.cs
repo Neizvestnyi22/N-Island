@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -222,7 +222,6 @@ namespace NIsland.Services
         static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
         static WeatherNow _cache;
         static string _cacheKey;
-        static bool _loading;
 
         public static WeatherNow Cached => _cache;
         public static event Action Updated;
@@ -241,20 +240,58 @@ namespace NIsland.Services
 
         public static string City => string.IsNullOrWhiteSpace(Store.Settings.WeatherCity) ? DefaultCity() : Store.Settings.WeatherCity.Trim();
 
-        public static async Task<WeatherNow> Get(bool force = false)
+        /// <summary>Почему погоды нет: город не найден или нет связи (для страницы погоды).</summary>
+        public static string LastError { get; private set; }
+
+        static readonly Dictionary<string, (double Lat, double Lon, string Name)> GeoCache = new(StringComparer.OrdinalIgnoreCase);
+        static Task<WeatherNow> _inflight;
+
+        /// <summary>
+        /// Координаты города. Ищем на нескольких языках (украинское «Миколаїв» на русском поиске не находится),
+        /// из найденного берём самый крупный город — в первую очередь в стране из настроек Windows
+        /// (иначе на «Mykolaiv» первым приходит село во Львовской области).
+        /// </summary>
+        static async Task<(double Lat, double Lon, string Name)?> Geocode(string city)
+        {
+            if (GeoCache.TryGetValue(city, out var hit)) return hit;
+            var langs = new List<string>();
+            if (city.IndexOfAny("їЇєЄіІґҐ".ToCharArray()) >= 0) langs.Add("uk");
+            langs.AddRange(new[] { I18n.Current, "ru", "uk", "en" });
+            string region = "";
+            try { region = new RegionInfo(CultureInfo.CurrentCulture.Name).TwoLetterISORegionName; } catch { }
+            foreach (var lang in langs.Distinct())
+            {
+                using var g = JsonDocument.Parse(await Http.GetStringAsync(
+                    $"https://geocoding-api.open-meteo.com/v1/search?count=10&language={lang}&name=" + Uri.EscapeDataString(city)));
+                if (!g.RootElement.TryGetProperty("results", out var res) || res.GetArrayLength() == 0) continue;
+                var best = res.EnumerateArray()
+                    .Select(r => (r, pop: r.TryGetProperty("population", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt64() : 0,
+                                  home: r.TryGetProperty("country_code", out var cc) && string.Equals(cc.GetString(), region, StringComparison.OrdinalIgnoreCase)))
+                    .OrderByDescending(x => x.home && x.pop > 0).ThenByDescending(x => x.pop).First().r;
+                var found = (best.GetProperty("latitude").GetDouble(), best.GetProperty("longitude").GetDouble(),
+                             best.TryGetProperty("name", out var n) ? n.GetString() : city);
+                GeoCache[city] = found;
+                return found;
+            }
+            return null;
+        }
+
+        public static Task<WeatherNow> Get(bool force = false)
         {
             var key = City;
-            if (!force && _cache != null && _cacheKey == key && (DateTime.Now - _cache.At).TotalMinutes < 20) return _cache;
-            if (_loading) return _cache;
-            _loading = true;
+            if (!force && _cache != null && _cacheKey == key && (DateTime.Now - _cache.At).TotalMinutes < 20) return Task.FromResult(_cache);
+            // уже грузим — ждём ту же загрузку, а не отвечаем «нет погоды»
+            if (_inflight != null && !_inflight.IsCompleted) return _inflight;
+            return _inflight = Load(key);
+        }
+
+        static async Task<WeatherNow> Load(string key)
+        {
             try
             {
-                var geo = await Http.GetStringAsync("https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name=" + Uri.EscapeDataString(key));
-                using var g = JsonDocument.Parse(geo);
-                if (!g.RootElement.TryGetProperty("results", out var res) || res.GetArrayLength() == 0) return null;
-                var r = res[0];
-                double lat = r.GetProperty("latitude").GetDouble(), lon = r.GetProperty("longitude").GetDouble();
-                string name = r.TryGetProperty("name", out var n) ? n.GetString() : key;
+                var geo = await Geocode(key);
+                if (geo == null) { LastError = $"Город «{key}» не найден. Напиши его по-другому, например по-английски, в «Настройки → Погода и часы»."; return _cache; }
+                var (lat, lon, name) = geo.Value;
                 var url = string.Format(CultureInfo.InvariantCulture,
                     "https://api.open-meteo.com/v1/forecast?latitude={0}&longitude={1}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=5&wind_speed_unit=ms",
                     lat, lon);
@@ -283,11 +320,16 @@ namespace NIsland.Services
                 }
                 _cache = w;
                 _cacheKey = key;
+                LastError = null;
                 Updated?.Invoke();
                 return w;
             }
-            catch (Exception e) { Log.Info("weather: " + e.Message); return _cache; }
-            finally { _loading = false; }
+            catch (Exception e)
+            {
+                Log.Info("weather: " + e.Message);
+                LastError = "Нет связи с сервисом погоды — попробую ещё раз через несколько минут.";
+                return _cache;
+            }
         }
 
         /// <summary>Значок (Segoe UI Emoji) и описание по коду WMO.</summary>

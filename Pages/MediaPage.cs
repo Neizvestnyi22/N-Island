@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -64,8 +64,8 @@ namespace NIsland.Pages
         bool _seeking, _volSetting, _linesDirty = true;
 
         bool LyricsOn => S.LyricsOn && M.HasSession;
-        bool Focus => LyricsOn && S.LyricsFocus;
-        public override double ExtraWidth => LyricsOn && !Focus ? LyricsW : 0;
+        bool FocusMode => LyricsOn && S.LyricsFocus;
+        public override double ExtraWidth => LyricsOn && !FocusMode ? LyricsW : 0;
 
         static Button Small(string glyph, Action click, string tip, double size = 11, double box = 24) => UI.IconBtn(glyph, click, size, box, tip);
 
@@ -245,7 +245,7 @@ namespace NIsland.Pages
 
         void ApplyLayout()
         {
-            bool on = LyricsOn, focus = Focus;
+            bool on = LyricsOn, focus = FocusMode;
             _mainCol.Width = focus ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
             _main.Show(!focus);
             _lyricsCol.Width = !on ? new GridLength(0) : focus ? new GridLength(1, GridUnitType.Star) : new GridLength(LyricsW);
@@ -347,7 +347,7 @@ namespace NIsland.Pages
                 _karaokeLine = -2;
                 _shift.BeginAnimation(TranslateTransform.YProperty, null);
                 _shift.Y = 0;
-                double size = Math.Clamp(S.LyricsFontSize, 10, 24) + (Focus ? 5 : 0);
+                double size = Math.Clamp(S.LyricsFontSize, 10, 24) + (FocusMode ? 5 : 0);
                 if (M.Lyrics != null)
                 {
                     for (int i = 0; i < M.Lyrics.Count; i++)
@@ -357,7 +357,7 @@ namespace NIsland.Pages
                         {
                             Text = l.Text, FontSize = size, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
                             Foreground = M.LyricsSynced ? new SolidColorBrush(Dim) : UI.Hex("#D0FFFFFF"),
-                            TextAlignment = Focus ? TextAlignment.Center : TextAlignment.Left,
+                            TextAlignment = FocusMode ? TextAlignment.Center : TextAlignment.Left,
                         };
                         FrameworkElement row = tb;
                         var tr = M.Translation != null && i < M.Translation.Count ? M.Translation[i] : null;
@@ -366,7 +366,7 @@ namespace NIsland.Pages
                             row = UI.Col(tb, new TextBlock
                             {
                                 Text = tr, FontSize = Math.Max(10, size - 3.5), Foreground = UI.Hex("#80FFFFFF"), TextWrapping = TextWrapping.Wrap,
-                                TextAlignment = Focus ? TextAlignment.Center : TextAlignment.Left, Margin = new Thickness(0, 1, 0, 0),
+                                TextAlignment = FocusMode ? TextAlignment.Center : TextAlignment.Left, Margin = new Thickness(0, 1, 0, 0),
                             });
                         }
                         row.Margin = new Thickness(0, 3, 0, 3);
@@ -398,7 +398,7 @@ namespace NIsland.Pages
             if (idx < 0 || idx >= _lineRows.Count || DateTime.Now < _manualScrollUntil) return;
             var row = _lineRows[idx];
             double y = row.TranslatePoint(new Point(0, 0), _lines).Y;
-            double anchor = Focus ? Math.Max(20, _lyricsBody.ActualHeight / 2 - row.ActualHeight / 2) : 26;
+            double anchor = FocusMode ? Math.Max(20, _lyricsBody.ActualHeight / 2 - row.ActualHeight / 2) : 26;
             double target = Math.Min(0, -(y - anchor));
             if (animate)
                 _shift.BeginAnimation(TranslateTransform.YProperty,
