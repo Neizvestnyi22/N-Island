@@ -27,6 +27,12 @@ namespace NIsland
                 Shutdown(Elevated.RunCleanJob(e.Args));
                 return;
             }
+            // самопроверка без интерфейса (поиск текстов и т. п.) — не мешает запущенной копии
+            if (e.Args.Length >= 3 && e.Args[0] == "--selftest")
+            {
+                Shutdown(SelfTest.Run(e.Args));
+                return;
+            }
             _mutex = new Mutex(true, "NIsland.SingleInstance.v1", out bool created);
             // перезапуск (смена языка): старая копия ещё закрывается — ждём её до 8 секунд
             if (!created && Array.IndexOf(e.Args, "--restart") >= 0)
@@ -50,7 +56,7 @@ namespace NIsland
 
             DispatcherUnhandledException += (_, a) => { Log.Error(a.Exception); a.Handled = true; };
             // выключение/перезагрузка Windows: успеть сохранить настройки и данные
-            SessionEnding += (_, __) => Store.Flush();
+            SessionEnding += (_, __) => { Store.Flush(); try { Dedupe.Suspend(); } catch { } };
             AppDomain.CurrentDomain.UnhandledException += (_, a) => Log.Error(a.ExceptionObject as Exception);
             System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, a) => { Log.Error(a.Exception); a.SetObserved(); };
 
@@ -71,10 +77,17 @@ namespace NIsland
             Safe("brightness", SystemService.I.WatchBrightness);
             Safe("calls", CallService.I.Start);
             Safe("laptop", LaptopService.I.Start);
+            Safe("vpn", Vpn.Watch);
+            Safe("dedupe", Dedupe.Start);
+            Safe("hub", Integrations.Start);
 
             Island = new IslandWindow();
             Island.Show();
             CreateTray();
+            // VPN-программы ищем в фоне через несколько секунд — чтобы всплывашка знала, какой именно VPN включился
+            var vpnScan = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+            vpnScan.Tick += async (_, __) => { vpnScan.Stop(); try { await Vpn.Detect(); } catch (Exception ex) { Log.Info("vpn detect: " + ex.Message); } };
+            vpnScan.Start();
 
             int open = Array.IndexOf(e.Args, "--open");
             int ai = Array.IndexOf(e.Args, "--ai");
@@ -122,6 +135,7 @@ namespace NIsland
             if (Arg("--center") is string c) ShowCenter(c == "" ? null : c);
             else if (Arg("--open") is string page) Island?.Expand(page == "" ? null : page, true);
             else if (Arg("--ai") is string q && q != "") { NIsland.Pages.AiPage.PendingPrompt = q; Island?.Expand("ai", true); }
+            else if (Arg("--spotlight") is string sq) SpotlightWindow.Toggle(sq);
             else ShowSettings(Arg("--settings") is string s && s != "" ? s : null);
         }
 
@@ -172,6 +186,7 @@ namespace NIsland
                 I18n.Apply(menu.Items);
             };
             menu.Items.Add(new WinForms.ToolStripSeparator());
+            menu.Items.Add("Быстрый поиск (Ctrl+Alt+Space)", null, (_, __) => SpotlightWindow.Toggle());
             menu.Items.Add("Центр управления ноутбуком", null, (_, __) => ShowCenter());
             menu.Items.Add("Настройки", null, (_, __) => ShowSettings());
             menu.Items.Add(new WinForms.ToolStripSeparator());
@@ -244,6 +259,8 @@ namespace NIsland
         public static void Quit()
         {
             Store.Flush();
+            // без острова Windows снова показывает свои баннеры и окна — ничего не пропадёт
+            try { Dedupe.Suspend(); } catch (Exception e) { Log.Info("dedupe suspend: " + e.Message); }
             SystemService.I.Stop();
             CallService.I.Stop();
             if (Current is App app && app._tray != null)

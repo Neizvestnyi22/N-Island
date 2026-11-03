@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -150,7 +151,9 @@ namespace NIsland.Pages
                 UI.Row(_focusPlay, _focusTitle.M(4, 0, 0, 0)),
                 _lyrInfo.At(0, 1).M(4, 0, 4, 0),
                 tools.At(0, 2));
-            _lyricsBody.Add(_lines.M(0, 0, 6, 0), _lyricsStatus.M(0, 6, 6, 0), _picker);
+            _linesHost.Children.Add(_lines);
+            _lyricsBody.Add(_linesHost.M(0, 0, 6, 0), _lyricsStatus.M(0, 6, 6, 0), _picker);
+            _wordTimer.Tick += (_, __) => OnWordTick();
             _lyricsBody.MouseWheel += (_, e) =>
             {
                 if (_picker.Visibility == Visibility.Visible) return;
@@ -232,6 +235,7 @@ namespace NIsland.Pages
         public override void OnHidden()
         {
             _artBrush.ImageSource = null; // обложку держит сервис, страница — нет
+            _wordTimer.Stop();
             _k1?.BeginAnimation(GradientStop.OffsetProperty, null);
             _k2?.BeginAnimation(GradientStop.OffsetProperty, null);
         }
@@ -302,14 +306,24 @@ namespace NIsland.Pages
 
         void UpdatePos()
         {
-            bool seek = M.CanSeek;
+            bool seek = M.CanSeek, has = M.HasTime;
             _seek.IsEnabled = seek;
             _seek.Maximum = Math.Max(1, M.Duration.TotalSeconds);
             var p = M.Position;
-            if (!_seeking) _seek.Value = seek ? p.TotalSeconds : 0;
-            _pos.Text = seek ? Fmt.Time(p) : "--:--";
-            _rem.Text = seek ? (S.ShowRemaining ? "-" + Fmt.Time(M.Duration - p) : Fmt.Time(M.Duration)) : "--:--";
+            if (!_seeking) _seek.Value = has ? Math.Min(p.TotalSeconds, _seek.Maximum) : 0;
+            _seek.Opacity = seek ? 1 : has ? 0.75 : 0.35;
+            // прошедшее время знаем всегда (считаем сами), длительность — от приложения или из каталога (≈)
+            _pos.Text = Fmt.Time(p);
+            string approx = M.TimeEstimated && has ? "≈" : "";
+            _rem.Text = !has ? "--:--" : S.ShowRemaining ? "-" + approx + Fmt.Time(M.Duration - p) : approx + Fmt.Time(M.Duration);
+            string tip = M.TimeEstimated
+                ? (has ? "Приложение не сообщает время трека — N-Island считает его сам, длительность взята из каталога"
+                       : "Приложение не сообщает время трека — N-Island считает прошедшее время сам")
+                : null;
+            if (_tipRaw != tip) { _tipRaw = tip; _rem.ToolTip = _pos.ToolTip = tip == null ? null : I18n.T(tip); }
         }
+
+        string _tipRaw;
 
         void UpdateVol()
         {
@@ -344,21 +358,42 @@ namespace NIsland.Pages
                 _lines.Children.Clear();
                 _lineBlocks.Clear();
                 _lineRows.Clear();
+                _wordRuns.Clear();
                 _karaokeLine = -2;
+                _activeRow = -1;
                 _shift.BeginAnimation(TranslateTransform.YProperty, null);
                 _shift.Y = 0;
                 double size = Math.Clamp(S.LyricsFontSize, 10, 24) + (FocusMode ? 5 : 0);
+                bool synced = M.LyricsSynced;
+                _linesHost.OpacityMask = synced ? FadeMask : null;
                 if (M.Lyrics != null)
                 {
                     for (int i = 0; i < M.Lyrics.Count; i++)
                     {
                         var l = M.Lyrics[i];
+                        bool gap = synced && l.Text == "♪";
                         var tb = new TextBlock
                         {
-                            Text = l.Text, FontSize = size, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
-                            Foreground = M.LyricsSynced ? new SolidColorBrush(Dim) : UI.Hex("#D0FFFFFF"),
+                            FontSize = gap ? size - 3 : size, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
+                            Foreground = synced ? new SolidColorBrush(Dim) : UI.Hex("#D0FFFFFF"),
                             TextAlignment = FocusMode ? TextAlignment.Center : TextAlignment.Left,
+                            Tag = "no-translate",   // строчки песни — не интерфейс, переводчик интерфейса их не трогает
                         };
+                        List<(Run, SolidColorBrush, LyricWord)> runs = null;
+                        if (gap) tb.Text = "●  ●  ●";   // проигрыш: точки заливаются, пока не начнут петь
+                        else if (synced && S.LyricsWords && l.Words is { Count: > 0 })
+                        {
+                            runs = new();
+                            foreach (var w in l.Words)
+                            {
+                                var br = new SolidColorBrush(Dim);
+                                var run = new Run(w.Text) { Foreground = br };
+                                tb.Inlines.Add(run);
+                                runs.Add((run, br, w));
+                            }
+                        }
+                        else tb.Text = l.Text;
+                        _wordRuns.Add(runs);
                         FrameworkElement row = tb;
                         var tr = M.Translation != null && i < M.Translation.Count ? M.Translation[i] : null;
                         if (!string.IsNullOrEmpty(tr))
@@ -370,11 +405,13 @@ namespace NIsland.Pages
                             });
                         }
                         row.Margin = new Thickness(0, 3, 0, 3);
-                        if (M.LyricsSynced)
+                        row.RenderTransform = new ScaleTransform(1, 1);
+                        row.RenderTransformOrigin = FocusMode ? new Point(0.5, 0.5) : new Point(0, 0.5);
+                        if (synced && M.CanSeek)
                         {
                             var t = l.Time - TimeSpan.FromSeconds(M.LyricsOffset);
                             row.Cursor = Cursors.Hand;
-                            row.ToolTip = "Перемотать сюда";
+                            row.ToolTip = I18n.T("Перемотать сюда");
                             row.MouseLeftButtonUp += (_, e) => { M.Seek(t < TimeSpan.Zero ? TimeSpan.Zero : t); e.Handled = true; };
                         }
                         _lines.Children.Add(row);
@@ -383,9 +420,56 @@ namespace NIsland.Pages
                     }
                 }
             }
-            _lyricsStatus.Text = M.LyricsLoading ? "Ищу текст песни…" : M.Lyrics == null ? "Текст для этого трека не найден.\nНажми 🔍 сверху, чтобы поискать вручную." : "";
+            _lyricsStatus.Text = M.LyricsLoading ? "Ищу текст песни…"
+                : M.LyricsInstrumental ? "Инструментальная композиция — без слов ♪"
+                : M.Lyrics == null ? "Текст для этого трека не найден.\nНажми 🔍 сверху, чтобы поискать вручную." : "";
             _lyricsStatus.Show(_lyricsStatus.Text != "");
+            if (_wordRuns.Any(r => r != null)) _wordTimer.Start(); else _wordTimer.Stop();
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => Highlight(false)));
+        }
+
+        // ---------- пословная подсветка ----------
+        readonly List<List<(Run Run, SolidColorBrush Brush, LyricWord Word)>> _wordRuns = new();
+        readonly DispatcherTimer _wordTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
+        readonly Grid _linesHost = new() { ClipToBounds = true };
+        int _activeRow = -1;
+        static readonly Color Past = Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF);
+
+        /// <summary>Строки плавно растворяются у верхнего и нижнего края — как в Apple Music.</summary>
+        static readonly LinearGradientBrush FadeMask = MakeFade();
+        static LinearGradientBrush MakeFade()
+        {
+            var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0, 0, 0), 0));
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0, 0, 0), 0.12));
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0, 0, 0), 0.8));
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0x10, 0, 0, 0), 1));
+            b.Freeze();
+            return b;
+        }
+
+        static Color Mix(Color a, Color b, double t) => Color.FromArgb(
+            (byte)(a.A + (b.A - a.A) * t), (byte)(a.R + (b.R - a.R) * t), (byte)(a.G + (b.G - a.G) * t), (byte)(a.B + (b.B - a.B) * t));
+
+        /// <summary>Каждое слово текущей строки загорается, когда его поют (если у текста есть пословная синхронизация).</summary>
+        void OnWordTick()
+        {
+            if (!Visible || !M.LyricsSynced) { _wordTimer.Stop(); return; }
+            int idx = M.LyricIndex;
+            if (idx < 0 || idx >= _wordRuns.Count || _wordRuns[idx] is not { } runs) return;
+            var pos = M.LyricsPosition + TimeSpan.FromMilliseconds(Math.Clamp(S.LyricsLeadMs, 0, 1000) / 3.0);
+            foreach (var (_, br, w) in runs)
+            {
+                double p;
+                if (!S.LyricsKaraoke) p = 1;
+                else
+                {
+                    double len = Math.Max(0.08, (w.End - w.Start).TotalSeconds);
+                    p = Math.Clamp((pos - w.Start).TotalSeconds / Math.Min(len, 0.9), 0, 1);
+                }
+                var c = Mix(Dim, Colors.White, p);
+                if (br.Color != c) br.Color = c;
+            }
         }
 
         void Highlight(bool animate)
@@ -393,12 +477,24 @@ namespace NIsland.Pages
             if (!M.LyricsSynced || _lineBlocks.Count == 0 || !_lyricsPane.IsVisible) return;
             int idx = M.LyricIndex;
             for (int i = 0; i < _lineBlocks.Count; i++)
-                if (i != idx) _lineBlocks[i].Foreground = i < idx ? UI.Hex("#45FFFFFF") : new SolidColorBrush(Dim);
+            {
+                if (i == idx) continue;
+                var c = i < idx ? Past : Dim;
+                if (_wordRuns[i] is { } runs) foreach (var (_, br, _) in runs) br.Color = c;
+                else _lineBlocks[i].Foreground = new SolidColorBrush(c);
+            }
+            // текущая строка чуть крупнее остальных
+            if (_activeRow != idx)
+            {
+                if (_activeRow >= 0 && _activeRow < _lineRows.Count) Scale(_lineRows[_activeRow], 1, animate);
+                if (idx >= 0 && idx < _lineRows.Count && M.Lyrics[idx].Text != "♪") Scale(_lineRows[idx], FocusMode ? 1.03 : 1.045, animate);
+                _activeRow = idx;
+            }
             Karaoke(false);
             if (idx < 0 || idx >= _lineRows.Count || DateTime.Now < _manualScrollUntil) return;
             var row = _lineRows[idx];
             double y = row.TranslatePoint(new Point(0, 0), _lines).Y;
-            double anchor = FocusMode ? Math.Max(20, _lyricsBody.ActualHeight / 2 - row.ActualHeight / 2) : 26;
+            double anchor = FocusMode ? Math.Max(20, _lyricsBody.ActualHeight / 2 - row.ActualHeight / 2) : 30;
             double target = Math.Min(0, -(y - anchor));
             if (animate)
                 _shift.BeginAnimation(TranslateTransform.YProperty,
@@ -410,12 +506,21 @@ namespace NIsland.Pages
             }
         }
 
-        /// <summary>Караоке: текущая строка плавно заливается белым до начала следующей.</summary>
+        static void Scale(FrameworkElement row, double to, bool animate)
+        {
+            if (row.RenderTransform is not ScaleTransform st) return;
+            var a = new DoubleAnimation(to, TimeSpan.FromMilliseconds(animate ? 320 : 0)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+        }
+
+        /// <summary>Караоке: текущая строка плавно заливается белым до конца строки (по словам — см. OnWordTick).</summary>
         void Karaoke(bool resync)
         {
             int idx = M.LyricIndex;
             if (idx < 0 || idx >= _lineBlocks.Count) return;
             var tb = _lineBlocks[idx];
+            if (_wordRuns[idx] != null) { OnWordTick(); if (!_wordTimer.IsEnabled && Visible) _wordTimer.Start(); return; }
             if (!S.LyricsKaraoke || !M.LyricsSynced) { tb.Foreground = Brushes.White; return; }
             if (idx != _karaokeLine || resync || _k1 == null)
             {
@@ -449,29 +554,43 @@ namespace NIsland.Pages
         async void LoadCandidates(string query)
         {
             _pickList.Children.Clear();
-            _pickList.Children.Add(UI.Text("Ищу варианты…", 11.5, false, UI.Dim));
+            _pickList.Children.Add(UI.Text("Ищу варианты в LRCLIB, NetEase и Kugou…", 11.5, false, UI.Dim));
             List<LyricsCandidate> list;
-            try { list = await LyricsService.Candidates(M.Title, M.Artist, string.IsNullOrWhiteSpace(query) || query == M.TrackLine ? null : query); }
+            var forTrack = M.TrackKeyForUi;
+            try
+            {
+                list = await LyricsService.Candidates(M.Title, M.Artist, M.CanSeek ? M.Duration : TimeSpan.Zero,
+                    string.IsNullOrWhiteSpace(query) || query == M.TrackLine ? null : query.Trim(), M.FromBrowser);
+            }
             catch (Exception e) { _pickList.Children.Clear(); _pickList.Children.Add(UI.Text("Ошибка: " + e.Message, 11.5, false, UI.Dim)); return; }
+            if (forTrack != M.TrackKeyForUi) return;   // пока искали, трек сменился
             _pickList.Children.Clear();
             if (list.Count == 0) _pickList.Children.Add(UI.Text("Ничего не нашлось — попробуй другой запрос", 11.5, false, UI.Dim));
             foreach (var c in list)
             {
                 var cand = c;
                 var dur = c.Duration > 0 ? $"{(int)c.Duration / 60}:{(int)c.Duration % 60:00}" : "";
-                double diff = M.Duration.TotalSeconds > 1 && c.Duration > 0 ? Math.Abs(c.Duration - M.Duration.TotalSeconds) : -1;
+                double diff = M.CanSeek && c.Duration > 0 ? Math.Abs(c.Duration - M.Duration.TotalSeconds) : -1;
+                var info = UI.Text(string.Join(" · ", new[] { c.Source, c.Album, dur, c.Synced ? "синхронный ✓" : "без синхронизации",
+                    diff >= 0 && diff < 3 ? "длина совпадает" : diff >= 10 ? "другая длина" : null }.Where(x => !string.IsNullOrEmpty(x))), 10.5, false, UI.Dim);
                 var row = new Border
                 {
                     CornerRadius = new CornerRadius(8), Padding = new Thickness(8, 4, 8, 4), Margin = new Thickness(0, 0, 4, 3), Cursor = Cursors.Hand,
                     Background = UI.Res("CardBrush"),
-                    Child = UI.Col(
-                        UI.Text($"{c.Artist} — {c.Track}", 12, true),
-                        UI.Text(string.Join(" · ", new[] { c.Album, dur, c.Synced ? "синхронный ✓" : "без синхронизации",
-                            diff >= 0 && diff < 3 ? "длина совпадает" : null }.Where(x => !string.IsNullOrEmpty(x))), 10.5, false, UI.Dim)),
+                    Child = UI.Col(new TextBlock { Text = $"{c.Artist} — {c.Track}", FontSize = 12, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, Tag = "no-translate" }, info),
                 };
-                row.MouseLeftButtonUp += (_, __) =>
+                bool busy = false;
+                row.MouseLeftButtonUp += async (_, __) =>
                 {
-                    M.SetLyrics(cand.Result);
+                    if (busy) return;
+                    busy = true;
+                    info.Text = I18n.T("Загружаю текст…");
+                    LyricsResult r = null;
+                    try { r = await cand.Load(); } catch (Exception e) { Log.Info("lyrics pick: " + e.Message); }
+                    busy = false;
+                    if (forTrack != M.TrackKeyForUi) return;
+                    if (r == null || r.Lines == null || r.Lines.Count == 0) { info.Text = I18n.T("Не удалось загрузить этот вариант — выбери другой"); return; }
+                    M.SetLyrics(r);
                     HidePicker();
                     App.Island.Toast("", "Текст выбран", $"{cand.Artist} — {cand.Track}");
                 };

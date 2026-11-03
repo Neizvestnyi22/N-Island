@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using NIsland.Core;
 using Windows.Foundation;
 using Windows.Media.Control;
@@ -17,6 +19,8 @@ namespace NIsland.Services
     /// <summary>
     /// Музыка/видео из ЛЮБОГО приложения, которое сообщает Windows о воспроизведении
     /// (Spotify, браузеры с YouTube/VK/Яндекс Музыкой, Apple Music, VLC, Telegram, медиаплеер…).
+    /// Позиция считается по монотонным часам с учётом скорости; если приложение не сообщает время трека
+    /// (Firefox, часть плееров), время считаем сами от начала трека, а длительность берём из каталога.
     /// </summary>
     public sealed class MediaService
     {
@@ -26,7 +30,9 @@ namespace NIsland.Services
         GlobalSystemMediaTransportControlsSession _s;
         string _pinned;
         readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(200) };
+        readonly DispatcherTimer _confirm = new() { Interval = TimeSpan.FromMilliseconds(900) };
         int _tickCount;
+        bool _starting;
 
         TypedEventHandler<GlobalSystemMediaTransportControlsSession, MediaPropertiesChangedEventArgs> _onProps;
         TypedEventHandler<GlobalSystemMediaTransportControlsSession, PlaybackInfoChangedEventArgs> _onPlay;
@@ -35,6 +41,7 @@ namespace NIsland.Services
         public bool HasSession => _s != null;
         public string AppId { get; private set; }
         public string AppName => FriendlyName(AppId);
+        public bool FromBrowser => IsBrowser(AppId);
         public string Title { get; private set; } = "";
         public string Artist { get; private set; } = "";
         public string Album { get; private set; } = "";
@@ -50,25 +57,61 @@ namespace NIsland.Services
         /// <summary>0 — нет, 1 — трек, 2 — список.</summary>
         public int Repeat { get; private set; }
         public double Rate { get; private set; } = 1;
-        public TimeSpan Duration { get; private set; }
-        public bool CanSeek => Duration.TotalSeconds > 1;
-        TimeSpan _pos;
-        DateTimeOffset _posAt = DateTimeOffset.Now;
 
+        // ---------- время трека ----------
+        static readonly Stopwatch Mono = Stopwatch.StartNew();
+        static double Now => Mono.Elapsed.TotalSeconds;
+        double _posSec, _posAt;               // позиция _posSec была в момент _posAt (монотонные секунды)
+        TimeSpan _appDuration;                // длительность от самого приложения
+        double _estDuration;                  // из каталога, если приложение молчит
+        bool _timelineFresh, _firstProps;
+        DateTimeOffset _trackAt, _timelineStamp;
+        TimeSpan _timelinePos;
+
+        /// <summary>Приложение не сообщает время трека — позицию считаем сами от начала трека.</summary>
+        public bool TimeEstimated => _appDuration.TotalSeconds <= 1;
+        public TimeSpan Duration => _appDuration.TotalSeconds > 1 ? _appDuration : TimeSpan.FromSeconds(_estDuration);
+        /// <summary>Длительность известна (от приложения или из каталога) — можно рисовать прогресс.</summary>
+        public bool HasTime => Duration.TotalSeconds > 1;
+        /// <summary>Перематывать можно только если приложение само сообщает время.</summary>
+        public bool CanSeek => _appDuration.TotalSeconds > 1;
+
+        public TimeSpan Position
+        {
+            get
+            {
+                double p = _posSec;
+                if (IsPlaying) p += (Now - _posAt) * EffRate;
+                double d = Duration.TotalSeconds;
+                if (p < 0) p = 0;
+                if (d > 1 && p > d) p = d;
+                return TimeSpan.FromSeconds(p);
+            }
+        }
+
+        double EffRate => Rate > 0.05 && Rate < 8 ? Rate : 1;
+        void SetPos(double sec, double age = 0) { _posSec = Math.Max(0, sec); _posAt = Now - Math.Max(0, age); }
+        void Rebase() => SetPos(Position.TotalSeconds);
+
+        // ---------- текст песни ----------
         public List<LyricLine> Lyrics { get; private set; }
         public bool LyricsSynced { get; private set; }
         public bool LyricsLoading { get; private set; }
+        public bool LyricsInstrumental { get; private set; }
         public string LyricsSource { get; private set; }
         public int LyricIndex { get; private set; } = -1;
         /// <summary>Перевод строк текста (тот же порядок), если включён.</summary>
         public List<string> Translation { get; private set; }
 
-        // ---------- синхронизация текста ----------
         static Dictionary<string, double> _offsets => Store.Data.LyricOffsets;
         string TrackKey => Title + "|" + Artist;
+        public string TrackKeyForUi => AppId + "|" + TrackKey;
         /// <summary>Сдвиг текста относительно музыки, с: общий из настроек + подстройка для этого трека.</summary>
-        public double LyricsOffset => Store.Settings.LyricsOffsetMs / 1000.0 + (_offsets.TryGetValue(TrackKey, out var v) ? v : 0);
+        public double LyricsOffset => Store.Settings.LyricsOffsetMs / 1000.0 + TrackOffset;
         public double TrackOffset => _offsets.TryGetValue(TrackKey, out var v) ? v : 0;
+        /// <summary>Строка появляется чуть раньше, чем её начнут петь (глаз успевает прочитать).</summary>
+        static TimeSpan Lead => TimeSpan.FromMilliseconds(Math.Clamp(Store.Settings.LyricsLeadMs, 0, 1000));
+
         public void AdjustOffset(double seconds)
         {
             _offsets[TrackKey] = Math.Round(TrackOffset + seconds, 2);
@@ -76,6 +119,7 @@ namespace NIsland.Services
             Store.SaveData();
             UpdateLyricIndex(true);
         }
+
         public void ResetOffset() { _offsets.Remove(TrackKey); Store.SaveData(); UpdateLyricIndex(true); }
         /// <summary>Общий сдвиг поменяли в настройках — пересчитать текущую строчку.</summary>
         public void Resync() => UpdateLyricIndex(true);
@@ -83,19 +127,28 @@ namespace NIsland.Services
         /// <summary>Позиция с учётом сдвига текста.</summary>
         public TimeSpan LyricsPosition => Position + TimeSpan.FromSeconds(LyricsOffset);
 
-        /// <summary>Сколько осталось до следующей строки (для «караоке»-заливки).</summary>
+        /// <summary>Сколько пройдено текущей строки (для «караоке»-заливки) и сколько осталось до следующей.</summary>
         public (double Progress, TimeSpan Left) LineProgress()
         {
             if (Lyrics == null || !LyricsSynced || LyricIndex < 0 || LyricIndex >= Lyrics.Count) return (0, TimeSpan.Zero);
             var start = Lyrics[LyricIndex].Time;
-            var end = LyricIndex + 1 < Lyrics.Count ? Lyrics[LyricIndex + 1].Time : start + TimeSpan.FromSeconds(5);
-            var pos = LyricsPosition;
+            var end = LineEnd(LyricIndex);
+            var pos = LyricsPosition + Lead;
             double total = Math.Max(0.1, (end - start).TotalSeconds);
             return (Math.Clamp((pos - start).TotalSeconds / total, 0, 1), end - pos);
         }
 
+        /// <summary>Когда строка заканчивается: по последнему слову, иначе — начало следующей (не дольше 8 с на строку).</summary>
+        public TimeSpan LineEnd(int i)
+        {
+            var l = Lyrics[i];
+            var next = i + 1 < Lyrics.Count ? Lyrics[i + 1].Time : l.Time + TimeSpan.FromSeconds(6);
+            if (l.Words is { Count: > 0 } w && w[^1].End > l.Time && w[^1].End < next) return w[^1].End;
+            return next - l.Time > TimeSpan.FromSeconds(8) && l.Text != "♪" ? l.Time + TimeSpan.FromSeconds(8) : next;
+        }
+
         public event Action OffsetChanged;
-        public string CurrentLyric => LyricsSynced && Lyrics != null && LyricIndex >= 0 && LyricIndex < Lyrics.Count ? Lyrics[LyricIndex].Text : null;
+        public string CurrentLyric => LyricsSynced && Lyrics != null && LyricIndex >= 0 && LyricIndex < Lyrics.Count && Lyrics[LyricIndex].Text != "♪" ? Lyrics[LyricIndex].Text : null;
 
         public event Action Changed;          // название/обложка/источник
         public event Action PlaybackChanged;  // play/pause
@@ -106,41 +159,59 @@ namespace NIsland.Services
 
         static Dispatcher D => Application.Current.Dispatcher;
 
-        public TimeSpan Position
-        {
-            get
-            {
-                var p = _pos;
-                if (IsPlaying) p += DateTimeOffset.Now - _posAt;
-                if (p < TimeSpan.Zero) p = TimeSpan.Zero;
-                if (Duration > TimeSpan.Zero && p > Duration) p = Duration;
-                return p;
-            }
-        }
+        // ------------------------------------------------------------------
+        //  Подключение к Windows
+        // ------------------------------------------------------------------
 
-        public async void Start()
+        public void Start()
         {
             _onProps = (s, e) => D.BeginInvoke(new Action(() => { if (Same(s)) _ = LoadProps(); }));
             _onPlay = (s, e) => D.BeginInvoke(new Action(() => { if (Same(s)) LoadPlayback(); }));
             _onTimeline = (s, e) => D.BeginInvoke(new Action(() => { if (Same(s)) LoadTimeline(); }));
             _tick.Tick += (_, __) => OnTick();
             _tick.Start();
-            try
+            _confirm.Tick += (_, __) => { _confirm.Stop(); LoadPlayback(); LoadTimeline(); };
+            // после сна Windows иногда «теряет» подписку на медиасессии — переподключаемся
+            SystemEvents.PowerModeChanged += (_, e) =>
             {
-                _mgr = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-                _mgr.CurrentSessionChanged += (_, __) => D.BeginInvoke(new Action(PickSession));
-                _mgr.SessionsChanged += (_, __) => D.BeginInvoke(new Action(PickSession));
-                PickSession();
-            }
-            catch (Exception e) { Log.Error(e); }
+                if (e.Mode == PowerModes.Resume) D.BeginInvoke(new Action(async () => { await Task.Delay(2500); await Connect(); }));
+            };
+            _ = Connect();
         }
 
+        async Task Connect()
+        {
+            if (_starting) return;
+            _starting = true;
+            try
+            {
+                var mgr = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+                if (_mgr != null) { try { _mgr.CurrentSessionChanged -= OnMgrChanged; _mgr.SessionsChanged -= OnMgrChanged; } catch { } }
+                _mgr = mgr;
+                _mgr.CurrentSessionChanged += OnMgrChanged;
+                _mgr.SessionsChanged += OnMgrChanged;
+                _failures = 0;
+                PickSession(true);
+            }
+            catch (Exception e) { Log.Info("media: " + e.Message); }
+            finally { _starting = false; }
+        }
+
+        void OnMgrChanged(GlobalSystemMediaTransportControlsSessionManager m, object e) => D.BeginInvoke(new Action(() => PickSession()));
+
         bool Same(GlobalSystemMediaTransportControlsSession s) =>
-            _s != null && s != null && s.SourceAppUserModelId == _s.SourceAppUserModelId;
+            _s != null && s != null && (ReferenceEquals(s, _s) || s.SourceAppUserModelId == _s.SourceAppUserModelId);
+
+        int _failures;
 
         public List<GlobalSystemMediaTransportControlsSession> Sessions()
         {
-            try { return _mgr?.GetSessions().ToList() ?? new(); } catch { return new(); }
+            try { var list = _mgr?.GetSessions().ToList() ?? new(); _failures = 0; return list; }
+            catch
+            {
+                if (++_failures == 5) _ = Connect();   // менеджер «умер» (перезапуск explorer, сон) — создаём заново
+                return new();
+            }
         }
 
         static bool Playing(GlobalSystemMediaTransportControlsSession s)
@@ -149,7 +220,7 @@ namespace NIsland.Services
             catch { return false; }
         }
 
-        void PickSession()
+        void PickSession(bool force = false)
         {
             if (_mgr == null) return;
             var sessions = Sessions();
@@ -165,44 +236,73 @@ namespace NIsland.Services
                     if (playing != null) s = playing;
                 }
                 // не прыгаем с текущего источника, если он ещё жив и ничто другое не играет
-                if (_s != null && !Playing(s ?? _s) && sessions.Any(x => x.SourceAppUserModelId == AppId))
-                    s = sessions.First(x => x.SourceAppUserModelId == AppId);
+                if (_s != null && (s == null || !Playing(s)))
+                {
+                    var alive = sessions.FirstOrDefault(x => ReferenceEquals(x, _s)) ?? sessions.FirstOrDefault(x => x.SourceAppUserModelId == AppId);
+                    if (alive != null) s = alive;
+                }
                 s ??= sessions.FirstOrDefault();
             }
-            Attach(s);
+            Attach(s, force);
         }
 
-        void Attach(GlobalSystemMediaTransportControlsSession s)
+        void Subscribe(GlobalSystemMediaTransportControlsSession s, bool on)
         {
-            if (s != null && _s != null && s.SourceAppUserModelId == _s.SourceAppUserModelId) return;
-            if (_s != null)
+            if (s == null) return;
+            try
             {
-                try
+                if (on)
                 {
-                    _s.MediaPropertiesChanged -= _onProps;
-                    _s.PlaybackInfoChanged -= _onPlay;
-                    _s.TimelinePropertiesChanged -= _onTimeline;
+                    s.MediaPropertiesChanged += _onProps;
+                    s.PlaybackInfoChanged += _onPlay;
+                    s.TimelinePropertiesChanged += _onTimeline;
                 }
-                catch { }
+                else
+                {
+                    s.MediaPropertiesChanged -= _onProps;
+                    s.PlaybackInfoChanged -= _onPlay;
+                    s.TimelinePropertiesChanged -= _onTimeline;
+                }
             }
+            catch { }
+        }
+
+        void Attach(GlobalSystemMediaTransportControlsSession s, bool force = false)
+        {
+            if (ReferenceEquals(s, _s) && !force) return;
+            bool sameApp = s != null && _s != null && s.SourceAppUserModelId == _s.SourceAppUserModelId;
+            Subscribe(_s, false);
             _s = s;
+            if (s != null && sameApp)
+            {
+                // та же программа (например, другая вкладка браузера): состояние не сбрасываем — LoadProps сам заметит смену трека
+                Subscribe(s, true);
+                LoadPlayback();
+                LoadTimeline();
+                _ = LoadProps();
+                return;
+            }
             AppId = s?.SourceAppUserModelId;
+            _appDuration = TimeSpan.Zero; _estDuration = 0; _timelineFresh = false; _timelineStamp = default; SetPos(0);
             if (s == null)
             {
                 Title = Artist = Album = "";
-                Art = null; IsPlaying = false; Duration = TimeSpan.Zero; _pos = TimeSpan.Zero;
-                Lyrics = null; LyricIndex = -1;
+                Art = null; IsPlaying = false;
+                Lyrics = null; LyricIndex = -1; LyricsLoading = false;
                 Changed?.Invoke(); PlaybackChanged?.Invoke(); LyricsChanged?.Invoke();
                 return;
             }
-            s.MediaPropertiesChanged += _onProps;
-            s.PlaybackInfoChanged += _onPlay;
-            s.TimelinePropertiesChanged += _onTimeline;
+            Subscribe(s, true);
             Title = ""; Artist = "";
+            _firstProps = true;
             LoadPlayback();
             LoadTimeline();
             _ = LoadProps();
         }
+
+        // ------------------------------------------------------------------
+        //  Название, обложка
+        // ------------------------------------------------------------------
 
         async Task LoadProps()
         {
@@ -213,10 +313,21 @@ namespace NIsland.Services
             catch { return; }
             if (s != _s || p == null) return;
 
-            string title = p.Title ?? "", artist = p.Artist ?? "", album = p.AlbumTitle ?? "";
-            if (artist == "" && !string.IsNullOrEmpty(p.AlbumArtist)) artist = p.AlbumArtist;
+            string title = (p.Title ?? "").Trim(), artist = (p.Artist ?? "").Trim(), album = (p.AlbumTitle ?? "").Trim();
+            if (artist == "" && !string.IsNullOrEmpty(p.AlbumArtist)) artist = p.AlbumArtist.Trim();
             bool newTrack = title != Title || artist != Artist;
+            bool realChange = newTrack && !_firstProps;   // первый показ сессии — не «смена трека»: время уже идёт
+            _firstProps = false;
             Title = title; Artist = artist; Album = album;
+
+            if (realChange)
+            {
+                // новый трек: пока приложение не прислало свежее время, считаем от нуля и длительность не знаем
+                _trackAt = DateTimeOffset.Now;
+                _timelineFresh = false;
+                _estDuration = 0;
+                LoadTimeline(trackChange: true);
+            }
 
             BitmapSource art = null;
             if (p.Thumbnail != null) art = await LoadThumb(p.Thumbnail);
@@ -229,7 +340,7 @@ namespace NIsland.Services
             Changed?.Invoke();
             if (newTrack && title != "")
             {
-                TrackChanged?.Invoke();
+                if (realChange) TrackChanged?.Invoke();
                 AddHistory();
                 _ = LoadLyrics();
             }
@@ -257,6 +368,10 @@ namespace NIsland.Services
             catch { return null; }
         }
 
+        // ------------------------------------------------------------------
+        //  Состояние и время
+        // ------------------------------------------------------------------
+
         void LoadPlayback()
         {
             try
@@ -276,10 +391,11 @@ namespace NIsland.Services
                     Windows.Media.MediaPlaybackAutoRepeatMode.List => 2,
                     _ => 0,
                 };
-                Rate = pi.PlaybackRate ?? 1;
+                double rate = pi.PlaybackRate ?? 1;
+                if (Math.Abs(rate - Rate) > 0.001) { Rebase(); Rate = rate; }
                 if (playing != IsPlaying)
                 {
-                    _pos = Position; _posAt = DateTimeOffset.Now;
+                    Rebase();
                     IsPlaying = playing;
                 }
                 PlaybackChanged?.Invoke();
@@ -287,81 +403,128 @@ namespace NIsland.Services
             catch { }
         }
 
-        DateTimeOffset _timelineStamp;
-
         /// <param name="periodic">Плановая сверка: берём только реально обновлённые данные,
         /// иначе у приложений с «застывшей» меткой времени позиция откатывалась бы назад.</param>
-        void LoadTimeline(bool periodic = false)
+        /// <param name="trackChange">Только что сменился трек: время от прошлого трека не берём.</param>
+        void LoadTimeline(bool periodic = false, bool trackChange = false)
         {
-            try
-            {
-                var t = _s?.GetTimelineProperties();
-                if (t == null) return;
-                bool validStamp = t.LastUpdatedTime.Year >= 2000 && t.LastUpdatedTime <= DateTimeOffset.Now.AddSeconds(2);
-                if (periodic && (!validStamp || t.LastUpdatedTime == _timelineStamp)) return;
-                _timelineStamp = t.LastUpdatedTime;
-                Duration = t.EndTime - t.StartTime;
-                var pos = t.Position - t.StartTime;
-                var at = validStamp ? t.LastUpdatedTime : DateTimeOffset.Now;
-                if (at > DateTimeOffset.Now) at = DateTimeOffset.Now;
-                // плановая сверка не должна дёргать позицию из-за мелкой разницы часов
-                if (periodic && IsPlaying)
-                {
-                    var predicted = Position;
-                    var fresh = pos + (DateTimeOffset.Now - at);
-                    if (Math.Abs((fresh - predicted).TotalSeconds) < 0.35) return;
-                }
-                _pos = pos;
-                _posAt = at;
-                Tick?.Invoke();
-                UpdateLyricIndex(true);
-            }
-            catch { }
-        }
+            GlobalSystemMediaTransportControlsSessionTimelineProperties t;
+            try { t = _s?.GetTimelineProperties(); }
+            catch { return; }
+            if (t == null) return;
+            var end = t.EndTime > t.MaxSeekTime ? t.EndTime : t.MaxSeekTime;
+            var dur = end - t.StartTime;
+            var pos = t.Position - t.StartTime;
+            bool validStamp = t.LastUpdatedTime.Year >= 2000 && t.LastUpdatedTime <= DateTimeOffset.Now.AddSeconds(2);
+            bool same = t.LastUpdatedTime == _timelineStamp && pos == _timelinePos;
+            if (periodic && (!validStamp || same)) return;
 
-        async Task LoadLyrics()
-        {
-            string key = Title + "|" + Artist;
-            Lyrics = null; LyricIndex = -1; LyricsLoading = true; LyricsSynced = false;
-            LyricsChanged?.Invoke(); LyricIndexChanged?.Invoke();
-            // дождёмся длительности трека — она приходит отдельным событием
-            for (int i = 0; i < 6 && Duration.TotalSeconds < 1; i++) await Task.Delay(250);
-            var res = await LyricsService.Get(Title, Artist, Album, Duration);
-            if (key != Title + "|" + Artist) return;
-            Lyrics = res?.Lines;
-            LyricsSynced = res?.Synced ?? false;
-            LyricsSource = res?.Source;
-            LyricsLoading = false;
-            Translation = null;
-            LyricsChanged?.Invoke();
-            UpdateLyricIndex();
-            _ = LoadTranslation();
+            if (trackChange)
+            {
+                // время, обновлённое задолго до смены трека, относится к прошлому треку
+                bool stale = validStamp ? t.LastUpdatedTime < _trackAt.AddSeconds(-5) : pos.TotalSeconds > 5;
+                if (stale || same)
+                {
+                    _appDuration = TimeSpan.Zero;
+                    SetPos(0);
+                    Tick?.Invoke();
+                    UpdateLyricIndex(true);
+                    return;
+                }
+            }
+
+            _timelineStamp = t.LastUpdatedTime;
+            _timelinePos = pos;
+            _timelineFresh = true;
+            bool hasDur = dur.TotalSeconds > 1 && dur.TotalHours < 24;
+            _appDuration = hasDur ? dur : TimeSpan.Zero;
+            // приложение без длительности, но с позицией (эфир, подкаст) — позицию всё равно берём; без позиции — считаем сами
+            if (!hasDur && pos.TotalSeconds < 0.5) { Tick?.Invoke(); return; }
+
+            double age = validStamp && IsPlaying ? (DateTimeOffset.Now - t.LastUpdatedTime).TotalSeconds : 0;
+            if (age < 0) age = 0;
+            if (age > 6 * 3600) age = 0;   // метке «сутки назад» не верим
+            if (periodic && IsPlaying)
+            {
+                // плановая сверка не должна дёргать позицию из-за мелкой разницы часов
+                double fresh = pos.TotalSeconds + age * EffRate;
+                if (Math.Abs(fresh - Position.TotalSeconds) < 0.35) return;
+            }
+            SetPos(pos.TotalSeconds, age * EffRate);
+            Tick?.Invoke();
+            UpdateLyricIndex(true);
         }
 
         void OnTick()
         {
             if (IsPlaying) Tick?.Invoke();
             UpdateLyricIndex();
+            _tickCount++;
             // раз в секунду сверяем позицию с приложением — текст не «уплывает» от музыки
             if (IsPlaying && _tickCount % 5 == 0) LoadTimeline(true);
-            if (++_tickCount % 10 == 0 && _pinned == null && _mgr != null && !IsPlaying)
+            if (_tickCount % 10 == 0 && _mgr != null)
             {
-                // кто-то другой начал играть — переключаемся на него
-                var other = Sessions().FirstOrDefault(Playing);
-                if (other != null && other.SourceAppUserModelId != AppId) Attach(other);
+                var sessions = Sessions();
+                // наша сессия исчезла (закрыли вкладку, а событие не пришло) — выбираем заново
+                if (_s != null && !sessions.Any(x => ReferenceEquals(x, _s)) && !sessions.Any(x => x.SourceAppUserModelId == AppId)) PickSession();
+                else if (_pinned == null && !IsPlaying)
+                {
+                    // кто-то другой начал играть — переключаемся на него
+                    var other = sessions.FirstOrDefault(Playing);
+                    if (other != null && other.SourceAppUserModelId != AppId) Attach(other);
+                }
             }
+            if (_mgr == null && _tickCount % 150 == 0) _ = Connect();   // не удалось подключиться при старте — пробуем раз в 30 с
+        }
+
+        // ------------------------------------------------------------------
+        //  Текст песни
+        // ------------------------------------------------------------------
+
+        async Task LoadLyrics()
+        {
+            string key = TrackKey;
+            Lyrics = null; LyricIndex = -1; LyricsLoading = true; LyricsSynced = false; LyricsInstrumental = false; Translation = null;
+            LyricsChanged?.Invoke(); LyricIndexChanged?.Invoke();
+            // дождёмся длительности трека — она приходит отдельным событием
+            for (int i = 0; i < 8 && !_timelineFresh; i++) await Task.Delay(250);
+            if (key != TrackKey) return;
+            var res = await LyricsService.Get(Title, Artist, Album, _appDuration, FromBrowser);
+            if (key != TrackKey) return;
+            Lyrics = res?.Lines is { Count: > 0 } ? res.Lines : null;
+            LyricsSynced = Lyrics != null && res.Synced;
+            LyricsInstrumental = res?.Instrumental == true;
+            LyricsSource = res?.Source;
+            LyricsLoading = false;
+            LyricsChanged?.Invoke();
+            UpdateLyricIndex(true);
+            _ = LoadTranslation();
+            if (TimeEstimated) await EstimateDuration(res, key);
+        }
+
+        /// <summary>Приложение не сообщило длительность — берём из найденного текста или каталога iTunes.</summary>
+        async Task EstimateDuration(LyricsResult res, string key)
+        {
+            double d = res?.Duration ?? 0;
+            if (d <= 1) d = await LyricsService.LookupDuration(Title, Artist, FromBrowser);
+            if (key != TrackKey || !TimeEstimated || d <= 1) return;
+            _estDuration = d;
+            Tick?.Invoke();
+            Changed?.Invoke();
         }
 
         void UpdateLyricIndex(bool resync = false)
         {
             int idx = -1;
-            if (Lyrics != null && LyricsSynced)
+            var lines = Lyrics;
+            if (lines != null && LyricsSynced && lines.Count > 0)
             {
-                // лёгкое опережение: строка появляется чуть раньше, чем её начнут петь
-                var pos = LyricsPosition + TimeSpan.FromMilliseconds(150);
-                for (int i = 0; i < Lyrics.Count; i++)
+                var pos = LyricsPosition + Lead;
+                int lo = 0, hi = lines.Count - 1;
+                while (lo <= hi)
                 {
-                    if (Lyrics[i].Time <= pos) idx = i; else break;
+                    int mid = (lo + hi) / 2;
+                    if (lines[mid].Time <= pos) { idx = mid; lo = mid + 1; } else hi = mid - 1;
                 }
             }
             if (idx != LyricIndex)
@@ -375,16 +538,21 @@ namespace NIsland.Services
         /// <summary>Поставить выбранный вручную текст (и запомнить его для трека).</summary>
         public void SetLyrics(LyricsResult r)
         {
-            Lyrics = r?.Lines;
-            LyricsSynced = r?.Synced ?? false;
+            Lyrics = r?.Lines is { Count: > 0 } ? r.Lines : null;
+            LyricsSynced = Lyrics != null && r.Synced;
+            LyricsInstrumental = r?.Instrumental == true;
             LyricsSource = r?.Source;
             LyricsLoading = false;
             LyricIndex = -1;
-            if (r != null) LyricsService.Remember(Title, Artist, r);
+            if (r != null) LyricsService.Remember(Title, Artist, r, FromBrowser);
+            if (TimeEstimated && r?.Duration > 1) _estDuration = r.Duration;
             LyricsChanged?.Invoke();
-            UpdateLyricIndex();
+            UpdateLyricIndex(true);
             _ = LoadTranslation();
         }
+
+        /// <summary>Ещё раз поискать текст (например, после смены сети).</summary>
+        public void ReloadLyrics() { if (HasSession && Title != "") _ = LoadLyrics(); }
 
         /// <summary>Перевод строк песни одним запросом.</summary>
         public async Task LoadTranslation()
@@ -432,34 +600,43 @@ namespace NIsland.Services
             return fav == null;
         }
 
+        // ------------------------------------------------------------------
+        //  Управление (сразу показываем результат, потом сверяемся с приложением)
+        // ------------------------------------------------------------------
+
+        void Confirm() { _confirm.Stop(); _confirm.Start(); }
+
         public async void TogglePlay()
         {
             if (_s == null) return;
-            _pos = Position; _posAt = DateTimeOffset.Now;
+            Rebase();
             IsPlaying = !IsPlaying;
             PlaybackChanged?.Invoke();
             try { await _s.TryTogglePlayPauseAsync(); } catch { }
+            Confirm();
         }
 
-        public async void Next() { try { if (_s != null) await _s.TrySkipNextAsync(); } catch { } }
-        public async void Prev() { try { if (_s != null) await _s.TrySkipPreviousAsync(); } catch { } }
+        public async void Play() { if (_s != null && !IsPlaying) { try { await _s.TryPlayAsync(); } catch { } Confirm(); } }
+        public async void Pause() { if (_s != null && IsPlaying) { try { await _s.TryPauseAsync(); } catch { } Confirm(); } }
+        public async void Next() { try { if (_s != null) await _s.TrySkipNextAsync(); } catch { } Confirm(); }
+        public async void Prev() { try { if (_s != null) await _s.TrySkipPreviousAsync(); } catch { } Confirm(); }
 
         public async void Seek(TimeSpan to)
         {
-            if (_s == null) return;
-            _pos = to; _posAt = DateTimeOffset.Now;
+            if (_s == null || !CanSeek) return;
+            if (to < TimeSpan.Zero) to = TimeSpan.Zero;
+            if (to > Duration) to = Duration;
+            SetPos(to.TotalSeconds);
             Tick?.Invoke();
             UpdateLyricIndex(true); // текст сразу прыгает на нужную строку
             try { await _s.TryChangePlaybackPositionAsync(to.Ticks); } catch { }
+            Confirm();
         }
 
         public void SeekBy(double seconds)
         {
             if (!CanSeek) return;
-            var to = Position + TimeSpan.FromSeconds(seconds);
-            if (to < TimeSpan.Zero) to = TimeSpan.Zero;
-            if (to > Duration) to = Duration;
-            Seek(to);
+            Seek(Position + TimeSpan.FromSeconds(seconds));
         }
 
         public async void ToggleShuffle()
@@ -468,6 +645,7 @@ namespace NIsland.Services
             Shuffle = !Shuffle;
             PlaybackChanged?.Invoke();
             try { await _s.TryChangeShuffleActiveAsync(Shuffle); } catch { }
+            Confirm();
         }
 
         public async void CycleRepeat()
@@ -482,6 +660,7 @@ namespace NIsland.Services
                 _ => Windows.Media.MediaPlaybackAutoRepeatMode.None,
             };
             try { await _s.TryChangeAutoRepeatModeAsync(mode); } catch { }
+            Confirm();
         }
 
         public async void CycleRate()
@@ -489,9 +668,11 @@ namespace NIsland.Services
             if (_s == null) return;
             double[] rates = { 1, 1.25, 1.5, 2, 0.75 };
             int i = Array.FindIndex(rates, r => Math.Abs(r - Rate) < 0.01);
+            Rebase();
             Rate = rates[(i + 1) % rates.Length];
             PlaybackChanged?.Invoke();
             try { await _s.TryChangePlaybackRateAsync(Rate); } catch { }
+            Confirm();
         }
 
         public string TrackLine => string.IsNullOrEmpty(Artist) ? Title : $"{Artist} — {Title}";
@@ -501,13 +682,21 @@ namespace NIsland.Services
         {
             var list = Sessions();
             if (list.Count < 2) return;
-            int i = list.FindIndex(x => x.SourceAppUserModelId == AppId);
+            int i = list.FindIndex(x => ReferenceEquals(x, _s));
+            if (i < 0) i = list.FindIndex(x => x.SourceAppUserModelId == AppId);
             var next = list[(i + 1) % list.Count];
             _pinned = next.SourceAppUserModelId;
             Attach(next);
         }
 
         public int SourceCount => Sessions().Count;
+
+        public static bool IsBrowser(string aumid)
+        {
+            var a = (aumid ?? "").ToLowerInvariant();
+            return a.Contains("chrome") || a.Contains("msedge") || a.Contains("firefox") || a.Contains("308046b0af4a39cb") || a.Contains("opera")
+                   || a.Contains("brave") || a.Contains("vivaldi") || (a.Contains("yandex") && !a.Contains("music")) || a.Contains("thebrowsercompany") || a.Contains("browser");
+        }
 
         public static string FriendlyName(string aumid)
         {
@@ -517,9 +706,11 @@ namespace NIsland.Services
             if (a.Contains("msedge")) return "Edge";
             if (a.Contains("chrome")) return "Chrome";
             if (a.Contains("firefox") || a.Contains("308046b0af4a39cb")) return "Firefox";
+            if (a.Contains("yandex.music") || a.Contains("yandexmusic")) return "Яндекс Музыка";
             if (a.Contains("yandex")) return "Яндекс";
             if (a.Contains("opera")) return "Opera";
             if (a.Contains("brave")) return "Brave";
+            if (a.Contains("vivaldi")) return "Vivaldi";
             if (a.Contains("zunemusic") || a.Contains("media.player")) return "Медиаплеер";
             if (a.Contains("applemusic") || a.Contains("itunes")) return "Apple Music";
             if (a.Contains("telegram")) return "Telegram";
@@ -527,6 +718,13 @@ namespace NIsland.Services
             if (a.Contains("aimp")) return "AIMP";
             if (a.Contains("foobar")) return "foobar2000";
             if (a.Contains("discord")) return "Discord";
+            if (a.Contains("deezer")) return "Deezer";
+            if (a.Contains("tidal")) return "TIDAL";
+            if (a.Contains("soundcloud")) return "SoundCloud";
+            if (a.Contains("musicbee")) return "MusicBee";
+            if (a.Contains("winamp")) return "Winamp";
+            if (a.Contains("potplayer")) return "PotPlayer";
+            if (a.Contains("mpc-hc") || a.Contains("mpc-be")) return "MPC";
             var n = aumid;
             int bang = n.LastIndexOf('!');
             if (bang >= 0) n = n[(bang + 1)..];

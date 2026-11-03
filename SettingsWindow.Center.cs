@@ -45,6 +45,8 @@ namespace NIsland
             new("fix", "Починить", "", "#FF453A", FixSec),
             new("system", "Паспорт ноутбука", "", "#8E8E93", SystemSec),
             new("auto", "Автоматизация", "", "#636366", AutoSec),
+            new("wifi", "Wi-Fi: анализ", "", "#0A84FF", WifiSec),
+            new("osint", "OSINT и проверки", "", "#5E5CE6", OsintSec),
         };
 
         static readonly Dictionary<string, string> CenterKeywords = new()
@@ -63,6 +65,8 @@ namespace NIsland
             ["fix"] = "звук принтер sfc dism dns сайт время интернет сеть обновления значки store магазин вирусы диск проводник панель задач",
             ["system"] = "модель процессор видеокарта серийный номер bios память",
             ["auto"] = "автоочистка напоминания сторож новичок уведомления",
+            ["wifi"] = "wi-fi wifi вайфай сигнал канал роутер сети рядом устройства пинг качество скорость пароль qr хотспот 5 ггц",
+            ["osint"] = "osint фишинг ссылка whois домен dns сертификат поддомены архив wayback ip пароль утечка exif gps фото virustotal хэш вирус",
         };
 
         // ------------------------------------------------------------------
@@ -89,13 +93,46 @@ namespace NIsland
         void Filter(string q)
         {
             if (q.Length > 0 && _searchIndex == null) BuildIndex();
+            _query = q;
             foreach (var b in _nav.Children.OfType<Border>())
             {
                 if (b.Tag is not Section s) continue;
-                bool ok = q.Length == 0 || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+                // ищем и по-русски, и на языке интерфейса — иначе в английской и украинской версии поиск ничего не находил
+                bool ok = q.Length == 0 || s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) || I18n.T(s.Title).Contains(q, StringComparison.OrdinalIgnoreCase)
                           || (_searchIndex.TryGetValue(s.Key, out var text) && text.Contains(q, StringComparison.OrdinalIgnoreCase));
                 b.Visibility = ok ? Visibility.Visible : Visibility.Collapsed;
             }
+        }
+
+        string _query = "";
+
+        /// <summary>Открыли раздел из поиска — прокручиваем к найденной настройке и коротко подсвечиваем её.</summary>
+        void RevealMatch()
+        {
+            if (_query.Length < 2 || _body.Content is not FrameworkElement page) return;
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+            {
+                var hit = FindText(page, _query);
+                if (hit == null) return;
+                FrameworkElement row = hit;
+                if (VisualTreeHelper.GetParent(hit) is Panel p && VisualTreeHelper.GetParent(p) is Grid g) row = g;
+                row.BringIntoView(new Rect(0, -40, row.ActualWidth, row.ActualHeight + 80));
+                if (row is Panel panel)
+                {
+                    var accent = (UI.Res("AccentBrush") as SolidColorBrush)?.Color ?? Colors.DodgerBlue;
+                    var br = new SolidColorBrush(ColorUtil.WithAlpha(accent, 0.35));
+                    panel.Background = br;
+                    br.BeginAnimation(SolidColorBrush.ColorProperty, new System.Windows.Media.Animation.ColorAnimation(ColorUtil.WithAlpha(accent, 0), TimeSpan.FromSeconds(1.6)) { BeginTime = TimeSpan.FromSeconds(0.6) });
+                }
+            }));
+        }
+
+        static TextBlock FindText(DependencyObject d, string q)
+        {
+            if (d is TextBlock t && t.Text != null && t.Text.Contains(q, StringComparison.OrdinalIgnoreCase)) return t;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(d); i++)
+                if (FindText(VisualTreeHelper.GetChild(d, i), q) is { } r) return r;
+            return null;
         }
 
         /// <summary>Текст всех разделов — чтобы находить по названию любой настройки, а не только раздела.</summary>
@@ -113,8 +150,8 @@ namespace NIsland
         static void Collect(object o, StringBuilder sb, int depth)
         {
             if (o == null || depth > 40) return;
-            if (o is TextBlock t) sb.Append(t.Text).Append(' ');
-            else if (o is ContentControl { Content: string c }) sb.Append(c).Append(' ');
+            if (o is TextBlock t) sb.Append(t.Text).Append(' ').Append(I18n.T(t.Text)).Append(' ');
+            else if (o is ContentControl { Content: string c }) sb.Append(c).Append(' ').Append(I18n.T(c)).Append(' ');
             if (o is DependencyObject d)
                 foreach (var child in LogicalTreeHelper.GetChildren(d)) Collect(child, sb, depth + 1);
         }

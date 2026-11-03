@@ -232,6 +232,10 @@ namespace NIsland.Core
 
         // Текст песни
         public int LyricsOffsetMs { get => _lyrOff; set => Set(ref _lyrOff, value); } int _lyrOff;
+        /// <summary>На сколько раньше подсвечивать строку, мс: глаз успевает прочитать до того, как её споют.</summary>
+        public int LyricsLeadMs { get => _lyrLead; set => Set(ref _lyrLead, value); } int _lyrLead = 200;
+        /// <summary>Подсвечивать слова по одному, если у текста есть пословная синхронизация.</summary>
+        public bool LyricsWords { get => _lyrWords; set => Set(ref _lyrWords, value); } bool _lyrWords = true;
         public bool LyricsKaraoke { get => _lyrKar; set => Set(ref _lyrKar, value); } bool _lyrKar = true;
         public bool LyricsTranslate { get => _lyrTr; set => Set(ref _lyrTr, value); } bool _lyrTr;
         public string LyricsTranslateTo { get => _lyrTrTo; set => Set(ref _lyrTrTo, value); } string _lyrTrTo = "ru";
@@ -297,6 +301,25 @@ namespace NIsland.Core
         public int IdleOpacity { get => _idleOp; set => Set(ref _idleOp, value); } int _idleOp = 100;
         public int BgOpacity { get => _bgOp; set => Set(ref _bgOp, value); } int _bgOp = 100;
         public int SettingsOpacity { get => _setOp; set => Set(ref _setOp, value); } int _setOp = 100;
+
+        // Интеграции и VPN
+        public bool PgHub { get => _pgHub; set => Set(ref _pgHub, value); } bool _pgHub = true;
+        public bool PgVpn { get => _pgVpn; set => Set(ref _pgVpn, value); } bool _pgVpn = true;
+        public bool PgWifi { get => _pgWifi; set => Set(ref _pgWifi, value); } bool _pgWifi = true;
+        /// <summary>Всплывашка, когда VPN включается или выключается (в любой программе).</summary>
+        public bool VpnNotify { get => _vpnNotify; set => Set(ref _vpnNotify, value); } bool _vpnNotify = true;
+        /// <summary>Замочек в свёрнутом острове, пока включён VPN.</summary>
+        public bool VpnInNotch { get => _vpnNotch; set => Set(ref _vpnNotch, value); } bool _vpnNotch;
+        /// <summary>Настройки сервисов: ключ интеграции → включена, поля (секреты зашифрованы DPAPI), какие события пересылать.</summary>
+        public Dictionary<string, NIsland.Services.IntegrationConfig> Integrations { get; set; } = new();
+
+        // «Без дублей»: выключить то, что остров уже показывает сам (Services/Dedupe.cs)
+        public bool DedupeBanners { get => _ddBan; set => Set(ref _ddBan, value); } bool _ddBan;
+        public bool DedupeAutoplay { get => _ddAuto; set => Set(ref _ddAuto, value); } bool _ddAuto;
+        public bool DedupeOsd { get => _ddOsd; set => Set(ref _ddOsd, value); } bool _ddOsd;
+
+        // Быстрый поиск (отдельное окно, Ctrl+Alt+Space)
+        public bool Spotlight { get => _spot; set => Set(ref _spot, value); } bool _spot = true;
 
         // HUD
         public bool HudVolume { get => _hudVol; set => Set(ref _hudVol, value); } bool _hudVol = true;
@@ -401,6 +424,8 @@ namespace NIsland.Core
         public List<string> TunedApps { get; set; } = new();
         /// <summary>Журнал активности: камера, микрофон, место — кто, когда и сколько (последние записи).</summary>
         public List<ActivityRecord> ActivityLog { get; set; } = new();
+        /// <summary>Быстрый поиск: что и сколько раз запускали — частое поднимается выше.</summary>
+        public Dictionary<string, int> SpotlightUsage { get; set; } = new();
     }
 
     public static class Store
@@ -455,6 +480,17 @@ namespace NIsland.Core
             SaveSettings();
         }
 
+        /// <summary>Самопроверка: настройки по умолчанию, без чтения и записи файлов.</summary>
+        public static void UseDefaults()
+        {
+            ReadOnly = true;
+            Settings = new Settings { LyricsCache = false, Language = "ru" };
+            Data = new AppData();
+        }
+
+        /// <summary>Самопроверка: ничего не записываем на диск (иначе настройки по умолчанию затёрли бы настоящие).</summary>
+        public static bool ReadOnly { get; private set; }
+
         /// <summary>Слабый компьютер: до 4 ГБ памяти, 2 потока или видеокарта без аппаратного ускорения WPF.</summary>
         static bool WeakPc()
         {
@@ -481,8 +517,8 @@ namespace NIsland.Core
                 new() { Name = "Корзина", Target = "shell:RecycleBinFolder" },
             };
 
-        public static void SaveSettings() { _dirtySettings = true; Kick(); }
-        public static void SaveData() { _dirtyData = true; Kick(); }
+        public static void SaveSettings() { if (ReadOnly) return; _dirtySettings = true; Kick(); }
+        public static void SaveData() { if (ReadOnly) return; _dirtyData = true; Kick(); }
 
         static void Kick()
         {
@@ -497,6 +533,7 @@ namespace NIsland.Core
 
         public static void Flush()
         {
+            if (ReadOnly) return;
             try
             {
                 if (_dirtySettings) Write("settings.json", Settings);
@@ -506,15 +543,29 @@ namespace NIsland.Core
             catch (Exception e) { Log.Error(e); }
         }
 
+        /// <summary>Файл повреждён (выключили питание во время записи, диск) — берём резервную копию, а не начинаем с нуля.</summary>
         static T Read<T>(string name) where T : class
         {
-            try
+            var p = Path.Combine(Dir, name);
+            foreach (var file in new[] { p, p + ".bak" })
             {
-                var p = Path.Combine(Dir, name);
-                if (!File.Exists(p)) return null;
-                return JsonSerializer.Deserialize<T>(File.ReadAllText(p), Json);
+                try
+                {
+                    if (!File.Exists(file)) continue;
+                    var text = File.ReadAllText(file);
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    var v = JsonSerializer.Deserialize<T>(text, Json);
+                    if (v == null) continue;
+                    if (file != p)
+                    {
+                        Log.Info($"{name}: основной файл повреждён, загружена резервная копия");
+                        try { File.Copy(p, p + ".broken", true); } catch { }
+                    }
+                    return v;
+                }
+                catch (Exception e) { Log.Info($"{name}: {e.Message}"); }
             }
-            catch (Exception e) { Log.Error(e); return null; }
+            return null;
         }
 
         static void Write<T>(string name, T value)
@@ -522,6 +573,12 @@ namespace NIsland.Core
             var p = Path.Combine(Dir, name);
             var tmp = p + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(value, Json));
+            // атомарная замена с резервной копией прошлой версии
+            if (File.Exists(p))
+            {
+                try { File.Replace(tmp, p, p + ".bak", true); return; }
+                catch (Exception e) { Log.Info($"{name}: replace — {e.Message}"); }
+            }
             File.Move(tmp, p, true);
         }
     }

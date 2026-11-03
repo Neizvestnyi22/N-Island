@@ -93,6 +93,10 @@ namespace NIsland
                 new("prayer", "Намаз", "", "#2EC4B6", Prayer),
                 new("shelf", "Полка", "", "#FFB800", Shelf),
                 new("sounds", "Звуки", "", "#FF9F0A", SoundsSec),
+                new("hub", "Интеграции", "", "#32ADE6", HubSec),
+                new("vpn", "VPN", "", "#30B0C7", VpnSec),
+                new("spotlight", "Быстрый поиск", "", "#AF52DE", SpotlightSec),
+                new("dedupe", "Без дублей", "", "#FF9500", DedupeSec),
                 new("language", "Язык", "", "#0A84FF", LanguageSec),
                 new("hud", "HUD и клавиатура","", "#64D2FF", Hud),
             };
@@ -214,6 +218,7 @@ namespace NIsland
             page.Children.Add(s.Build());
             _body.Content = page;
             _scroll.ScrollToTop();
+            RevealMatch();
             // раздел мягко выплывает
             var tt = new TranslateTransform(0, 12);
             page.RenderTransform = tt;
@@ -285,10 +290,12 @@ namespace NIsland
             foreach (var (val, label) in opts)
             {
                 var v = val;
-                var rb = new RadioButton { Style = UI.St("Segment"), Content = label, GroupName = group, IsChecked = Equals(p.GetValue(S), v) };
-                rb.Checked += (_, __) => p.SetValue(S, v);
+                var rb = new RadioButton { Style = UI.St("Segment"), Content = label, GroupName = group, IsChecked = Equals(p.GetValue(S), v), Tag = v };
+                rb.Checked += (_, __) => { if (!Equals(p.GetValue(S), v)) p.SetValue(S, v); };
                 sp.Children.Add(rb);
             }
+            // поменяли из острова или трея — переключатель тоже переедет
+            Follow(sp, prop, () => { foreach (RadioButton rb in sp.Children) rb.IsChecked = Equals(p.GetValue(S), rb.Tag); });
             return new Border { Background = UI.Hex("#22FFFFFF"), CornerRadius = new CornerRadius(8), Padding = new Thickness(2), Child = sp };
         }
 
@@ -311,6 +318,11 @@ namespace NIsland
             var plus = UI.IconBtn("", () => Change(step), 10, 24);
             minus.Background = plus.Background = UI.Hex("#2AFFFFFF");
             minus.Template = plus.Template = RoundTemplate();
+            Follow(label, prop, Upd);   // поменяли из острова — значение в окне тоже обновится
+            // колесо мыши над значением тоже меняет его — быстрее, чем кликать
+            label.Background = Brushes.Transparent;
+            label.MouseWheel += (_, e) => { Change(e.Delta > 0 ? step : -step); e.Handled = true; };
+            label.ToolTip = I18n.T("Колесо мыши — изменить");
             return UI.Row(minus, label, plus);
         }
 
@@ -407,7 +419,11 @@ namespace NIsland
                 Row("Вода", "Трекер воды с напоминаниями", Toggle(nameof(Settings.PgWater))),
                 Row("Намаз", "Время молитв по городу", Toggle(nameof(Settings.PgPrayer))),
                 Row("Полка", "Временное место для файлов", Toggle(nameof(Settings.PgShelf))),
-                Row("Пульт", "Громкость, яркость, быстрые действия", Toggle(nameof(Settings.PgQuick)))));
+                Row("Пульт", "Громкость, яркость, быстрые действия", Toggle(nameof(Settings.PgQuick))),
+                Row("Wi-Fi", "Сигнал вживую, качество связи, сети рядом и устройства в сети", Toggle(nameof(Settings.PgWifi))),
+                Row("VPN", "Включать и выключать установленные VPN, IP и страна", Toggle(nameof(Settings.PgVpn))),
+                Row("Сервисы", "Home Assistant, Todoist, календарь, новости, курсы, посылки и другие интеграции", Toggle(nameof(Settings.PgHub)))),
+            BackupGroup());
 
         UIElement Ring() => Panel(
             Group(null,
@@ -526,12 +542,15 @@ namespace NIsland
             Group("Текст песни",
                 Row("Караоке", "Текущая строчка заливается цветом в такт песне", Toggle(nameof(Settings.LyricsKaraoke))),
                 Row("Режим фокуса", "Текст крупно на всю чёлку вместо колонки", Toggle(nameof(Settings.LyricsFocus))),
+                Row("Подсветка по словам", "Если у песни есть пословная синхронизация — каждое слово загорается, когда его поют", Toggle(nameof(Settings.LyricsWords))),
                 Row("Сдвиг текста", "Если строчки спешат или опаздывают для всех песен. Для одной песни — кнопки ±0,5 с прямо в чёлке",
                     Stepper(nameof(Settings.LyricsOffsetMs), -5000, 5000, 250, v => (v > 0 ? "+" : "") + (v / 1000.0).ToString("0.##") + " с", () => MediaService.I.Resync())),
+                Row("Опережение строки", "Насколько раньше подсвечивать строку, чтобы успеть её прочитать до того, как её споют",
+                    Stepper(nameof(Settings.LyricsLeadMs), 0, 1000, 50, v => v == 0 ? "нет" : (v / 1000.0).ToString("0.##") + " с", () => MediaService.I.Resync())),
                 Row("Перевод строчек", "Под каждой строкой — перевод (Google Переводчик)", Toggle(nameof(Settings.LyricsTranslate))),
                 Row("Язык перевода", null, Seg(nameof(Settings.LyricsTranslateTo), ("ru", "RU"), ("uk", "UA"), ("en", "EN"), ("de", "DE"), ("es", "ES"), ("tr", "TR"))),
                 Row("Хранить тексты на диске", "Знакомые песни открываются мгновенно и без интернета", Toggle(nameof(Settings.LyricsCache))),
-                Row("Запасной источник текстов", "Если LRCLIB недоступна или не знает песню — искать синхронный текст в NetEase Cloud Music " +
+                Row("Запасные источники текстов", "Если LRCLIB недоступна или не знает песню — искать синхронный текст в NetEase Cloud Music и Kugou " +
                     "(туда уходят только название и исполнитель)", Toggle(nameof(Settings.LyricsFallback))),
                 Row("Кэш текстов", LyricsService.CacheInfo() is var ci ? $"{ci.Files} песен · {Maint.Size(ci.Bytes)}" : null,
                     UI.Pill("Очистить", () => { LyricsService.ClearCache(); Open("music"); }))),
@@ -539,7 +558,8 @@ namespace NIsland
             Note("Работает с любым приложением, которое показывает музыку в системном регуляторе громкости Windows: Spotify, Яндекс Музыка, " +
                  "VK, YouTube и YouTube Music в Chrome/Edge/Firefox/Opera, Apple Music, Telegram, AIMP, foobar2000, медиаплеер Windows и др. " +
                  "Если играет сразу несколько — переключай источник кнопкой с названием приложения. Тексты песен — из открытой базы LRCLIB " +
-                 "(запасной источник — NetEase); если строчки идут не в такт, подвинь их кнопками ±0,5 с — сдвиг запомнится для этой песни."));
+                 "(запасные — NetEase и Kugou); если строчки идут не в такт, подвинь их кнопками ±0,5 с — сдвиг запомнится для этой песни. " +
+                 "Если приложение не сообщает время трека (Firefox, часть плееров), N-Island считает его сам, а длительность берёт из каталога — она помечена «≈»."));
 
         UIElement Calls() => Panel(
             Group(null,

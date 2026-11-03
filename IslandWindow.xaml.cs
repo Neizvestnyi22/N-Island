@@ -120,6 +120,9 @@ namespace NIsland
                 new() { Key = "media", Title = "Музыка", Glyph = "", On = () => S.PgMedia, Make = () => new MediaPage() },
                 new() { Key = "ai", Title = "ИИ", Glyph = "", On = () => S.PgAi, Make = () => new AiPage() },
                 new() { Key = "sound", Title = "Звук", Glyph = "", On = () => S.PgSound, Make = () => new SoundPage() },
+                new() { Key = "wifi", Title = "Wi-Fi", Glyph = "", On = () => S.PgWifi, Make = () => new WifiPage() },
+                new() { Key = "vpn", Title = "VPN", Glyph = "", On = () => S.PgVpn, Make = () => new VpnPage() },
+                new() { Key = "hub", Title = "Сервисы", Glyph = "", On = () => S.PgHub, Make = () => new HubPage() },
                 new() { Key = "center", Title = "Уведомления", Glyph = "", On = () => S.PgCenter, Make = () => new CenterPage() },
                 new() { Key = "modes", Title = "Режимы и стиль", Glyph = "", On = () => S.PgModes, Make = () => new ModesPage() },
                 new() { Key = "calendar", Title = "Календарь", Glyph = "", On = () => S.PgCalendar, Make = () => new CalendarPage() },
@@ -162,6 +165,17 @@ namespace NIsland
                 _dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
                 Reposition();
             }));
+            // после сна мониторы и Проводник могли «переехать» — через пару секунд приводим остров в порядок
+            SystemEvents.PowerModeChanged += (_, e) =>
+            {
+                if (e.Mode != PowerModes.Resume) return;
+                Dispatcher.BeginInvoke(new Action(async () => { await System.Threading.Tasks.Task.Delay(3000); Recover(); }));
+            };
+            SystemEvents.SessionSwitch += (_, e) =>
+            {
+                if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
+                    Dispatcher.BeginInvoke(new Action(Recover));
+            };
 
             // мышь
             Island.MouseEnter += (_, __) =>
@@ -309,6 +323,7 @@ namespace NIsland
 
             AudioService.I.Changed += (v, muted, self) =>
             {
+                if (!self && S.DedupeOsd) Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Dedupe.TouchOsd));
                 if (self || !S.HudVolume) return;
                 string glyph = muted || v < 0.01 ? "" : v < 0.34 ? "" : v < 0.67 ? "" : "";
                 ShowActivity(new Activity
@@ -331,6 +346,7 @@ namespace NIsland
             };
             SystemService.I.BrightnessChanged += v =>
             {
+                if (S.DedupeOsd) Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Dedupe.TouchOsd));
                 if (!S.HudBrightness) return;
                 ShowActivity(new Activity
                 {
@@ -394,6 +410,19 @@ namespace NIsland
                 }
             };
             calls.ToastArrived += OnToast;
+
+            // VPN включили или выключили — в любой программе
+            Vpn.ActiveChanged += (on, name) =>
+            {
+                UpdateRight();
+                if (!S.VpnNotify) return;
+                ShowActivity(new Activity
+                {
+                    Kind = "vpn", Glyph = on ? "" : "", Tint = on ? Green : Orange,
+                    Title = on ? "VPN включён" : "VPN выключен", Sub = on ? name : "Соединение идёт напрямую",
+                    Seconds = 3, Wide = true, Page = S.PgVpn ? "vpn" : null,
+                });
+            };
             NotificationLog.Changed += () => { UpdateCollapsed(); if (_mode == Mode.Collapsed) Retarget(); };
 
             // буфер, клавиатура, пипетка
@@ -437,6 +466,7 @@ namespace NIsland
         void OnToast(Toast t)
         {
             NotificationLog.Add(t);
+            Dedupe.OnApp(t.AppId);   // новое приложение — его баннер Windows тоже выключаем, если включено «Без дублей»
             if (t.IsCall && S.CallDetect)
             {
                 if (_mode == Mode.Expanded) Collapse(true);
@@ -663,8 +693,8 @@ namespace NIsland
         bool Allowed(Activity a)
         {
             bool userAction = a.Kind is "pick" or "toast" or "mode";
-            if (S.Mode == "present") return userAction;
-            bool important = userAction || a.Kind is "incall" or "lowbat" or "timer" or "event" or "notifkey" or "usb" or "cam";
+            if (S.Mode == "present") return userAction || a.Kind == "alert";
+            bool important = userAction || a.Kind is "incall" or "lowbat" or "timer" or "event" or "notifkey" or "usb" or "cam" or "alert" or "vpn";
             if (Modes.Hidden) return important || (a.Action != null && a.Kind == "pomodoro");
             if (Modes.Dnd) return important || a.Kind is "volume" or "brightness" or "battery" or "callstart" or "mic" or "pomodoro" or "kbd" or "caps" or "clip";
             return true;
@@ -673,8 +703,10 @@ namespace NIsland
         /// <summary>Важность всплывашки: более важная не перебивается менее важной.</summary>
         static int Prio(string kind) => kind switch
         {
-            "incall" => 100,
+            "incall" or "alert" => 100,
             "callstart" => 90,
+            "vpn" => 78,
+            "hub" => 45,
             "usb" or "output" or "lowbat" or "battery" or "cam" => 80,
             "pc" => 50,
             "pick" or "toast" or "mode" => 75,
@@ -689,6 +721,8 @@ namespace NIsland
 
         public void ShowActivity(Activity a)
         {
+            // наружу (Telegram, ntfy, Discord, вебхук) — даже в «Не беспокоить»: туда это и нужно
+            if (a.Kind != "alert") Integrations.Publish(Integrations.KindOf(a.Kind), a.Title, a.Sub);
             if (!Allowed(a)) return;
             if (_hiddenFs && a.Action == null && a.Kind != "pick") return;
             if (_mode == Mode.Activity && _act != null && _act.Kind != a.Kind && Prio(a.Kind) < Prio(_act.Kind) && DateTime.Now < _actEnds)
@@ -1298,6 +1332,7 @@ namespace NIsland
             else if (S.NetInNotch) text = "↓" + NetSpeed.Fmt(NetSpeed.Down);
             else text = sys.HasBattery && S.ShowBattery ? (sys.Charging ? "⚡" : "") + sys.BatteryPercent + "%" : "";
             if (S.Mode == "minimal" && !c.InCall && !t.Running) text = "";
+            if (S.VpnInNotch && Vpn.Active && S.Mode != "minimal") text = "🔒 " + text;
             ColRight.Text = text;
             if (color is Color col) ColRight.Foreground = new SolidColorBrush(col);
             else ColRight.SetResourceReference(TextBlock.ForegroundProperty, "DimBrush");
@@ -1309,7 +1344,7 @@ namespace NIsland
         void UpdateNotchProgress()
         {
             var m = MediaService.I;
-            bool show = S.NotchProgress && m.HasSession && m.CanSeek && !CallService.I.InCall && S.Mode != "minimal" && _mode == Mode.Collapsed;
+            bool show = S.NotchProgress && m.HasSession && m.HasTime && !CallService.I.InCall && S.Mode != "minimal" && _mode == Mode.Collapsed;
             if (!show) { if (ColProgress.Width != 0) ColProgress.Width = 0; return; }
             double w = Math.Max(0, CollapsedView.ActualWidth - 4);
             double p = Math.Clamp(m.Position.TotalSeconds / m.Duration.TotalSeconds, 0, 1);
@@ -1328,7 +1363,7 @@ namespace NIsland
                 return (pomo.Progress, pomo.Phase == PomoPhase.Focus ? Red : Green);
             if (src == "auto" && t.Active) return (t.Progress, Orange);
             if (src == "media")
-                return (m.CanSeek ? m.Position.TotalSeconds / m.Duration.TotalSeconds : 0, m.ArtColor);
+                return (m.HasTime ? Math.Clamp(m.Position.TotalSeconds / m.Duration.TotalSeconds, 0, 1) : 0, m.ArtColor);
             if (src == "water" || (src == "auto" && S.PgWater))
                 return (Water.Progress, Color.FromRgb(0x0A, 0x84, 0xFF));
             var sys = SystemService.I;
@@ -1624,6 +1659,9 @@ namespace NIsland
                 case nameof(Settings.PgSound):
                 case nameof(Settings.PgMaint):
                 case nameof(Settings.PgTools):
+                case nameof(Settings.PgVpn):
+                case nameof(Settings.PgWifi):
+                case nameof(Settings.PgHub):
                 case nameof(Settings.PageOrder):
                     BuildPages();
                     break;
@@ -1678,6 +1716,7 @@ namespace NIsland
                     App.ApplyAccent(S.ArtColors && m.Art != null ? m.ArtColor : null);
                     break;
                 case nameof(Settings.Hotkey):
+                case nameof(Settings.Spotlight):
                     RegisterHotkey();
                     break;
                 case nameof(Settings.StartWithWindows):
@@ -1713,15 +1752,21 @@ namespace NIsland
         }
 
         /// <summary>Ctrl+Alt+ N — чёлка, H — скрыть, D — не беспокоить, C — пипетка, V — буфер, T — перевод.</summary>
-        static readonly (int Id, uint Vk)[] Hotkeys = { (1, 0x4E), (2, 0x48), (3, 0x44), (4, 0x43), (5, 0x56), (6, 0x54), (7, 0x41), (8, 0x4C) };
+        static readonly (int Id, uint Vk)[] Hotkeys = { (1, 0x4E), (2, 0x48), (3, 0x44), (4, 0x43), (5, 0x56), (6, 0x54), (7, 0x41), (8, 0x4C), (9, 0x20) };
+
+        /// <summary>Горячие клавиши, которые не удалось занять (их уже держит другая программа) — показываем в настройках.</summary>
+        public static readonly List<string> BusyHotkeys = new();
 
         void RegisterHotkey()
         {
             if (_hwnd == IntPtr.Zero) return;
+            BusyHotkeys.Clear();
             foreach (var (id, vk) in Hotkeys)
             {
                 Native.UnregisterHotKey(_hwnd, id);
-                if (S.Hotkey) Native.RegisterHotKey(_hwnd, id, 0x2 | 0x1 | 0x4000, vk);
+                bool want = S.Hotkey && (id != 9 || S.Spotlight);
+                if (want && !Native.RegisterHotKey(_hwnd, id, 0x2 | 0x1 | 0x4000, vk))
+                    BusyHotkeys.Add("Ctrl+Alt+" + (vk == 0x20 ? "Space" : ((char)vk).ToString()));
             }
         }
 
@@ -1755,7 +1800,25 @@ namespace NIsland
                 case 8:
                     App.ShowCenter();
                     break;
+                case 9:
+                    SpotlightWindow.Toggle();
+                    break;
             }
+        }
+
+        static readonly int _taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
+
+        /// <summary>После сна, смены мониторов или перезапуска Проводника: остров на место, поверх всех, стекло заново.</summary>
+        void Recover()
+        {
+            if (_hwnd == IntPtr.Zero) return;
+            _dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+            Reposition();
+            Native.KeepTopmost(_hwnd);
+            RegisterHotkey();
+            _rgnKey = null;
+            if (_blur) EnsureGlass(true);
+            Retarget(true);
         }
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1772,6 +1835,19 @@ namespace NIsland
             else if (msg == 0x0219 && wParam.ToInt32() is 0x8000 or 0x8004) // WM_DEVICECHANGE: подключили/отключили — сразу проверяем диски
             {
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(WatchDrives));
+            }
+            else if (msg == 0x02E0) // WM_DPICHANGED: окно переехало на монитор с другим масштабом
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    _dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+                    Reposition();
+                    Retarget(true);
+                }));
+            }
+            else if (msg == _taskbarCreated && _taskbarCreated != 0) // перезапустился Проводник — возвращаем остров поверх всех окон
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Recover));
             }
             return IntPtr.Zero;
         }

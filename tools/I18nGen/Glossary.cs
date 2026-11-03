@@ -60,6 +60,14 @@ static class Glossary
         ["Чёлка"] = T("Island", "Острівець", "Insel", "Isla", "Île", "Ilha", "Wyspa", "Ada"),
         ["Свернуть"] = T("Minimize", "Згорнути", "Minimieren", "Minimizar", "Réduire", "Minimizar", "Minimalizuj", "Küçült"),
         ["Закрыть"] = T("Close", "Закрити", "Schließen", "Cerrar", "Fermer", "Fechar", "Zamknij", "Kapat"),
+        ["Сервисы"] = T("Services", "Сервіси", "Dienste", "Servicios", "Services", "Serviços", "Usługi", "Servisler"),
+        ["Интеграции"] = T("Integrations", "Інтеграції", "Integrationen", "Integraciones", "Intégrations", "Integrações", "Integracje", "Entegrasyonlar"),
+        ["Быстрый поиск"] = T("Quick search", "Швидкий пошук", "Schnellsuche", "Búsqueda rápida", "Recherche rapide", "Busca rápida", "Szybkie wyszukiwanie", "Hızlı arama"),
+        ["Без дублей"] = T("No duplicates", "Без дублів", "Keine Duplikate", "Sin duplicados", "Sans doublons", "Sem duplicatas", "Bez duplikatów", "Kopya yok"),
+        ["VPN выключен"] = T("VPN is off", "VPN вимкнено", "VPN aus", "VPN desactivada", "VPN désactivé", "VPN desligada", "VPN wyłączony", "VPN kapalı"),
+        ["VPN включён"] = T("VPN is on", "VPN увімкнено", "VPN an", "VPN activada", "VPN activé", "VPN ligada", "VPN włączony", "VPN açık"),
+        ["Повітряна тривога (alerts.in.ua)"] = T("Air raid alert (alerts.in.ua)", "Повітряна тривога (alerts.in.ua)", "Luftalarm (alerts.in.ua)", "Alerta aérea (alerts.in.ua)", "Alerte aérienne (alerts.in.ua)", "Alerta aéreo (alerts.in.ua)", "Alarm lotniczy (alerts.in.ua)", "Hava saldırısı alarmı (alerts.in.ua)"),
+        ["Нова пошта"] = T("Nova Poshta", "Нова пошта", "Nova Poshta", "Nova Poshta", "Nova Poshta", "Nova Poshta", "Nova Poshta", "Nova Poshta"),
     };
 
     static Dictionary<string, string> T(string en, string uk, string de, string es, string fr, string pt, string pl, string tr) =>

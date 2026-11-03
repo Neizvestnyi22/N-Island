@@ -46,13 +46,22 @@ Checksums are in `SHA256SUMS.txt` in every release.
 ### The island
 - **Music from any app or website** — Spotify, YouTube / YouTube Music, Yandex Music, VK, Apple Music, AIMP, browsers, Telegram… (Windows media controls).
   Cover, progress in the notch, shuffle / repeat / ±10 s / speed, history and favorites.
-- **Synced lyrics with karaoke** — LRCLIB with NetEase as a fallback, per-song timing offset that is remembered, line translation, focus mode, offline cache.
+  Works even with apps that don't report track time (Firefox, some players): N-Island counts the time itself and takes the length from a catalog (marked “≈”).
+- **Synced lyrics with karaoke** — LRCLIB (exact match by length) with NetEase and Kugou as fallbacks, **word-by-word highlighting**, smart title cleanup for YouTube/Spotify/VK titles, per-song timing offset that is remembered, line translation, focus mode, offline cache.
+- **VPN in the island** — Cloudflare WARP, NordVPN, Mullvad, Windscribe, Tailscale, PIA, OpenVPN, WireGuard and Windows VPN connections switch on and off right in the island; any other VPN shows its status. External IP and country, a pop-up when a VPN drops.
+- **15 integrations** — Telegram bot, ntfy, Discord, webhooks (IFTTT/Zapier/n8n), Home Assistant, Todoist, Google/Outlook/iCloud calendar, GitHub, RSS, ListenBrainz, Last.fm, exchange rates and crypto, Nova Poshta parcels, website monitoring, air raid alerts (alerts.in.ua).
+- **Wi-Fi tools** — live signal graph (find the best spot), nearby networks, devices on your network, a full network check with advice (5 GHz, channel load, WPS, router vs adapter standard, latency and loss, DNS speed, driver age), free channels for 2.4/5 GHz, speed test.
+- **OSINT and checks** — phishing link check (unshorten, domain age, look-alike letters, brand in someone else's domain), WHOIS/RDAP, DNS, certificates, subdomains (Certificate Transparency), Wayback history, IP info, password leak check via HIBP k-anonymity, photo metadata/GPS with a clean copy, file hash → VirusTotal.
+- **No duplicates** — turn off what the island already shows: Windows notification banners (they stay in the notification center), the AutoPlay window, the volume OSD. Everything comes back when N-Island closes.
 - **Calls** from apps *and* websites (Telegram, WhatsApp, Discord, Teams, Zoom, Meet in the browser…) with a timer and a “back to call” button.
 - **Notifications** from all apps: 2FA codes with a copy button, important keywords that break through Do Not Disturb, block list, privacy mode.
 - **AI chat** right in the notch: free provider without a key, Claude, OpenAI, Gemini, Groq, DeepSeek, Mistral, OpenRouter, Ollama, LM Studio and your own providers. Keys are encrypted with Windows DPAPI.
 - Timer, stopwatch, Pomodoro, to-dos, calendar with reminders, weather, world clocks, translator, clipboard history, notes, file shelf, launcher, prayer times, water tracker, sound mixer per app, 30+ API tools (speed test, IP, DNS, QR, currency, units…).
 - **15 styles** (liquid glass, frosted, iPhone, neon, **AMOLED** pure black…), 7 modes (Do Not Disturb, Focus, Game, Presentation…), deep customization and transparency.
 - **Proper sounds** — chimes, marimba, bell, alarm; synthesized on the fly, per event, with volume.
+
+### Quick search (Ctrl+Alt+Space)
+A Spotlight/Raycast-style window: programs and Store apps (by first letters or even in the wrong keyboard layout), Windows settings, calculator, currency and unit conversion, translation, island commands (“timer 25”, “note …”, “task …”), recent files, clipboard, web search — and an **AI answer right in the window** (Tab).
 
 ### Laptop Control Center (Ctrl+Alt+L)
 <p align="center">
@@ -99,6 +108,7 @@ Next to every option there is a **✨ button** — the AI explains in plain word
 | Keys | Action |
 |---|---|
 | Ctrl+Alt+N | open the island |
+| Ctrl+Alt+Space | quick search |
 | Ctrl+Alt+L | Laptop Control Center |
 | Ctrl+Alt+A | AI chat |
 | Ctrl+Alt+H / D | hide the island / Do Not Disturb |
