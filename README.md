@@ -84,6 +84,16 @@ Next to every option there is a **✨ button** — the AI explains in plain word
 ### Languages
 Русский, English, Українська — built in, works offline (Settings → Language).
 
+## 📸 Screenshots
+<p align="center">
+  <img src="docs/screenshots/center-privacy.png" width="49%" alt="Anti-tracking"/>
+  <img src="docs/screenshots/center-clean.png" width="49%" alt="Deep cleanup"/>
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings-styles.png" width="49%" alt="Modes and styles"/>
+  <img src="docs/screenshots/settings-sounds.png" width="49%" alt="Sounds"/>
+</p>
+
 ## ⌨️ Hotkeys
 
 | Keys | Action |

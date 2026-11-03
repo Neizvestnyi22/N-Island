@@ -75,6 +75,16 @@
 **Легкий режим** вимикає скляне розмиття, еквалайзер і тіні та вмикається сам на 4 ГБ пам'яті / 2 потоках / без відеоприскорення.
 Мови: Русский, English, Українська — вбудовані, працюють без інтернету.
 
+## 📸 Скриншоти
+<p align="center">
+  <img src="../screenshots/center-privacy.png" width="49%" alt="Захист від стеження"/>
+  <img src="../screenshots/center-clean.png" width="49%" alt="Глибоке очищення"/>
+</p>
+<p align="center">
+  <img src="../screenshots/settings-styles.png" width="49%" alt="Режими та стилі"/>
+  <img src="../screenshots/settings-sounds.png" width="49%" alt="Звуки"/>
+</p>
+
 ## 🖥 Вимоги
 Windows 10 версії 2004 (збірка 19041) і новіша або Windows 11; x64 або x86; достатньо 4 ГБ пам'яті.
 
