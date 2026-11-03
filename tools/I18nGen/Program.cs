@@ -51,6 +51,25 @@ if (langs.Length >= 2 && langs[0] == "--export")
     Console.WriteLine($"экспорт: {list.Count} строк → {langs[1]}");
     return;
 }
+// Почистить готовые словари теми же правилами (кавычки, узкие пробелы, глоссарий):  -- <проект> --fix en uk
+if (langs.Length >= 2 && langs[0] == "--fix")
+{
+    foreach (var lang in langs.Skip(1))
+    {
+        var file = Path.Combine(outDir, lang + ".json");
+        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? new();
+        int changed = 0;
+        foreach (var k in dict.Keys.ToList())
+        {
+            var v = Keep(k, dict[k]);
+            if (Glossary.Terms.TryGetValue(k.Trim(), out var terms) && terms.TryGetValue(lang, out var t)) v = Keep(k, t);
+            if (v != dict[k]) { dict[k] = v; changed++; }
+        }
+        File.WriteAllText(file, JsonSerializer.Serialize(new SortedDictionary<string, string>(dict, StringComparer.Ordinal), jsonOut));
+        Console.WriteLine($"[{lang}] исправлено: {changed}");
+    }
+    return;
+}
 if (langs.Length >= 3 && langs[0] == "--import")
 {
     string lang = langs[1], src = langs[2];
@@ -286,7 +305,11 @@ async Task<string> Google(string text, string lang)
 // пробелы по краям важны: строки склеиваются в коде («Освобождено » + размер)
 static string Keep(string src, string tr)
 {
-    tr = tr.Trim();
+    tr = tr.Replace(' ', ' ').Replace(' ', ' ').Trim();
+    // ИИ иногда берёт перевод в кавычки, которых нет в исходной строке
+    var s = src.Trim();
+    foreach (var (open, close) in new[] { ('"', '"'), ('“', '”'), ('«', '»'), ('„', '“'), ('\'', '\'') })
+        if (tr.Length > 1 && tr[0] == open && tr[^1] == close && !(s.Length > 0 && s[0] == open)) { tr = tr[1..^1].Trim(); break; }
     int a = src.Length - src.TrimStart().Length, b = src.Length - src.TrimEnd().Length;
     return src[..a] + tr + src[(src.Length - b)..];
 }

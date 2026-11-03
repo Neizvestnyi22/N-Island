@@ -12,7 +12,10 @@ namespace NIsland.Core
 {
     public static class Fmt
     {
-        public static readonly CultureInfo Ru = new("ru-RU");
+        static readonly CultureInfo RuCulture = new("ru-RU"), EnCulture = new("en-US"), UkCulture = new("uk-UA");
+
+        /// <summary>Культура для дат и чисел — на языке интерфейса (исторически называется Ru: по умолчанию русский).</summary>
+        public static CultureInfo Ru => I18n.Current switch { "en" => EnCulture, "uk" => UkCulture, _ => RuCulture };
 
         public static string Time(TimeSpan t)
         {

@@ -25,6 +25,13 @@ static class Glossary
     // ru → { язык → перевод }
     public static readonly Dictionary<string, Dictionary<string, string>> Terms = new()
     {
+        ["Не спать"] = T("Keep awake", "Не спати", "Wach bleiben", "Mantener activo", "Rester éveillé", "Manter ativo", "Nie usypiaj", "Uyanık tut"),
+        ["Блокировка"] = T("Lock", "Блокування", "Sperren", "Bloquear", "Verrouiller", "Bloquear", "Zablokuj", "Kilitle"),
+        ["Основные"] = T("General", "Основні", "Allgemein", "General", "Général", "Geral", "Ogólne", "Genel"),
+        ["Сделано"] = T("Made by", "Автори", "Gemacht von", "Hecho por", "Créé par", "Feito por", "Autorzy", "Yapımcılar"),
+        ["из 100"] = T("of 100", "зі 100", "von 100", "de 100", "sur 100", "de 100", "na 100", "/ 100"),
+        ["Вышла версия"] = T("New version", "Вийшла версія", "Neue Version", "Nueva versión", "Nouvelle version", "Nova versão", "Nowa wersja", "Yeni sürüm"),
+        ["Безопасно"] = T("Safe", "Безпечно", "Sicher", "Seguro", "Sûr", "Seguro", "Bezpieczne", "Güvenli"),
         ["Корзина"] = T("Recycle Bin", "Кошик", "Papierkorb", "Papelera de reciclaje", "Corbeille", "Lixeira", "Kosz", "Geri Dönüşüm Kutusu"),
         ["Обзор"] = T("Overview", "Огляд", "Übersicht", "Resumen", "Vue d'ensemble", "Visão geral", "Przegląd", "Genel bakış"),
         ["Сон"] = T("Sleep", "Сон", "Energie sparen", "Suspender", "Veille", "Suspender", "Uśpienie", "Uyku"),

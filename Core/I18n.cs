@@ -79,6 +79,9 @@ namespace NIsland.Core
             }
             foreach (var l in _fragments.Values) l.Sort((a, b) => b.Key.Length.CompareTo(a.Key.Length));
 
+            // Loaded WPF рассылает только элементам со своими обработчиками (обычные TextBlock его не получают),
+            // а SizeChanged приходит каждому элементу при первой раскладке — до отрисовки, так что русский текст даже не мелькнёт
+            EventManager.RegisterClassHandler(typeof(FrameworkElement), FrameworkElement.SizeChangedEvent, new SizeChangedEventHandler(OnSized), true);
             EventManager.RegisterClassHandler(typeof(FrameworkElement), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnLoaded), true);
         }
 
@@ -93,6 +96,7 @@ namespace NIsland.Core
             if (trimmed.Length != s.Length && _exact.TryGetValue(trimmed, out v))
                 return s[..(s.Length - s.TrimStart().Length)] + v + s[s.TrimEnd().Length..];
             if (s.Length > 600) return s;   // длинный текст — это ответ ИИ, заметка или песня, а не интерфейс
+            if (_fragments == null) return s;
             // склеенная строка: заменяем известные куски, но только если они покрывают большую часть текста —
             // иначе это пользовательский текст (песня, заметка), и его не трогаем
             var sb = new StringBuilder(s.Length + 16);
@@ -119,13 +123,32 @@ namespace NIsland.Core
                 sb.Append(s[i]);
                 i++;
             }
+            // короткие служебные слова и единицы («2 из 25», «70 ГБ») — в словаре их нет, они слишком короткие для кусков
+            var res = sb.ToString();
+            if (ShortWords.TryGetValue(Current, out var words) && res.Any(IsCyr))
+            {
+                res = System.Text.RegularExpressions.Regex.Replace(res, @"(?<![А-Яа-яЁё])[А-Яа-яЁё]{1,4}\.?(?![А-Яа-яЁё])", m =>
+                {
+                    if (!words.TryGetValue(m.Value, out var w)) return m.Value;
+                    covered += m.Value.Count(IsCyr);
+                    return w;
+                });
+            }
             int total = s.Count(IsCyr);
-            return covered > 0 && covered >= total * 0.6 ? sb.ToString() : s;
+            return covered > 0 && covered >= total * 0.6 ? res : s;
         }
+
+        static readonly Dictionary<string, Dictionary<string, string>> ShortWords = new()
+        {
+            ["en"] = new() { ["ЦП"] = "CPU", ["ОЗУ"] = "RAM", ["из"] = "of",["ГБ"] = "GB", ["МБ"] = "MB", ["КБ"] = "KB", ["ТБ"] = "TB", ["мин"] = "min", ["ч"] = "h", ["с"] = "s", ["дн."] = "d", ["шт."] = "pcs", ["и"] = "and" },
+            ["uk"] = new() { ["из"] = "з", ["мин"] = "хв", ["дн."] = "дн.", ["шт."] = "шт.", ["и"] = "і" },
+        };
 
         // ------------------------------------------------------------------
         //  Применение к элементам WPF
         // ------------------------------------------------------------------
+
+        static void OnSized(object sender, SizeChangedEventArgs e) => OnLoaded(sender, e);
 
         static void OnLoaded(object sender, RoutedEventArgs e)
         {
