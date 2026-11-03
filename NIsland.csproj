@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>NIsland</AssemblyName>
+    <RootNamespace>NIsland</RootNamespace>
+    <ApplicationIcon>Assets\island.ico</ApplicationIcon>
+    <Version>1.5.0</Version>
+    <Product>N-Island</Product>
+    <Company>@Ne1zvestny1i</Company>
+    <Authors>@Ne1zvestny1i &amp; Claude</Authors>
+    <Copyright>made in TG @Ne1zvestny1i &amp; Claude</Copyright>
+    <Description>N-Island — Dynamic Island для Windows</Description>
+    <SatelliteResourceLanguages>ru;en</SatelliteResourceLanguages>
+    <NoWarn>CA1416;CS0067</NoWarn>
+    <!-- экономия памяти -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <RuntimeHostConfigurationOption Include="System.GC.RetainVM" Value="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="13.3.0" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\island.ico" />
+    <!-- словари интерфейса (генерирует tools/I18nGen) -->
+    <EmbeddedResource Include="Assets\i18n\*.json" LogicalName="i18n.%(Filename).json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- вспомогательные утилиты и документация в сборку приложения не входят -->
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+    <Compile Remove="docs\**" />
+  </ItemGroup>
+
+</Project>

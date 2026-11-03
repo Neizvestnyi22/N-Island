@@ -1,0 +1,15 @@
+# сборка
+bin/
+obj/
+publish/
+dist/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# служебное
+*.log
+Thumbs.db
+desktop.ini

@@ -1,0 +1,57 @@
+using System.Text.RegularExpressions;
+
+/// <summary>
+/// Термины, которые машинный перевод без контекста путает («Корзина» → Cart, «Сон» → Dream, «чёлка» → bangs).
+/// Prepare заменяет «чёлку» на «остров» перед отправкой (Dynamic Island → island на всех языках),
+/// Terms — готовые переводы коротких строк интерфейса.
+/// </summary>
+static class Glossary
+{
+    static readonly (Regex From, string To)[] Words =
+    {
+        (new Regex(@"\bчёлк(а|у)\b|\bчелк(а|у)\b"), "остров"),
+        (new Regex(@"\bЧёлк(а|у)\b|\bЧелк(а|у)\b"), "Остров"),
+        (new Regex(@"\bчёлки\b"), "острова"), (new Regex(@"\bЧёлки\b"), "Острова"),
+        (new Regex(@"\bчёлке\b"), "острове"), (new Regex(@"\bЧёлке\b"), "Острове"),
+        (new Regex(@"\bчёлкой\b"), "островом"), (new Regex(@"\bчёлок\b"), "островов"),
+    };
+
+    public static string Prepare(string text)
+    {
+        foreach (var (from, to) in Words) text = from.Replace(text, to);
+        return text;
+    }
+
+    // ru → { язык → перевод }
+    public static readonly Dictionary<string, Dictionary<string, string>> Terms = new()
+    {
+        ["Корзина"] = T("Recycle Bin", "Кошик", "Papierkorb", "Papelera de reciclaje", "Corbeille", "Lixeira", "Kosz", "Geri Dönüşüm Kutusu"),
+        ["Обзор"] = T("Overview", "Огляд", "Übersicht", "Resumen", "Vue d'ensemble", "Visão geral", "Przegląd", "Genel bakış"),
+        ["Сон"] = T("Sleep", "Сон", "Energie sparen", "Suspender", "Veille", "Suspender", "Uśpienie", "Uyku"),
+        ["Освобождено"] = T("Freed", "Звільнено", "Freigegeben", "Liberado", "Libéré", "Liberado", "Zwolniono", "Boşaltıldı"),
+        ["Режим новичка"] = T("Beginner mode", "Режим новачка", "Anfängermodus", "Modo principiante", "Mode débutant", "Modo iniciante", "Tryb dla początkujących", "Başlangıç modu"),
+        ["Защита от слежки"] = T("Anti-tracking", "Захист від стеження", "Tracking-Schutz", "Protección antirrastreo", "Protection anti-pistage", "Proteção contra rastreamento", "Ochrona przed śledzeniem", "İzlenme koruması"),
+        ["Глубокая очистка"] = T("Deep cleanup", "Глибоке очищення", "Tiefenreinigung", "Limpieza profunda", "Nettoyage approfondi", "Limpeza profunda", "Głębokie czyszczenie", "Derin temizlik"),
+        ["Обычный"] = T("Normal", "Звичайний", "Normal", "Normal", "Normal", "Normal", "Normalny", "Normal"),
+        ["Починить"] = T("Fix", "Виправити", "Reparieren", "Reparar", "Réparer", "Reparar", "Napraw", "Onar"),
+        ["Паспорт ноутбука"] = T("Laptop info", "Паспорт ноутбука", "Laptop-Steckbrief", "Ficha del portátil", "Fiche du portable", "Ficha do notebook", "Metryka laptopa", "Dizüstü bilgileri"),
+        ["Центр управления ноутбуком"] = T("Laptop Control Center", "Центр керування ноутбуком", "Laptop-Kontrollzentrum", "Centro de control del portátil", "Centre de contrôle du portable", "Central de controle do notebook", "Centrum sterowania laptopem", "Dizüstü Kontrol Merkezi"),
+        ["Журнал активности"] = T("Activity journal", "Журнал активності", "Aktivitätsprotokoll", "Registro de actividad", "Journal d'activité", "Registro de atividade", "Dziennik aktywności", "Etkinlik günlüğü"),
+        ["Полка"] = T("Shelf", "Полиця", "Ablage", "Estante", "Étagère", "Prateleira", "Półka", "Raf"),
+        ["Намаз"] = T("Prayer times", "Намаз", "Gebetszeiten", "Horarios de oración", "Heures de prière", "Horários de oração", "Czasy modlitw", "Namaz vakitleri"),
+        ["Пульт"] = T("Controls", "Пульт", "Steuerung", "Controles", "Contrôles", "Controles", "Sterowanie", "Kontroller"),
+        ["Лучше оставить"] = T("Keep it", "Краще залишити", "Besser behalten", "Mejor dejarlo", "Mieux vaut garder", "Melhor manter", "Lepiej zostawić", "Kalsın"),
+        ["Можно отключить"] = T("Can be disabled", "Можна вимкнути", "Kann aus", "Se puede desactivar", "Peut être désactivé", "Pode desativar", "Można wyłączyć", "Kapatılabilir"),
+        ["админ"] = T("admin", "адмін", "Admin", "admin", "admin", "admin", "admin", "yönetici"),
+        ["Скорость"] = T("Speed", "Швидкість", "Leistung", "Velocidad", "Vitesse", "Velocidade", "Szybkość", "Hız"),
+        ["Оптимизация"] = T("Optimization", "Оптимізація", "Optimierung", "Optimización", "Optimisation", "Otimização", "Optymalizacja", "Optimizasyon"),
+        ["Вид Windows"] = T("Windows look", "Вигляд Windows", "Windows-Aussehen", "Aspecto de Windows", "Apparence de Windows", "Aparência do Windows", "Wygląd Windows", "Windows görünümü"),
+        ["Как пользоваться"] = T("How to use", "Як користуватися", "So funktioniert's", "Cómo usar", "Mode d'emploi", "Como usar", "Jak używać", "Nasıl kullanılır"),
+        ["Чёлка"] = T("Island", "Острівець", "Insel", "Isla", "Île", "Ilha", "Wyspa", "Ada"),
+        ["Свернуть"] = T("Minimize", "Згорнути", "Minimieren", "Minimizar", "Réduire", "Minimizar", "Minimalizuj", "Küçült"),
+        ["Закрыть"] = T("Close", "Закрити", "Schließen", "Cerrar", "Fermer", "Fechar", "Zamknij", "Kapat"),
+    };
+
+    static Dictionary<string, string> T(string en, string uk, string de, string es, string fr, string pt, string pl, string tr) =>
+        new() { ["en"] = en, ["uk"] = uk, ["de"] = de, ["es"] = es, ["fr"] = fr, ["pt"] = pt, ["pl"] = pl, ["tr"] = tr };
+}
