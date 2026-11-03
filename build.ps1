@@ -1,4 +1,4 @@
-﻿﻿# Сборка релизов N-Island в папку dist\
+﻿# Сборка релизов N-Island в папку dist\
 #   .\build.ps1            — все варианты
 #   .\build.ps1 -Only x64  — только полная версия x64
 #
@@ -39,5 +39,6 @@ if (!$Only -or $Only -eq "x64")  { Build "win-x64" $true "" }
 if (!$Only -or $Only -eq "x86")  { Build "win-x86" $true "" }
 if (!$Only -or $Only -eq "lite") { Build "win-x64" $false "-lite" }
 
-Get-ChildItem dist\*.zip, dist\*.exe | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash, $_.Name } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+# только файлы этой версии: в dist могут лежать сборки прошлых
+Get-ChildItem "dist\NIsland-$version-*" | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash, $_.Name } | Set-Content dist\SHA256SUMS.txt -Encoding ascii
 "Готово: dist\"
