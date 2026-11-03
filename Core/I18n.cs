@@ -154,20 +154,34 @@ namespace NIsland.Core
         {
             if (sender is not FrameworkElement fe || fe.Tag is "no-translate") return;   // названия языков и т. п. — как есть
             Apply(fe);
-            if (fe is TextBlock tb && !Hooked.TryGetValue(tb, out _) && !BindingOperations.IsDataBound(tb, TextBlock.TextProperty))
-            {
-                // текст может смениться позже (статусы, всплывашки) — переводим и его
-                Hooked.Add(tb, null);
-                TextDesc.AddValueChanged(tb, OnTextChanged);
-                tb.Unloaded += Unhook;
-            }
+            if (fe is TextBlock tb && !BindingOperations.IsDataBound(tb, TextBlock.TextProperty)) Hook(tb);
         }
 
+        static readonly ConditionalWeakTable<TextBlock, object> Watched = new();
+
+        /// <summary>
+        /// Текст может смениться позже (статусы, погода, всплывашки) — следим за ним, пока элемент на экране.
+        /// Свои Loaded/Unloaded нужны обязательно: страницы чёлки уходят с экрана и возвращаются того же размера,
+        /// SizeChanged при этом не приходит, и без Loaded подписка не восстановилась бы.
+        /// </summary>
+        static void Hook(TextBlock tb)
+        {
+            if (!Watched.TryGetValue(tb, out _))
+            {
+                Watched.Add(tb, null);
+                tb.Loaded += (_, __) => { Apply(tb); Hook(tb); };
+                tb.Unloaded += Unhook;
+            }
+            if (Hooked.TryGetValue(tb, out _)) return;
+            Hooked.Add(tb, null);
+            TextDesc.AddValueChanged(tb, OnTextChanged);
+        }
+
+        // снимаем подписку, когда элемент ушёл с экрана (иначе закрытые окна держались бы в памяти)
         static void Unhook(object sender, RoutedEventArgs e)
         {
-            if (sender is not TextBlock tb) return;
+            if (sender is not TextBlock tb || !Hooked.TryGetValue(tb, out _)) return;
             TextDesc.RemoveValueChanged(tb, OnTextChanged);
-            tb.Unloaded -= Unhook;
             Hooked.Remove(tb);
         }
 

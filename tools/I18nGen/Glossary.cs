@@ -25,6 +25,9 @@ static class Glossary
     // ru → { язык → перевод }
     public static readonly Dictionary<string, Dictionary<string, string>> Terms = new()
     {
+        ["Защита от слежки: включено"] = T("Anti-tracking: on", "Захист від стеження: увімкнено", "Tracking-Schutz: aktiv", "Antirrastreo: activo", "Anti-pistage : actif", "Antirrastreamento: ativo", "Ochrona przed śledzeniem: włączone", "İzlenme koruması: açık"),
+        ["своб."] = T("free", "вільно", "frei", "libre", "libre", "livre", "wolne", "boş"),
+        ["м/с · влажность"] = T("m/s · humidity", "м/с · вологість", "m/s · Feuchte", "m/s · humedad", "m/s · humidité", "m/s · umidade", "m/s · wilgotność", "m/s · nem"),
         ["Не спать"] = T("Keep awake", "Не спати", "Wach bleiben", "Mantener activo", "Rester éveillé", "Manter ativo", "Nie usypiaj", "Uyanık tut"),
         ["Блокировка"] = T("Lock", "Блокування", "Sperren", "Bloquear", "Verrouiller", "Bloquear", "Zablokuj", "Kilitle"),
         ["Основные"] = T("General", "Основні", "Allgemein", "General", "Général", "Geral", "Ogólne", "Genel"),
