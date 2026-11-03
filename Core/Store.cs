@@ -256,6 +256,11 @@ namespace NIsland.Core
         public bool? LiteModeSetting { get => _lite; set { if (Set(ref _lite, value)) Raise(nameof(LiteMode)); } } bool? _lite;
         [System.Text.Json.Serialization.JsonIgnore] public bool LiteMode { get => _lite == true; set => LiteModeSetting = value; }
 
+        /// <summary>Раз в сутки спрашивать GitHub о новой версии и показывать уведомление в чёлке.</summary>
+        public bool AutoUpdate { get => _autoUpd; set => Set(ref _autoUpd, value); } bool _autoUpd = true;
+        public DateTime LastUpdateCheck { get => _lastUpd; set => Set(ref _lastUpd, value); } DateTime _lastUpd;
+        public string SkippedVersion { get => _skipVer; set => Set(ref _skipVer, value); } string _skipVer = "";
+
         /// <summary>Тема окон настроек и центра: dark — графит, amoled — чистый чёрный.</summary>
         public string WindowTheme { get => _winTheme; set => Set(ref _winTheme, value); } string _winTheme = "dark";
 

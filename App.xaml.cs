@@ -56,6 +56,7 @@ namespace NIsland
 
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
             Store.Load();
+            Updater.Cleanup();   // после обновления: старый exe и временные файлы больше не нужны
             I18n.Init();
             if (Store.Settings.LiteMode && (System.Windows.Media.RenderCapability.Tier >> 16) == 0)
                 System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;   // без видеоускорения — не мучаем драйвер

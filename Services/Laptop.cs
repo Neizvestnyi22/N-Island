@@ -600,6 +600,20 @@ namespace NIsland.Services
                 }
             }
             if (S.AutoClean && (now - S.LastCleanup).TotalDays >= Math.Max(1, S.AutoCleanDays)) _ = AutoClean();
+            if (S.AutoUpdate && (now - S.LastUpdateCheck).TotalHours >= 20) _ = CheckUpdate();
+        }
+
+        /// <summary>Тихая проверка обновлений раз в сутки: если вышла новая версия — уведомление с кнопкой «Обновить».</summary>
+        async Task CheckUpdate()
+        {
+            S.LastUpdateCheck = DateTime.Now;
+            var (state, info, _) = await Updater.Check();
+            if (state != UpdateState.Available || info.Version == S.SkippedVersion) return;
+            App.Island?.ShowActivity(new Activity
+            {
+                Kind = "pc", Glyph = "", Title = $"Вышла N-Island {info.Version}", Sub = "Новые функции и исправления — обновление займёт минуту",
+                Seconds = 12, Wide = true, ActionText = "Обновить", Action = () => App.ShowSettings("about"),
+            });
         }
 
         /// <summary>Тихая автоочистка: только «безопасные» пункты без прав администратора; программы, которые сейчас открыты, пропускаются.</summary>

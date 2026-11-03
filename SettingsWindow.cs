@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -1057,7 +1058,11 @@ namespace NIsland
                                            Foreground = new LinearGradientBrush(Color.FromRgb(0x64, 0xD2, 0xFF), Color.FromRgb(0xBF, 0x5A, 0xF2), 0) })
                       .M(18, 0, 0, 0).At(0, 1)),
             };
-            var update = UI.Text("", 12.5, false, UI.Dim);
+            var update = new TextBlock { FontSize = 12.5, Foreground = UI.Hex("#9FD0FF"), TextWrapping = TextWrapping.Wrap };
+            var install = UI.Pill("Обновить", null, true);
+            install.Visibility = Visibility.Collapsed;
+            var notes = new TextBlock { FontSize = 12, Foreground = UI.Dim, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 6, 0, 0) };
+            _ = CheckUpdates(update, install, notes);   // при открытии «О программе» сразу узнаём, есть ли новая версия
             return Panel(
                 hero,
                 Group("Что это",
@@ -1070,15 +1075,11 @@ namespace NIsland
                                    "WPF и .NET 8, без рекламы и телеметрии, данные хранятся только на этом компьютере.",
                         UI.Pill("Telegram", () => SystemService.Run(AppInfo.Telegram)))),
                 Group("Версия и обновления",
-                    Row("Версия", $"{AppInfo.Version} · .NET {Environment.Version} · {Maint.WindowsVersion}",
-                        UI.Pill("Проверить обновления", async () =>
-                        {
-                            update.Text = "Проверяю…";
-                            var r = await AppInfo.CheckUpdate();
-                            update.Text = r == null ? "Не удалось связаться с GitHub" : r.Value.Newer ? $"Есть новая версия {r.Value.Version} — открываю страницу загрузки" : "У тебя последняя версия ✓";
-                            if (r?.Newer == true) SystemService.Run(r.Value.Url);
-                        })),
-                    update,
+                    Row("Версия", $"{AppInfo.Version} · {(Updater.IsLite ? "lite" : "полная")} {Updater.Arch} · .NET {Environment.Version} · {Maint.WindowsVersion}",
+                        UI.Pill("Проверить", () => _ = CheckUpdates(update, install, notes))),
+                    UpdatePanel(update, install, notes),
+                    Row("Проверять обновления сами", "Раз в сутки спрашивать GitHub и показывать уведомление в чёлке. Ставится только по твоей кнопке",
+                        Toggle(nameof(Settings.AutoUpdate))),
                     Row("Исходный код и скачивание", AppInfo.RepoUrl, UI.Pill("GitHub", () => SystemService.Run(AppInfo.RepoUrl)))),
                 Group(null,
                     Row("Память сейчас", mb + " МБ", UI.Pill("Освободить", () => { MemoryTrim.Now(true); Open("about"); })),
@@ -1086,6 +1087,56 @@ namespace NIsland
                     Row("Выход", "Закрыть N-Island полностью", UI.Pill("Выйти", App.Quit))),
                 Note("Подсказки: правый клик по чёлке — настройки; колесо мыши над раскрытой чёлкой — листать страницы; Esc — закрыть; " +
                      "перетащи файл на чёлку — он попадёт на полку."));
+        }
+
+        static UIElement UpdatePanel(TextBlock status, Button install, TextBlock notes)
+        {
+            var sp = new StackPanel { Margin = new Thickness(14, 0, 14, 10) };
+            install.HorizontalAlignment = HorizontalAlignment.Left;
+            install.Margin = new Thickness(0, 8, 0, 0);
+            sp.Children.Add(status);
+            sp.Children.Add(install);
+            sp.Children.Add(notes);
+            return sp;
+        }
+
+        UpdateInfo _found;
+
+        /// <summary>Спросить GitHub о последнем релизе и показать кнопку «Обновить до …», если он новее.</summary>
+        async Task CheckUpdates(TextBlock status, Button install, TextBlock notes)
+        {
+            status.Text = "Проверяю GitHub…";
+            install.Visibility = Visibility.Collapsed;
+            var (state, info, err) = await Updater.Check();
+            S.LastUpdateCheck = DateTime.Now;
+            _found = info;
+            switch (state)
+            {
+                case UpdateState.UpToDate: status.Text = $"У тебя последняя версия ✓ (на GitHub — {info.Version})"; return;
+                case UpdateState.NoReleases: status.Text = "На GitHub пока нет опубликованных версий"; return;
+                case UpdateState.Error: status.Text = "Не удалось проверить обновления: " + err; return;
+            }
+            status.Text = $"Вышла версия {info.Version}" + (info.AssetUrl != null ? $" · {Maint.Size(info.Size)} · ставится за минуту, настройки сохранятся"
+                                                                                 : " · для этой сборки файла нет — открою страницу загрузки");
+            install.Content = info.AssetUrl != null ? $"Обновить до {info.Version}" : "Открыть страницу релиза";
+            install.Visibility = Visibility.Visible;
+            var text = System.Text.RegularExpressions.Regex.Replace(info.Notes ?? "", @"[#*`|>]|\[(.*?)\]\(.*?\)", "$1").Trim();
+            notes.Text = text.Length > 700 ? text[..700] + "…" : text;
+            notes.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            install.Click -= InstallClick;
+            install.Click += InstallClick;
+
+            async void InstallClick(object s, RoutedEventArgs e)
+            {
+                var u = _found;
+                if (u?.AssetUrl == null) { SystemService.Run(u?.PageUrl ?? AppInfo.ReleasesUrl); return; }
+                install.IsEnabled = false;
+                status.Text = "Скачиваю…";
+                var error = await Updater.Install(u, p => Dispatcher.BeginInvoke(new Action(() => status.Text = $"Скачиваю обновление… {p * 100:0}%")));
+                if (error == null) { status.Text = "Готово ✓ Перезапускаю N-Island…"; return; }
+                status.Text = error;
+                install.IsEnabled = true;
+            }
         }
 
         /// <summary>Простая сетка карточек в ряд.</summary>
