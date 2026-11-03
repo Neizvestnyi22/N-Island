@@ -413,7 +413,12 @@ namespace NIsland.Services
         /// <summary>Какой-то VPN поднят — по сетевым адаптерам (работает для любых программ, даже неизвестных).</summary>
         public static (bool On, string Name) AnyActive()
         {
-            var a = UpAdapters().FirstOrDefault(x => x.Type == NetworkInterfaceType.Ppp || VpnAdapter.IsMatch(x.Desc) || VpnAdapter.IsMatch(x.Name));
+            // PPP — это и VPN Windows, и обычный интернет по логину (PPPoE у провайдера): считаем VPN, только если имя
+            // совпадает с VPN-подключением Windows или в описании есть VPN-протокол
+            var vpnNames = Items.Where(i => i.Kind == "windows").Select(i => i.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            bool PppVpn((string Name, string Desc, NetworkInterfaceType Type) x) =>
+                x.Type == NetworkInterfaceType.Ppp && (vpnNames.Contains(x.Name) || Regex.IsMatch(x.Desc + " " + x.Name, @"VPN|IKEv2|L2TP|PPTP|SSTP", RegexOptions.IgnoreCase));
+            var a = UpAdapters().FirstOrDefault(x => PppVpn(x) || (x.Type != NetworkInterfaceType.Ppp && (VpnAdapter.IsMatch(x.Desc) || VpnAdapter.IsMatch(x.Name))));
             if (a.Name == null) return (false, "");
             var known = Items.FirstOrDefault(i => i.Adapter != null && (i.Adapter.IsMatch(a.Desc) || i.Adapter.IsMatch(a.Name)));
             return (true, known?.Name ?? (a.Type == NetworkInterfaceType.Ppp ? "VPN Windows" : a.Desc));

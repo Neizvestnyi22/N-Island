@@ -696,6 +696,7 @@ namespace NIsland
                 }
             }
             Fill();
+            procs.Live(TimeSpan.FromSeconds(5), () => { Fill(); return Task.CompletedTask; });   // список памяти обновляется сам
             page.Children.Add(Group("Кто занимает память", procs));
             page.Children.Add(Buttons(Act("Обновить список", () => { Fill(); return Task.FromResult<string>(null); }),
                                       Act("Освободить память", async () => "Освобождено " + Maint.Size(await Maint.OptimizeRam()), status)));
@@ -739,6 +740,7 @@ namespace NIsland
                     Act("Открыть отчёт", async () => { await Tweaks.OpenBatteryReport(); return null; })));
             }
             _ = LoadBattery();
+            batInfo.Live(TimeSpan.FromSeconds(15), LoadBattery);   // заряд и «заряжается» обновляются сами
 
             page.Children.Add(Group("Бережём батарею",
                 Item("Сигнал при заряде", "Литий-ионные батареи медленнее изнашиваются, если не держать их на 100%. Чёлка подскажет, когда можно отключить зарядку.",
@@ -949,6 +951,7 @@ namespace NIsland
                      Act("Обновить", LoadConns)),
                 conns));
             _ = LoadConns();
+            conns.Live(TimeSpan.FromSeconds(10), LoadConns);   // список программ с соединениями обновляется сам
 
             var nets = new StackPanel();
             nets.Children.Add(Loading());

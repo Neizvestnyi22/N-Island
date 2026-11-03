@@ -69,8 +69,19 @@ namespace NIsland.Pages
                 new Border { Background = UI.Hex("#22FFFFFF"), CornerRadius = new CornerRadius(8), Padding = new Thickness(2), Child = tabs, HorizontalAlignment = HorizontalAlignment.Left },
                 new Grid().Add(_signalView, _listView).At(1, 0).M(0, 6, 0, 0));
             Content = UI.Grid("a,*").M(10, 0, 8, 2).Add(left, right.At(0, 1).M(16, 0, 0, 0));
-            _t.Tick += async (_, __) => await Sample();
+            _t.Tick += async (_, __) => { try { await Sample(); } catch (Exception e) { Log.Info("wifi page: " + e.Message); } };
+            // открытые вкладки «Сети» и «Устройства» обновляются сами
+            int ticks = 0;
+            this.Live(TimeSpan.FromSeconds(30), () =>
+            {
+                ticks++;
+                if (_tab == "nets" && !_loadingList) LoadNets();
+                else if (_tab == "devices" && !_loadingList && ticks % 3 == 0) LoadDevices();
+                return System.Threading.Tasks.Task.CompletedTask;
+            });
         }
+
+        bool _loadingList;
 
         public override void OnShown()
         {
@@ -156,9 +167,13 @@ namespace NIsland.Pages
 
         async void LoadNets()
         {
-            List.Children.Clear();
-            List.Children.Add(UI.Text(I18n.T("Сканирую эфир…"), 12, false, UI.Dim));
-            var aps = await WifiTools.Nearby();
+            if (_loadingList) return;
+            _loadingList = true;
+            if (List.Children.Count == 0) List.Children.Add(UI.Text(I18n.T("Сканирую эфир…"), 12, false, UI.Dim));
+            List<WifiAp> aps;
+            try { aps = await WifiTools.Nearby(); }
+            catch (Exception e) { Log.Info("wifi scan: " + e.Message); aps = new(); }
+            finally { _loadingList = false; }
             if (_tab != "nets") return;
             List.Children.Clear();
             var (now, best) = WifiTools.ChannelAdvice(aps, _link);
@@ -183,10 +198,15 @@ namespace NIsland.Pages
 
         async void LoadDevices()
         {
+            if (_loadingList) return;
+            _loadingList = true;
             List.Children.Clear();
             var status = UI.Text(I18n.T("Ищу устройства в сети…"), 12, false, UI.Dim);
             List.Children.Add(status);
-            var list = await WifiTools.Devices(s => Dispatcher.BeginInvoke(new Action(() => status.Text = I18n.T(s))));
+            List<LanDevice> list;
+            try { list = await WifiTools.Devices(s => Dispatcher.BeginInvoke(new Action(() => status.Text = I18n.T(s)))); }
+            catch (Exception e) { Log.Info("wifi devices: " + e.Message); list = new(); }
+            finally { _loadingList = false; }
             if (_tab != "devices") return;
             List.Children.Clear();
             List.Children.Add(UI.Text(I18n.T("Устройств в сети") + ": " + list.Count, 11, true, UI.Dim).M(0, 0, 0, 3));

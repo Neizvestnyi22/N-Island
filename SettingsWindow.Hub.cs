@@ -62,6 +62,8 @@ namespace NIsland
             }
             UpdStatus();
             var enable = new CheckBox { Style = UI.St("Switch"), IsChecked = it.Enabled, VerticalAlignment = VerticalAlignment.Center };
+            // статус сервиса («Обновлено 14:05», «Ошибка: …») меняется в фоне — карточка следит за ним сама
+            status.Live(TimeSpan.FromSeconds(4), () => { UpdStatus(); enable.IsChecked = it.Enabled; return System.Threading.Tasks.Task.CompletedTask; });
             var body = new StackPanel { Margin = new Thickness(54, 0, 14, 12) };
             bool open = it.Enabled || _openHub.Contains(it.Key);
             body.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
@@ -233,6 +235,7 @@ namespace NIsland
             }
             Render();
             if (Vpn.DetectedAt == default || (DateTime.Now - Vpn.DetectedAt).TotalMinutes > 2) _ = Rescan();
+            found.Live(TimeSpan.FromSeconds(10), async () => { await Vpn.RefreshAll(); Render(); });   // включили VPN в другой программе — видно и здесь
             async System.Threading.Tasks.Task Rescan() { await Vpn.Detect(); Render(); }
 
             return Panel(

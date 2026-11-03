@@ -48,6 +48,8 @@ namespace NIsland.Pages
             _empty.VerticalAlignment = VerticalAlignment.Top;
             Content = new Grid().Add(_main, _empty);
             Integrations.Changed += () => { if (Visible) Render(); };
+            // «5 мин назад» и свежие данные сервиса, пока страница открыта
+            this.Live(TimeSpan.FromSeconds(30), () => { if (Visible) { Refresh(false); Render(); } return System.Threading.Tasks.Task.CompletedTask; });
         }
 
         public override void OnShown()

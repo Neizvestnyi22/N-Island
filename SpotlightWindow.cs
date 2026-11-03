@@ -198,6 +198,13 @@ namespace NIsland
         /// <param name="quick">Сразу по нажатию — только мгновенные результаты; через 90 мс — ещё и сетевые (валюты, перевод).</param>
         void Search(bool quick)
         {
+            // один сбойный источник (битый ярлык, странный файл) не должен ломать поиск целиком
+            try { SearchCore(quick); }
+            catch (Exception e) { Log.Info("spotlight search: " + e.Message); }
+        }
+
+        void SearchCore(bool quick)
+        {
             var q = _box.Text.Trim();
             int gen = ++_gen;
             var hits = new List<Hit>();

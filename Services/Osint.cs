@@ -39,6 +39,18 @@ namespace NIsland.Services
         /// <summary>Что передать из быстрого поиска в раздел OSINT.</summary>
         public static string Pending;
 
+        static readonly System.Text.RegularExpressions.Regex HostRx = new(@"^(?=.{4,253}$)([a-z0-9а-яёіїєґ]([a-z0-9а-яёіїєґ-]{0,61}[a-z0-9а-яёіїєґ])?\.)+[a-zа-яіїєґ]{2,63}$|^xn--", RegexOptions.IgnoreCase);
+
+        /// <summary>Похоже ли на домен, адрес сайта или IP — до того, как идти в сеть.</summary>
+        public static bool LooksLikeHost(string input)
+        {
+            input = (input ?? "").Trim();
+            if (input.Length == 0 || input.Contains(' ')) return false;
+            if (IPAddress.TryParse(input, out _)) return true;
+            if (!Uri.TryCreate(input.Contains("://") ? input : "http://" + input, UriKind.Absolute, out var u)) return false;
+            return IPAddress.TryParse(u.Host, out _) || HostRx.IsMatch(u.Host) || HostRx.IsMatch(u.IdnHost);
+        }
+
         public static string HostOf(string input)
         {
             input = (input ?? "").Trim();
@@ -100,6 +112,8 @@ namespace NIsland.Services
         {
             var signals = new List<(bool, string)>();
             int risk = 0;
+            if (!LooksLikeHost(input))
+                return new LinkReport(input, new() { input }, 0, "Это не похоже на ссылку — вставь адрес целиком, например https://bit.ly/abc", signals);
             List<string> chain;
             bool down = false;
             try { chain = await Unshorten(input); }

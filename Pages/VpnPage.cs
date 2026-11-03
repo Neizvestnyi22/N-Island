@@ -40,6 +40,14 @@ namespace NIsland.Pages
                 new ScrollViewer { Content = _list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }.At(1, 0).M(0, 4, 0, 0));
             Content = UI.Grid("a,*").M(10, 2, 8, 2).Add(left, right.At(0, 1).M(16, 0, 0, 0));
             Vpn.Changed += () => { if (Visible) Render(); };
+            // пока страница открыта: состояние VPN каждые 6 с, внешний IP — раз в минуту
+            int ticks = 0;
+            this.Live(TimeSpan.FromSeconds(6), async () =>
+            {
+                if (_busy || !Visible) return;
+                await Vpn.RefreshAll();
+                if (++ticks % 10 == 0) await Vpn.LoadIp();
+            });
         }
 
         public override void OnShown()

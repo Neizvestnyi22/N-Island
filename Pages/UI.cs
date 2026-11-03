@@ -140,6 +140,32 @@ namespace NIsland.Pages
 
         public static void Show(this UIElement e, bool v) => e.Visibility = v ? Visibility.Visible : Visibility.Collapsed;
 
+        /// <summary>
+        /// Автообновление экрана: пока элемент на экране и виден — раз в interval вызывает refresh. Запуски не накладываются,
+        /// ошибка одного обновления пишется в журнал и не останавливает следующие, при закрытии экрана таймер останавливается.
+        /// </summary>
+        public static T Live<T>(this T owner, TimeSpan interval, Func<System.Threading.Tasks.Task> refresh, bool now = false) where T : FrameworkElement
+        {
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = interval };
+            bool busy = false;
+            int fails = 0;
+            async void Run()
+            {
+                if (busy || !owner.IsVisible) return;
+                var win = Window.GetWindow(owner);
+                if (win != null && win.WindowState == WindowState.Minimized) return;
+                busy = true;
+                try { await refresh(); fails = 0; }
+                catch (Exception e) { if (fails++ == 0) NIsland.Core.Log.Info("auto refresh: " + e.Message); }
+                finally { busy = false; }
+            }
+            t.Tick += (_, __) => Run();
+            owner.Loaded += (_, __) => { t.Start(); if (now) Run(); };
+            owner.Unloaded += (_, __) => t.Stop();
+            owner.IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) t.Start(); else t.Stop(); };
+            return owner;
+        }
+
         /// <summary>Элемент с акцентным фоном: текст внутри тёмный, если акцент светлый (белый, жёлтый), иначе белый.</summary>
         public static T OnAccent<T>(this T el, bool on = true) where T : FrameworkElement
         {

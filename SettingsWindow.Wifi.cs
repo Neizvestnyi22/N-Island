@@ -144,6 +144,7 @@ namespace NIsland
                     link.Children.Add(Info("Подключение на 2,4 ГГц при хорошем сигнале — если у роутера есть 5 ГГц, подключись к ней: будет в разы быстрее.", "#9FD0FF"));
             }
             _ = LoadLink();
+            link.Live(TimeSpan.FromSeconds(5), LoadLink);   // сигнал и скорость меняются — таблица обновляется сама
             page.Children.Add(Group("Подключение", link,
                 Item("Переподключиться", "Отключиться и подключиться к той же сети заново — помогает, когда интернет «подвис», а значок Wi-Fi есть.", Safety.Safe,
                      Act("Переподключить", async () => { var r = await WifiTools.Reconnect(); await LoadLink(); return r; }, status)),
@@ -303,6 +304,12 @@ namespace NIsland
             Func<Task<string>> Show(string title, Func<string, Task<UIElement>> work) => async () =>
             {
                 if (string.IsNullOrWhiteSpace(domBox.Text)) return I18n.T("Введи домен или адрес сайта");
+                if (!Osint.LooksLikeHost(domBox.Text))
+                {
+                    domRes.Children.Clear();
+                    domRes.Children.Add(Info("Это не похоже на домен или адрес сайта — например, example.com или https://example.com/page", "#FF9F0A"));
+                    return null;
+                }
                 domRes.Children.Clear();
                 domRes.Children.Add(Loading(I18n.T(title) + "…"));
                 try { var el = await work(domBox.Text.Trim()); domRes.Children.Clear(); domRes.Children.Add(el); }
@@ -339,6 +346,11 @@ namespace NIsland
                      UI.Row(ipBox, Act("Узнать", async () =>
                      {
                          ipRes.Children.Clear();
+                         if (!string.IsNullOrWhiteSpace(ipBox.Text) && !Osint.LooksLikeHost(ipBox.Text))
+                         {
+                             ipRes.Children.Add(Info("Это не похоже на IP-адрес или домен — например, 8.8.8.8 или example.com", "#FF9F0A"));
+                             return null;
+                         }
                          ipRes.Children.Add(Loading());
                          try { var r = await Osint.Ip(ipBox.Text); ipRes.Children.Clear(); ipRes.Children.Add(Table(r)); }
                          catch (Exception e) { ipRes.Children.Clear(); ipRes.Children.Add(Info(I18n.T("Не получилось: ") + Integrations.Reason(e), "#FF9F0A")); }
