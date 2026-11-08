@@ -136,7 +136,8 @@ namespace NIsland.Services
             log.AppendLine($"buttons seen={seen.Count} pressed={pressed}");
 
             // 3. пульт из других мессенджеров: тот же движок, ответы не уходят в Telegram
-            Sent.Clear();
+            await Task.Delay(6000);   // кнопки обхода (автозагрузка, здоровье ПК) досылают ответы в фоне — дождаться их
+            lock (Sent) Sent.Clear();
             var none = new Func<string, bool>(_ => false);
             var all = new Func<string, bool>(k => k != "shell" && k != "power");
             foreach (var (text, flags, expectFile, expectRefuse) in new (string, Func<string, bool>, bool, bool)[]
@@ -155,7 +156,7 @@ namespace NIsland.Services
                 if (expectRefuse && !outText.Contains("Discord")) Problems.Add($"remote {text}: refusal should name Discord");
                 foreach (var o in ctx.Out) Check("remote", JsonSerializer.Serialize(new { text = o, parse_mode = "HTML" }));
             }
-            lock (Sent) if (Sent.Count > 0) Problems.Add("remote commands leaked to Telegram: " + string.Join(", ", Sent.Select(x => x.Method)));
+            lock (Sent) if (Sent.Count > 0) Problems.Add("remote commands leaked to Telegram: " + string.Join(" | ", Sent.Select(x => x.Method + " " + Short(x.Json))));
             var md = TelegramHub.ToMarkdown("<b>Жирный</b> <i>к</i> <code>x&lt;y</code> <a href=\"https://e.com\">ссылка</a>", false);
             if (md != "**Жирный** _к_ `x<y` [ссылка](https://e.com)") Problems.Add("ToMarkdown discord: " + md);
             var sk = TelegramHub.ToMarkdown("<b>A</b> 1 &lt; 2 <a href=\"https://e.com\">l</a>", true);
