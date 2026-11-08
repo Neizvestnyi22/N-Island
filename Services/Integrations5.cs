@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -45,7 +45,7 @@ namespace NIsland.Services
             {
                 Title = g.Title,
                 Sub = string.Join(" · ", new[] { g.Where, g.Worth is "" or "N/A" ? null : g.Worth, g.End is "" or "N/A" ? null : "до " + ShortDate(g.End) }.Where(x => !string.IsNullOrEmpty(x))),
-                Url = g.Url, ActionText = "Забрать", Action = () => { SystemService.Run(g.Url); return Task.FromResult<string>(null); },
+                Url = g.Url, ActionText = "Забрать", Action = () => { SystemService.OpenWeb(g.Url); return Task.FromResult<string>(null); },
             }).ToList();
             Status = items.Count == 0 ? "Сейчас раздач нет" : $"Раздач: {items.Count}";
         }

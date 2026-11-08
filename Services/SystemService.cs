@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Management;
 using System.Threading.Tasks;
@@ -145,6 +145,18 @@ namespace NIsland.Services
                 Native.BroadcastThemeChange();
             }
             catch (Exception e) { Log.Error(e); }
+        }
+
+        /// <summary>
+        /// Открыть ссылку, пришедшую ИЗВНЕ (уведомления сервисов, RSS, ntfy, Telegram): только http(s) и mailto.
+        /// Через Run такая «ссылка» могла бы оказаться путём к программе или file:// и запустить её по клику.
+        /// </summary>
+        public static void OpenWeb(string url)
+        {
+            url = url?.Trim() ?? "";
+            if (Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeMailto))
+                Run(u.AbsoluteUri);
+            else Log.Info("blocked non-web link: " + (url.Length > 80 ? url[..80] : url));
         }
 
         public static void Run(string target)

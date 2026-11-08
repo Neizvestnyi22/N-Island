@@ -284,6 +284,8 @@ namespace NIsland.Services
             var target = Path.Combine(dir, name);
             for (int i = 2; File.Exists(target); i++) target = Path.Combine(dir, Path.GetFileNameWithoutExtension(name) + $" ({i})" + Path.GetExtension(name));
             await File.WriteAllBytesAsync(target, bytes);
+            // пометка «из интернета»: SmartScreen и Office предупредят, если это программа или документ с макросами
+            try { File.WriteAllText(target + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\nReferrerUrl=https://t.me/\r\n"); } catch { }
             OnUi(() =>
             {
                 NIsland.Pages.ShelfPage.Add(new[] { target });   // сразу на полку острова — удобно перетащить куда нужно

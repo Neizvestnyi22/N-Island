@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -166,11 +167,14 @@ namespace NIsland.Services
             if (p == "/health") return (200, "text/plain", "ok", null);
             if (p != "/mcp") return (404, "text/plain", "not found", null);
             // защита от DNS-rebinding: страница в браузере не должна достучаться до острова
-            if (h.TryGetValue("origin", out var origin) && origin != "null" && !origin.StartsWith("http://127.0.0.1") && !origin.StartsWith("http://localhost"))
+            // (раньше «http://localhost.evil.com» проходил проверку StartsWith — теперь сравниваем сам хост)
+            if (h.TryGetValue("origin", out var origin) && origin != "null" && !IsLocalOrigin(origin))
                 return (403, "text/plain", "forbidden origin", null);
+            if (h.TryGetValue("host", out var host) && !IsLocalHost(host))
+                return (403, "text/plain", "forbidden host", null);
             var auth = h.TryGetValue("authorization", out var a) ? a : "";
             var qtok = path.Contains("token=") ? Uri.UnescapeDataString(path[(path.IndexOf("token=") + 6)..].Split('&')[0]) : "";
-            if (auth != "Bearer " + Token && qtok != Token)
+            if (!SameSecret(auth, "Bearer " + Token) && !SameSecret(qtok, Token))
                 return (401, "application/json", "{\"error\":\"unauthorized\"}", "WWW-Authenticate: Bearer\r\n");
             if (method == "GET") return (405, "text/plain", "SSE stream is not supported; use POST", "Allow: POST\r\n");
             if (method == "DELETE") return (200, "text/plain", "", null);
@@ -275,6 +279,29 @@ namespace NIsland.Services
             Log.Enqueue(new CallLog(DateTime.Now, tool, ok, note));
             while (Log.Count > 60) Log.TryDequeue(out _);
             Changed?.Invoke();
+        }
+
+        static bool IsLocalName(string host) => host is "127.0.0.1" or "localhost" or "[::1]" or "::1";
+
+        /// <summary>Origin вида http://127.0.0.1:порт или http://localhost:порт — ровно этот хост, без поддоменов.</summary>
+        static bool IsLocalOrigin(string origin) =>
+            Uri.TryCreate(origin, UriKind.Absolute, out var u) && (u.Scheme == "http" || u.Scheme == "https") && IsLocalName(u.Host);
+
+        /// <summary>Заголовок Host: защита от DNS-rebinding (чужой домен, указывающий на 127.0.0.1).</summary>
+        static bool IsLocalHost(string host)
+        {
+            host = host.Trim();
+            if (host.StartsWith('[')) { int e = host.IndexOf(']'); return e > 0 && IsLocalName(host[..(e + 1)]); }
+            int c = host.LastIndexOf(':');
+            return IsLocalName(c > 0 ? host[..c] : host);
+        }
+
+        /// <summary>Сравнение токена за постоянное время.</summary>
+        static bool SameSecret(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            var x = Encoding.UTF8.GetBytes(a); var y = Encoding.UTF8.GetBytes(b);
+            return x.Length == y.Length && CryptographicOperations.FixedTimeEquals(x, y);
         }
 
         public static string LevelName(int l) => l switch { 0 => "Только чтение", 1 => "Управление", _ => "Настройка острова" };
@@ -478,7 +505,15 @@ namespace NIsland.Services
             new("speak", "Сказать вслух", "Произнести текст голосом Windows на ПК.", 1, Schema(("text", "string", "текст", true)),
                 async a => { await PcControl.Speak(Cut(Str(a, "text", ""), 1500)); return "Сказано"; }),
             new("open", "Открыть", "Открыть на ПК ссылку, файл, папку или программу.", 1, Schema(("target", "string", "https://…, путь или имя программы", true)),
-                async a => { var t = Str(a, "target", ""); await Ui(() => SystemService.Run(t)); return "Открыто: " + t; }),
+                async a =>
+                {
+                    var t = Str(a, "target", "").Trim();
+                    // ссылки — уровень «Управление»; файлы и программы запускают код — только при уровне «Настройка острова»
+                    bool web = Regex.IsMatch(t, @"^https?://", RegexOptions.IgnoreCase);
+                    if (!web && S.McpLevel < 2) return "Открывать файлы и программы можно только с уровнем доступа «" + LevelName(2) + "». Ссылки https:// — можно";
+                    await Ui(() => SystemService.Run(t));
+                    return "Открыто: " + t;
+                }),
             new("focus_window", "Окно на передний план", "Вывести на передний план окно, в заголовке которого есть этот текст.", 1, Schema(("title", "string", "часть заголовка", true)),
                 _a =>
                 {

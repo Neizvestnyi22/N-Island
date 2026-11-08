@@ -196,33 +196,6 @@ namespace NIsland.Services
     //  Slack и Gotify: события острова наружу (Gotify — и обратно)
     // =====================================================================
 
-    public class SlackHub : Integration
-    {
-        public override string Key => "slack";
-        public override string Name => "Slack";
-        public override string Glyph => "";
-        public override string Color => "#E01E5A";
-        public override string Desc => "События острова в канал Slack через входящий вебхук";
-        public override string Help => "api.slack.com/apps → Create App → Incoming Webhooks → Add New Webhook → скопируй адрес";
-        public override string HelpUrl => "https://api.slack.com/messaging/webhooks";
-        public override HubField[] Fields => new[] { new HubField("url", "URL вебхука", "https://hooks.slack.com/services/…", "secret") };
-        public override string[] CanSend => Integrations.EventKinds.Select(e => e.Key).ToArray();
-
-        public override async Task<string> Test()
-        {
-            await Send(new HubEvent("test", "N-Island подключён ✓", "Сюда будут приходить события острова"));
-            return "Работает ✓ Сообщение отправлено в канал";
-        }
-
-        public override async Task Send(HubEvent e)
-        {
-            if (!V("url").StartsWith("https://")) throw new InvalidOperationException("Нужен адрес вебхука, начинающийся с https://");
-            using var resp = await Http.PostAsync(V("url"), new StringContent(JsonSerializer.Serialize(new { text = $"*{e.Title}*" + (e.Text != "" ? "\n" + e.Text : "") }), Encoding.UTF8, "application/json"));
-            if (!resp.IsSuccessStatusCode) throw new HttpRequestException(Integrations.Snip(await resp.Content.ReadAsStringAsync()), null, resp.StatusCode);
-            Status = "Отправлено " + DateTime.Now.ToString("HH:mm");
-        }
-    }
-
     public class GotifyHub : Integration
     {
         public override string Key => "gotify";

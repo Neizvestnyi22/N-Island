@@ -23,6 +23,11 @@ namespace NIsland
         protected override void OnStartup(StartupEventArgs e)
         {
             // второй процесс с правами администратора: чистит системные папки и сразу выходит (без чёлки и трея)
+            if (e.Args.Length >= 3 && e.Args[0] == "--elevated-script")
+            {
+                Shutdown(Elevated.RunScriptJob(e.Args));
+                return;
+            }
             if (e.Args.Length >= 3 && e.Args[0] == "--elevated-clean")
             {
                 Shutdown(Elevated.RunCleanJob(e.Args));

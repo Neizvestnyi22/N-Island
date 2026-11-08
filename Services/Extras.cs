@@ -58,12 +58,34 @@ namespace NIsland.Services
             Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Read));
         }
 
+        /// <summary>
+        /// Менеджеры паролей (KeePass, Bitwarden, 1Password, браузеры) помечают скопированный пароль этими форматами —
+        /// такое не попадает ни в историю буфера Windows, ни в нашу (иначе пароль оказался бы в истории, на диске и в Telegram /cliphist).
+        /// </summary>
+        public static bool IsSensitive()
+        {
+            try
+            {
+                var d = Clipboard.GetDataObject();
+                if (d == null) return false;
+                if (d.GetDataPresent("ExcludeClipboardContentFromMonitorProcessing") || d.GetDataPresent("Clipboard Viewer Ignore")) return true;
+                foreach (var f in new[] { "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard" })
+                    if (d.GetDataPresent(f) && d.GetData(f) is System.IO.MemoryStream ms && ms.Length >= 4)
+                    {
+                        var b = ms.ToArray();
+                        if (BitConverter.ToInt32(b, 0) == 0) return true;
+                    }
+            }
+            catch { }
+            return false;
+        }
+
         void Read()
         {
             string text = null;
             for (int i = 0; i < 3 && text == null; i++)
             {
-                try { if (Clipboard.ContainsText()) text = Clipboard.GetText(); else return; }
+                try { if (Clipboard.ContainsText()) { if (IsSensitive()) return; text = Clipboard.GetText(); } else return; }
                 catch { System.Threading.Thread.Sleep(30); }
             }
             if (string.IsNullOrWhiteSpace(text) || text.Length > 20000) return;

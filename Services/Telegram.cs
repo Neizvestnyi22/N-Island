@@ -80,6 +80,18 @@ namespace NIsland.Services
 
         async Task<JsonElement> Call(string method, object body, CancellationToken ct = default)
         {
+            if (Remote is { } rc)
+            {
+                // команда пришла из другого мессенджера: текст собираем для него, служебные вызовы Telegram пропускаем
+                if (method is "sendMessage" or "editMessageText" or "editMessageCaption")
+                {
+                    using var bd = JsonDocument.Parse(JsonSerializer.Serialize(body, JsonOpts));
+                    var txt = Integrations.S(bd.RootElement, method == "editMessageCaption" ? "caption" : "text");
+                    rc.Add(txt, replaceLast: method != "sendMessage");
+                }
+                using var fake = JsonDocument.Parse("{\"message_id\":7}");
+                return fake.RootElement.Clone();
+            }
             if (TestSink != null)
             {
                 var raw0 = TestSink(method, JsonSerializer.Serialize(body, JsonOpts));
@@ -123,7 +135,7 @@ namespace NIsland.Services
 
         async Task<long> Message(string html, object keys = null, bool silent = false, bool translate = true, long replyTo = 0)
         {
-            if (string.IsNullOrEmpty(V("chat"))) return 0;
+            if (Remote == null && string.IsNullOrEmpty(V("chat"))) return 0;
             if (string.IsNullOrWhiteSpace(html)) html = "✓";
             if (translate) html = Tr(html);
             silent |= QuietNow();
@@ -161,6 +173,7 @@ namespace NIsland.Services
         /// <summary>Отправить файл (фото, документ). Возвращает номер сообщения — нужен «живому экрану», чтобы менять картинку.</summary>
         async Task<long> Upload(string method, string field, HttpContent file, string fileName, string caption = null, object keys = null)
         {
+            if (Remote is { } rc) { rc.AddFile(fileName, await file.ReadAsByteArrayAsync(), caption != null ? Tr(caption) : null); file.Dispose(); return 7; }
             using var form = new MultipartFormDataContent { { new StringContent(V("chat")), "chat_id" } };
             if (caption != null) { form.Add(new StringContent(Tr(caption)), "caption"); form.Add(new StringContent("HTML"), "parse_mode"); }
             if (keys != null) form.Add(new StringContent(JsonSerializer.Serialize(keys, JsonOpts)), "reply_markup");
@@ -238,8 +251,11 @@ namespace NIsland.Services
         //  Проверка, команды в меню Telegram, события острова
         // ------------------------------------------------------------------
 
+        string _owner;
+
         public override async Task<string> Test()
         {
+            _owner = null;
             var me = await Call("getMe", new { });
             var bot = Integrations.S(me, "username");
             if (string.IsNullOrEmpty(V("chat")))
@@ -251,10 +267,20 @@ namespace NIsland.Services
                 {
                     return $"Бот @{bot} уже подключён к другому сервису (вебхук или другая программа). Создай для N-Island отдельного бота у @BotFather";
                 }
-                var last = up.EnumerateArray().LastOrDefault();
-                if (last.ValueKind == JsonValueKind.Undefined || !last.TryGetProperty("message", out var msg))
-                    return $"Бот @{bot} работает. Напиши ему любое сообщение в Telegram и нажми «Проверить» ещё раз";
-                Integrations.SetValue(this, "chat", msg.GetProperty("chat").GetProperty("id").ToString());
+                // пульт ПК отдаём только личному чату и только если боту писал один человек:
+                // имя бота можно найти поиском, и чужой мог бы написать ему раньше владельца
+                var chats = up.EnumerateArray()
+                    .Where(x => x.TryGetProperty("message", out var mm) && mm.TryGetProperty("chat", out var ch) && Integrations.S(ch, "type") == "private")
+                    .Select(x => x.GetProperty("message").GetProperty("chat").Clone())
+                    .GroupBy(ch => ch.GetProperty("id").ToString()).Select(g => g.Last()).ToList();
+                if (chats.Count == 0)
+                    return $"Бот @{bot} работает. Напиши ему любое сообщение в личном чате Telegram и нажми «Проверить» ещё раз";
+                if (chats.Count > 1)
+                    return $"Боту @{bot} писали несколько человек ({string.Join(", ", chats.Select(c => Integrations.S(c, "first_name")))}). " +
+                           "Впиши ID своего чата вручную (его покажет @userinfobot) — так управление не достанется чужому";
+                Integrations.SetValue(this, "chat", chats[0].GetProperty("id").ToString());
+                _owner = (Integrations.S(chats[0], "first_name") + " " + Integrations.S(chats[0], "last_name")).Trim() +
+                         (Integrations.S(chats[0], "username") is { Length: > 0 } un ? " @" + un : "");
             }
             _commandsSet = false;
             await SetCommands();
@@ -265,7 +291,7 @@ namespace NIsland.Services
             }
             catch { }
             await Message("✅ <b>N-Island подключён</b>\nСюда будут приходить события острова.\n/menu — пульт ПК · /help — все команды", Flag("kbd") ? ReplyKeys() : null);
-            return $"Работает ✓ Бот @{bot}, сообщение отправлено в чат {V("chat")}";
+            return $"Работает ✓ Бот @{bot}, управлять может только чат {V("chat")}" + (_owner != null ? $" ({_owner})" : "");
         }
 
         static readonly (string Cmd, string Desc)[] Commands =
@@ -285,7 +311,7 @@ namespace NIsland.Services
             if (_commandsSet) return;
             try
             {
-                await Call("setMyCommands", new { commands = Commands.Concat(Commands2).Select(c => new { command = c.Cmd, description = T(c.Desc) }).ToArray() });
+                await Call("setMyCommands", new { commands = Commands.Concat(Commands2).Concat(Commands3).Take(100).Select(c => new { command = c.Cmd, description = T(c.Desc) }).ToArray() });
                 _commandsSet = true;
             }
             catch { }
@@ -423,7 +449,7 @@ namespace NIsland.Services
         DateTime _awaitUntil;
         static readonly AsyncLocal<long> _msgId = new();
         static long _lastMsgId { get => _msgId.Value; set => _msgId.Value = value; }
-        void Await(string kind) { _await = kind; _awaitUntil = DateTime.Now.AddMinutes(3); }
+        void Await(string kind) { if (Remote != null) return; _await = kind; _awaitUntil = DateTime.Now.AddMinutes(3); }
         string TakeAwait() { var k = _await; _await = null; return k != null && DateTime.Now < _awaitUntil ? k : null; }
 
         async Task Handle(JsonElement u)
@@ -497,7 +523,7 @@ namespace NIsland.Services
 
         /// <summary>null — можно; иначе понятный отказ. Разрешения меняются только на самом ПК.</summary>
         string Need(string flag) => Flag(flag) ? null
-            : $"🔐 «{FlagNames[flag]}» не разрешено. Включить можно только на ПК: N-Island → Настройки → Интеграции → Telegram.";
+            : $"🔐 «{FlagNames[flag]}» не разрешено. Включить можно только на ПК: N-Island → Настройки → Интеграции → {Remote?.Source ?? "Telegram"}.";
 
         // ------------------------------------------------------------------
         //  Команды
@@ -602,8 +628,10 @@ namespace NIsland.Services
                     return ("🚀 Открываю: " + H(arg), null);
                 case "url":
                     if ((no = Need("control")) != null) return (no, null);
-                    var site = arg.StartsWith("http") ? arg : "https://" + arg;
-                    await Ui(() => SystemService.Run(site));
+                    // только веб-адрес: раньше «/url httpd.exe» запускал программу при одном лишь разрешении «Управление»
+                    var site = Regex.IsMatch(arg, @"^https?://", RegexOptions.IgnoreCase) ? arg.Trim() : "https://" + arg.Trim();
+                    if (!Uri.TryCreate(site, UriKind.Absolute, out var su) || su.Host == "" || arg.Contains('\\')) return ("Это не адрес сайта", null);
+                    await Ui(() => SystemService.OpenWeb(site));
                     return ("🌐 Открыто в браузере: " + H(site), null);
 
                 // --- клавиатура и мышь
@@ -699,6 +727,7 @@ namespace NIsland.Services
                     return ($"⏱ Таймер на {min:0.#} мин запущен", K(Row(B("⏹ Остановить", "tm:stop"))));
                 case "clip":
                     if ((no = Need("control")) != null) return (no, null);
+                    if (await Ui(ClipboardService.IsSensitive)) return ("🔐 В буфере пароль из менеджера паролей — его не отправляю", null);
                     var clip = await Ui(() => { try { return System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : null; } catch { return null; } });
                     return (clip == null ? "📋 В буфере обмена ПК нет текста" : "📋 <code>" + H(Cut(clip, 3500)) + "</code>", null);
                 case "copy":
@@ -787,6 +816,7 @@ namespace NIsland.Services
                     await Action("typing");
                     return (await Shell(cmd == "ps", arg), null);
                 default:
+                    if (await Command3(cmd, arg) is { } r3) return r3;
                     if (await Command2(cmd, arg) is { } r2) return r2;
                     if (Commands2.Any(c => c.Cmd == cmd) || cmd is "cover" or "dash" or "stream" or "scenario" or "clips" or "played" or "defender" or "translate" or "c" or "wol" or "speedtest" or "bt" or "bluetooth" or "airplane" or "autorun")
                         return null;   // команда 2.0 ответила сама (фото, живая панель)
@@ -812,6 +842,12 @@ namespace NIsland.Services
                    "/in 10m /lock · /at 23:30 /shutdown 1 · /jobs · /cliphist · /history · /health · /av\n" +
                    "/tr en текст · /calc 2*21 · /qr текст · /speed · /radio · /wake MAC · /startup · /pin · /seek 1:30 · /shuffle · /repeat\n" +
                    "🎙 Голосовое боту — прозвучит на ПК (с подписью /save — сохранится файлом)\n\n" +
+                   "<b>🧰 Ещё 66 команд</b>\n" +
+                   "Система: /cpu · /mem · /gpu · /idle · /active · /monitors · /ports · /conns · /usb · /eject E · /bin · /temp · /cleantemp · /boot · /pending · /update · /service имя · /bathealth · /diskhealth · /flushdns · /netusage · /wifiscan · /lan\n" +
+                   "Сайты: /http сайт · /ssl · /whois · /dig · /ipinfo IP · /link ссылка · /trace · /port хост 443 · /unshort\n" +
+                   "Утилиты: /conv 100 usd uah · /wiki · /clock Tokyo · /days 31.12 · /moon · /sun · /tomorrow · /password · /uuid · /hash · /b64 · /roll · /coin · /sw · /pomo · /sleeptimer 30 · /water\n" +
+                   "Дела: /notes · /todos · /done 2 · /deltodo 2 · /notif · /clipclear\n" +
+                   "Окна и звук: /close · /maximize · /minimize · /minall · /appvol · /volup · /voldown · /like · /desklyrics · /viz · /mascot · /icons · /restartapp\n\n" +
                    "/settings — что присылать на телефон\n🔐 — выключено, включается только на ПК";
         }
 

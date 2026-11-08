@@ -33,6 +33,7 @@ namespace NIsland.Services
                     "tgbot" => TgBotTest.Run(args[2]),
                     "viz" => VizBench(args[2]),
                     "mascot" => MascotSheet(args[2]),
+                    "elev" => ElevBench(args[2]),
                     "av" => Task.Run(() => AvTest(args[2])).GetAwaiter().GetResult(),
                     "custom" => Task.Run(() => CustomTest(args[2])).GetAwaiter().GetResult(),
                     "mcp" => McpTest.Run(args[2]),
@@ -237,6 +238,33 @@ namespace NIsland.Services
             enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(img));
             using (var fs = File.Create(Path.ChangeExtension(output, ".png"))) enc.Save(fs);
             sb.AppendLine($"moods={moods.Length} skins={skins.Length} hats={hats.Length}");
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        /// <summary>Задание администратора: хеш, вложения, запуск cmd (без UAC — в обычном процессе), подмена файла.</summary>
+        static int ElevBench(string output)
+        {
+            var sb = new StringBuilder();
+            var dir = Path.Combine(Path.GetTempPath(), "ni-elev-test");
+            Directory.CreateDirectory(dir);
+            var outFile = Path.Combine(dir, "out.txt");
+            var job = new NIsland.Services.Elevated.ScriptJob("@echo off\r\ntype \"%NI_DIR%\\a.txt\" > \"" + outFile + "\"\r\nexit /b 7\r\n",
+                new Dictionary<string, string> { ["a.txt"] = "привет" }, null);
+            var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(job);
+            var jf = Path.Combine(dir, "t.job.json");
+            File.WriteAllBytes(jf, bytes);
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            int code = NIsland.Services.Elevated.RunScriptJob(new[] { "--elevated-script", jf, hash });
+            sb.AppendLine($"run: code={code} out={(File.Exists(outFile) ? File.ReadAllText(outFile).Trim() : "(none)")}");
+            File.AppendAllText(jf, " ");
+            int bad = NIsland.Services.Elevated.RunScriptJob(new[] { "--elevated-script", jf, hash });
+            sb.AppendLine($"tampered: code={bad}");
+            var bad2 = new NIsland.Services.Elevated.ScriptJob("echo", new Dictionary<string, string> { ["..\\x.cmd"] = "x" }, null);
+            var b2 = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(bad2);
+            File.WriteAllBytes(jf, b2);
+            sb.AppendLine($"bad name: code={NIsland.Services.Elevated.RunScriptJob(new[] { "--elevated-script", jf, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(b2)) })}");
+            try { Directory.Delete(dir, true); } catch { }
             File.WriteAllText(output, sb.ToString());
             return 0;
         }

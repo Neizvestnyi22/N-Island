@@ -43,7 +43,17 @@ namespace NIsland
                 Row("Страница «Сервисы» в острове", "Данные подключённых сервисов с кнопками: свет, задачи, события, курсы, посылки…", Toggle(nameof(Settings.PgHub)))));
             // поиск по сервисам: их больше 30
             var find = UI.Box(I18n.T("Найти сервис: почта, банк, свет, задачи…"), 360);
-            panel.Children.Add(UI.Row(find, UI.Text($"{Integrations.All.Count} {I18n.T("сервисов")} · {I18n.T("подключено")}: {on}", 12, false, UI.Dim).M(12, 0, 0, 0)).M(4, 0, 0, 10));
+            // счётчик справа, поле поиска занимает остальное место (в StackPanel счётчик обрезался на узком окне и в длинных языках)
+            var count = UI.Text($"{Integrations.All.Count} {I18n.T("сервисов")} · {I18n.T("подключено")}: {on}", 12, false, UI.Dim).M(12, 0, 0, 0);
+            count.VerticalAlignment = VerticalAlignment.Center;
+            count.TextWrapping = TextWrapping.NoWrap;
+            find.Width = double.NaN;
+            find.MinWidth = 180;
+            var findRow = new DockPanel { LastChildFill = true, Margin = new Thickness(4, 0, 0, 10) };
+            DockPanel.SetDock(count, Dock.Right);
+            findRow.Children.Add(count);
+            findRow.Children.Add(find);
+            panel.Children.Add(findRow);
             var cards = new List<(UIElement Card, UIElement Header, Integration It)>();
             foreach (var (title, keys) in groups)
             {
@@ -361,16 +371,27 @@ namespace NIsland
             nameof(Settings.StartWithWindows), nameof(Settings.LiteModeSetting),
         };
 
+        /// <summary>
+        /// Из чужого файла настроек не берём то, что влияет на безопасность: адреса серверов ИИ (туда ушёл бы твой ключ),
+        /// свои провайдеры, системную подсказку ИИ, MCP (вкл., уровень, токен, порт), протокол nisland://, меню Проводника, папки агентов.
+        /// </summary>
+        static readonly HashSet<string> NeverImport = new()
+        {
+            nameof(Settings.AiUrls), nameof(Settings.AiCustom), nameof(Settings.AiSystem), nameof(Settings.McpOn), nameof(Settings.McpLevel),
+            nameof(Settings.McpToken), nameof(Settings.McpPort), nameof(Settings.UrlProtocol), nameof(Settings.ShellMenu), nameof(Settings.AgentFolders),
+        };
+
         static IEnumerable<PropertyInfo> CopyableProps() => typeof(Settings).GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.CanWrite && p.GetCustomAttribute<JsonIgnoreAttribute>() == null);
 
         /// <summary>Переносим значения по одному — каждое изменение сразу применяется островом.</summary>
-        static int ApplyFrom(Settings src, bool keepLocal)
+        static int ApplyFrom(Settings src, bool keepLocal, bool foreign = false)
         {
             int n = 0;
             foreach (var p in CopyableProps())
             {
                 if (keepLocal && KeepOnReset.Contains(p.Name)) continue;
+                if (foreign && NeverImport.Contains(p.Name)) continue;
                 var v = p.GetValue(src);
                 if (Equals(v, p.GetValue(S))) continue;
                 try { p.SetValue(S, v); n++; } catch { }
@@ -394,6 +415,7 @@ namespace NIsland
                 var copy = JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(S));
                 copy.AiKeys = new();
                 copy.Integrations = new();
+                copy.McpToken = "";   // токен доступа к острову — не для файлов, которыми делятся
                 File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(copy, new JsonSerializerOptions { WriteIndented = true }));
                 App.Island.Toast("", "Настройки сохранены", Path.GetFileName(dlg.FileName));
             }
@@ -407,7 +429,7 @@ namespace NIsland
             try
             {
                 var src = JsonSerializer.Deserialize<Settings>(File.ReadAllText(dlg.FileName)) ?? throw new InvalidDataException("пустой файл");
-                int n = ApplyFrom(src, true);
+                int n = ApplyFrom(src, true, foreign: true);
                 App.Island.Toast("", "Настройки загружены", I18n.T("Изменено пунктов: ") + n);
                 Open(_current);
             }

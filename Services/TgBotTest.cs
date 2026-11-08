@@ -87,6 +87,15 @@ namespace NIsland.Services
                 ("now", ""), ("live", "1"), ("watch", "10"), ("scene", ""), ("scene", "nope"), ("in", "10m /status"), ("in", "abc"), ("at", "23:59 /uptime"), ("at", "99:99 /x"),
                 ("in", "1m /in 1m /x"), ("jobs", ""), ("cliphist", ""), ("history", ""), ("av", ""), ("tr", "en Привет, мир"), ("tr", ""), ("calc", "(12+8)*3"), ("calc", "abc"),
                 ("qr", "https://example.com"), ("wake", ""), ("radio", ""), ("startup", ""), ("pin", ""), ("seek", ""), ("help", ""), ("health", ""), ("do", ""), ("do", "покажи погоду и посчитай 2*21"),
+                // 3.0 (только чтение; то, что меняет ПК, здесь не запускается)
+                ("cpu", ""), ("mem", ""), ("gpu", ""), ("idle", ""), ("active", ""), ("monitors", ""), ("ports", ""), ("conns", ""), ("usb", ""), ("eject", "E"),
+                ("bin", ""), ("temp", ""), ("boot", ""), ("pending", ""), ("update", ""), ("service", "spooler"), ("service", "a;b"), ("bathealth", ""), ("diskhealth", ""),
+                ("netusage", ""), ("wifiscan", ""), ("http", "example.com"), ("http", "-x"), ("ssl", "example.com"), ("whois", "example.com"), ("dig", "example.com"),
+                ("dig", "a b"), ("ipinfo", "8.8.8.8"), ("ipinfo", "abc"), ("link", "https://example.com"), ("port", "example.com 443"), ("port", "-x 1"),
+                ("unshort", "https://example.com"), ("conv", "100 usd uah"), ("conv", "abc"), ("wiki", "Киев"), ("clock", ""), ("clock", "Tokyo"), ("days", "31.12"),
+                ("days", "abc"), ("moon", ""), ("sun", ""), ("tomorrow", ""), ("password", ""), ("password", "500"), ("uuid", ""), ("hash", "abc"), ("b64", "привет"),
+                ("b64", "-d 0L/RgNC40LLQtdGC"), ("b64", "-d !!"), ("roll", ""), ("roll", "100"), ("roll", "5 10"), ("coin", ""), ("notes", ""), ("todos", ""),
+                ("done", "abc"), ("notif", ""), ("appvol", ""), ("mascot", ""), ("mascot", "nope"), ("pomo", "status"),   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
             };
             var queue = new Queue<string>();
             foreach (var (c, a) in cmds)
@@ -125,6 +134,35 @@ namespace NIsland.Services
                 lock (Sent) foreach (var (_, j) in Sent) Collect(j, queue);
             }
             log.AppendLine($"buttons seen={seen.Count} pressed={pressed}");
+
+            // 3. пульт из других мессенджеров: тот же движок, ответы не уходят в Telegram
+            Sent.Clear();
+            var none = new Func<string, bool>(_ => false);
+            var all = new Func<string, bool>(k => k != "shell" && k != "power");
+            foreach (var (text, flags, expectFile, expectRefuse) in new (string, Func<string, bool>, bool, bool)[]
+            {
+                ("/status", none, false, false), ("!vol", none, false, false), ("/cpu", none, false, false), ("/screenshot", none, false, true),
+                ("/screenshot", all, true, false), ("/lock", all, false, true), ("/cmd ipconfig", all, false, true), ("/live", all, false, false),
+                ("/help", none, false, false), ("/wiki Linux", none, false, false), ("/nope", none, false, false), ("/active", none, false, true),
+            })
+            {
+                var ctx = await TelegramHub.RunRemote(text, "Discord", flags, (_, _) => Task.CompletedTask, false);
+                var outText = string.Join(" | ", ctx.Out);
+                log.AppendLine($"remote {text} → files={ctx.Files.Count} {Short(outText)}");
+                if (ctx.Out.Count == 0 && ctx.Files.Count == 0) Problems.Add($"remote {text}: no answer");
+                if (expectFile && ctx.Files.Count == 0) Problems.Add($"remote {text}: file expected");
+                if (expectRefuse && !outText.Contains("🔐")) Problems.Add($"remote {text}: refusal expected, got {Short(outText)}");
+                if (expectRefuse && !outText.Contains("Discord")) Problems.Add($"remote {text}: refusal should name Discord");
+                foreach (var o in ctx.Out) Check("remote", JsonSerializer.Serialize(new { text = o, parse_mode = "HTML" }));
+            }
+            lock (Sent) if (Sent.Count > 0) Problems.Add("remote commands leaked to Telegram: " + string.Join(", ", Sent.Select(x => x.Method)));
+            var md = TelegramHub.ToMarkdown("<b>Жирный</b> <i>к</i> <code>x&lt;y</code> <a href=\"https://e.com\">ссылка</a>", false);
+            if (md != "**Жирный** _к_ `x<y` [ссылка](https://e.com)") Problems.Add("ToMarkdown discord: " + md);
+            var sk = TelegramHub.ToMarkdown("<b>A</b> 1 &lt; 2 <a href=\"https://e.com\">l</a>", true);
+            if (sk != "*A* 1 &lt; 2 <https://e.com|l>") Problems.Add("ToMarkdown slack: " + sk);
+            var mx = TelegramHub.ToMatrixHtml("<b>a</b><script>x</script><a href=\"javascript:alert(1)\">l</a>");
+            if (mx.Contains("<script") || mx.Contains("javascript:")) Problems.Add("ToMatrixHtml unsafe: " + mx);
+            log.AppendLine($"markdown: {md} · slack: {sk} · matrix: {mx}");
             TelegramHub.TestSink = null;
         }
 

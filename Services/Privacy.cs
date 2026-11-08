@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -352,16 +352,14 @@ namespace NIsland.Services
         {
             if (reg.Length == 0 && cmd.Count == 0) return null;
             var lines = new List<string>();
+            var files = new Dictionary<string, string>();
             if (reg.Length > 0)
             {
-                var dir = Path.Combine(Store.Dir, "admin");
-                Directory.CreateDirectory(dir);
-                var file = Path.Combine(dir, $"{name}-{DateTime.Now:yyyyMMdd-HHmmss}.reg");
-                File.WriteAllText(file, "Windows Registry Editor Version 5.00\r\n\r\n" + reg, Encoding.Unicode);
-                lines.Add($"reg import \"{file}\" >nul 2>&1");
+                files["privacy.reg"] = "Windows Registry Editor Version 5.00\r\n\r\n" + reg;
+                lines.Add("reg import \"%NI_DIR%\\privacy.reg\" >nul 2>&1");
             }
             lines.AddRange(cmd);
-            int code = await Elevated.Script(name, lines);
+            int code = await Elevated.Script(name, lines, files);
             return code >= 0;
         }
 
@@ -504,10 +502,8 @@ namespace NIsland.Services
                 lines.AddRange(TrackerDomains.Select(d => "0.0.0.0 " + d));
                 lines.Add(End);
             }
-            var tmp = Path.Combine(Store.Dir, "admin", "hosts.new");
-            Directory.CreateDirectory(Path.GetDirectoryName(tmp));
-            File.WriteAllText(tmp, string.Join("\r\n", lines) + "\r\n", new UTF8Encoding(false));
-            int code = await Elevated.Script("hosts", new[] { $"copy /y \"{tmp}\" \"{HostsPath}\" >nul", "ipconfig /flushdns >nul" });
+            int code = await Elevated.Script("hosts", new[] { $"copy /y \"%NI_DIR%\\hosts.txt\" \"{HostsPath}\" >nul", "ipconfig /flushdns >nul" },
+                new Dictionary<string, string> { ["hosts.txt"] = string.Join("\r\n", lines) + "\r\n" });
             return code >= 0 && HostsBlocked() == (on ? TrackerDomains.Length : 0);
         }
 
@@ -518,6 +514,7 @@ namespace NIsland.Services
         }
 
         public static Task<int> RestoreHosts(string backup) =>
-            Elevated.Script("hosts-restore", new[] { $"copy /y \"{backup}\" \"{HostsPath}\" >nul", "ipconfig /flushdns >nul" });
+            Elevated.Script("hosts-restore", new[] { $"copy /y \"%NI_DIR%\\hosts.txt\" \"{HostsPath}\" >nul", "ipconfig /flushdns >nul" },
+                new Dictionary<string, string> { ["hosts.txt"] = File.ReadAllText(backup) });
     }
 }

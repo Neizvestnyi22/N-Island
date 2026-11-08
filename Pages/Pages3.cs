@@ -124,14 +124,14 @@ namespace NIsland.Pages
         {
             var p = Ai.Current;
             bool ready = Ai.Ready(p, out _);
-            _prov.Content = (ready ? "● " : "○ ") + p.Name.Split(' ')[0];
+            _prov.Content = (ready ? "● " : "○ ") + I18n.T(p.Name).Split(' ')[0];
             _prov.Foreground = ready ? Brushes.White : UI.Dim;
             _persona.Content = Ai.Personas.FirstOrDefault(x => x.Key == S.AiPersona)?.Name ?? "Обычный";
             _actions.Children.Clear();
             foreach (var a in Ai.Actions())
             {
                 var act = a;
-                var b = UI.Pill(a.Name, () => RunAction(act), false, "Применить к тексту из буфера обмена");
+                var b = UI.Pill(I18n.T(a.Name), () => RunAction(act), false, "Применить к тексту из буфера обмена");
                 b.Padding = new Thickness(8, 3, 8, 3);
                 b.FontSize = 10.5;
                 b.Margin = new Thickness(0, 0, 4, 0);
@@ -360,11 +360,11 @@ namespace NIsland.Pages
             _stats.Children.Clear();
             var c = Maint.Disks().FirstOrDefault(d => d.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)) ?? Maint.Disks().FirstOrDefault();
             if (c != null)
-                _stats.Children.Add(Stat($"Диск {c.Name}", $"{Maint.Size(c.Free)} своб.", $"из {Maint.Size(c.Total)}", 1 - c.Free / (double)c.Total, () => Show(DisksView()), "Все диски и их здоровье"));
+                _stats.Children.Add(Stat($"Диск {c.Name}", $"{Maint.Size(c.Free)} своб.", $"{I18n.T("из")} {Maint.Size(c.Total)}", 1 - c.Free / (double)c.Total, () => Show(DisksView()), "Все диски и их здоровье"));
             long total = Maint.TotalRam(), free = Maint.AvailableRam();
             _stats.Children.Add(Stat("Память", $"{Maint.Size(total - free)} занято", $"свободно {Maint.Size(free)}", total > 0 ? 1 - free / (double)total : 0));
             if (_bat != null && _bat.Design > 0)
-                _stats.Children.Add(Stat("Батарея", $"здоровье {_bat.Percent}%", _bat.Cycles > 0 ? $"{_bat.Cycles} циклов зарядки" : $"{_bat.Full / 1000.0:0.#} из {_bat.Design / 1000.0:0.#} Вт·ч", null,
+                _stats.Children.Add(Stat("Батарея", $"{I18n.T("здоровье")} {_bat.Percent}%", _bat.Cycles > 0 ? $"{_bat.Cycles} {I18n.T("циклов зарядки")}" : $"{_bat.Full / 1000.0:0.#} {I18n.T("из")} {_bat.Design / 1000.0:0.#} {I18n.T("Вт·ч")}", null,
                     null, $"Ёмкость: {_bat.Full} мВт·ч из заводских {_bat.Design} мВт·ч"));
             else
                 _stats.Children.Add(Stat("Батарея", SystemService.I.HasBattery ? $"{SystemService.I.BatteryPercent}%" : "нет", SystemService.I.HasBattery ? "проверяю износ…" : "питание от сети", null));
@@ -531,7 +531,7 @@ namespace NIsland.Pages
     public class ToolsPage : PageBase
     {
         readonly TextBox _in = UI.Box("Текст, адрес сайта или запрос — пусто = взять из буфера обмена");
-        readonly TextBox _out = Txt.Selectable("Выбери инструмент ниже.", 12.5);
+        readonly TextBox _out = Txt.Selectable(I18n.T("Выбери инструмент ниже."), 12.5);
         readonly Image _qr = new() { Width = 96, Height = 96, Visibility = Visibility.Collapsed, Margin = new Thickness(8, 0, 0, 0) };
         int _req;
 

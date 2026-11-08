@@ -108,7 +108,7 @@ namespace NIsland.Pages
                     BorderBrush = on ? Brushes.White : Brushes.Transparent, Child = dot, HorizontalAlignment = HorizontalAlignment.Center,
                 };
                 ring.MouseLeftButtonUp += (_, e) => { Presets.Apply(preset); e.Handled = true; };
-                var cell = UI.Col(ring, UI.Text(p.Name.Split(' ')[0], 9.5, false, on ? Brushes.White : UI.Faint).HA(HorizontalAlignment.Center).M(0, 2, 0, 0));
+                var cell = UI.Col(ring, UI.Text(I18n.T(p.Name).Split(' ')[0], 9.5, false, on ? Brushes.White : UI.Faint).HA(HorizontalAlignment.Center).M(0, 2, 0, 0));
                 _presets.Children.Add(cell);
             }
         }

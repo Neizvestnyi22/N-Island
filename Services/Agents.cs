@@ -157,13 +157,20 @@ namespace NIsland.Services
 
         static string Quote(string s) => "\"" + (s ?? "").Replace("\"", "\\\"") + "\"";
 
+        /// <summary>
+        /// Задание агенту попадает в командную строку cmd (claude.cmd, codex.cmd из npm): кавычка в тексте закрывала строку,
+        /// и «& команда» после неё выполнялась. Убираем кавычки, % (подстановка переменных), переводы строк и хвостовой «\».
+        /// </summary>
+        static string SafePrompt(string s) =>
+            (s ?? "").Replace('"', '\'').Replace('%', '％').Replace('\r', ' ').Replace('\n', ' ').Replace('^', 'ˆ').TrimEnd('\\').Trim();
+
         /// <summary>Открыть агента в терминале в папке проекта (с заданием или без).</summary>
         public static string Launch(AgentFound a, string folder, string prompt)
         {
             if (!Directory.Exists(folder)) return "Папка не найдена: " + folder;
             Remember(folder);
             // полный путь: агента может не быть в PATH (например, Claude Code внутри приложения Claude)
-            var cmd = Quote(a.Path) + (string.IsNullOrWhiteSpace(prompt) ? "" : " " + Quote(prompt.Trim()));
+            var cmd = Quote(a.Path) + (string.IsNullOrWhiteSpace(prompt) ? "" : " " + Quote(SafePrompt(prompt)));
             try
             {
                 var wt = Which("wt");
@@ -209,7 +216,7 @@ namespace NIsland.Services
             Remember(folder);
             var file = a.Path;
             bool script = file.EndsWith(".cmd") || file.EndsWith(".bat");
-            var args = a.Kind.OneShot + " " + Quote(prompt);
+            var args = a.Kind.OneShot + " " + Quote(SafePrompt(prompt));
             var psi = new ProcessStartInfo(script ? "cmd.exe" : file, script ? $"/d /c \"\"{file}\" {args}\"" : args)
             {
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,

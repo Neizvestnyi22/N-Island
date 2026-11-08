@@ -139,7 +139,7 @@ namespace NIsland.Pages
                     Child = UI.Grid("*,a").Add(UI.Col(title, sub), right?.At(0, 1).M(8, 0, 0, 0)),
                     Cursor = r.Url != null ? Cursors.Hand : null,
                 };
-                if (r.Url != null) card.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) SystemService.Run(row.Url); };
+                if (r.Url != null) card.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) SystemService.OpenWeb(row.Url); };
                 _rows.Children.Add(card);
             }
         }

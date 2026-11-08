@@ -128,7 +128,7 @@ namespace NIsland.Pages
                 _icon.Text = !w.IsDay && w.Code <= 1 ? "🌙" : icon;
                 _temp.Text = $"{Math.Round(w.Temp)}°";
                 _desc.Text = text;
-                _meta.Text = $"{w.City} · ощущается {Math.Round(w.Feels)}°";
+                _meta.Text = $"{w.City} · {I18n.T("ощущается")} {Math.Round(w.Feels)}°";
                 _chips.Children.Clear();
                 _chips.Children.Add(Chip($"💨 {Math.Round(w.Wind)}{(w.Gusts > w.Wind + 2 ? "–" + Math.Round(w.Gusts) : "")} м/с", "Ветер и порывы"));
                 _chips.Children.Add(Chip($"💧 {Math.Round(w.Humidity)}%", "Влажность"));

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -486,23 +486,72 @@ namespace NIsland.Services
             catch (Exception e) { Log.Info("elevated: " + e.Message); return -1; }
         });
 
-        /// <summary>Выполнить команды cmd от имени администратора одним запросом UAC. Скрипт остаётся в папке admin для проверки.</summary>
-        public static Task<int> Script(string name, IEnumerable<string> lines)
-        {
-            var file = Path.Combine(Dir, $"{name}-{DateTime.Now:yyyyMMdd-HHmmss}.cmd");
-            File.WriteAllText(file, "@echo off\r\nchcp 65001 >nul\r\n" + string.Join("\r\n", lines) + "\r\n", new System.Text.UTF8Encoding(false));
-            foreach (var old in new DirectoryInfo(Dir).GetFiles("*.cmd").OrderByDescending(f => f.CreationTime).Skip(30)) try { old.Delete(); } catch { }
-            return RunAs("cmd.exe", $"/c \"\"{file}\"\"");
-        }
+        // ------------------------------------------------------------------
+        //  Скрипты администратора. Раньше .cmd лежал в папке пользователя и запускался через cmd.exe с правами
+        //  администратора: пока открыт запрос UAC, любая программа пользователя могла подменить файл и получить права.
+        //  Теперь: задание (текст скрипта + вложенные файлы) пишется в JSON, его SHA-256 передаётся в командной строке
+        //  второго процесса N-Island; тот уже с правами сверяет хеш, раскладывает файлы в новую папку в C:\Windows\Temp,
+        //  закрытую для обычных пользователей, и только тогда запускает cmd.
+        // ------------------------------------------------------------------
+
+        public record ScriptJob(string Script, Dictionary<string, string> Files, string ConsoleTitle);
+
+        /// <summary>Выполнить команды cmd от имени администратора одним запросом UAC. Задание остаётся в папке admin для проверки.
+        /// Вложенные файлы (files: имя → содержимое) доступны скрипту как "%NI_DIR%\имя".</summary>
+        public static Task<int> Script(string name, IEnumerable<string> lines, Dictionary<string, string> files = null) =>
+            Job(name, "@echo off\r\nchcp 65001 >nul\r\n" + string.Join("\r\n", lines) + "\r\n", files, null);
 
         /// <summary>Долгая проверка в видимом окне (SFC, DISM, chkdsk): человек видит ход и результат, окно ждёт нажатия клавиши.</summary>
-        public static void Console(string name, string title, IEnumerable<string> lines)
+        public static void Console(string name, string title, IEnumerable<string> lines) =>
+            _ = Job(name, $"@echo off\r\nchcp 65001 >nul\r\ntitle N-Island: {title}\r\necho N-Island: {title}\r\necho Не закрывай это окно до конца проверки.\r\necho.\r\n" +
+                string.Join("\r\n", lines) + "\r\necho.\r\necho Готово. Нажми любую клавишу, чтобы закрыть окно.\r\npause >nul\r\n", null, title);
+
+        static Task<int> Job(string name, string script, Dictionary<string, string> files, string console)
         {
-            var file = Path.Combine(Dir, $"{name}-{DateTime.Now:yyyyMMdd-HHmmss}.cmd");
-            File.WriteAllText(file, $"@echo off\r\nchcp 65001 >nul\r\ntitle N-Island: {title}\r\necho N-Island: {title}\r\necho Не закрывай это окно до конца проверки.\r\necho.\r\n" +
-                string.Join("\r\n", lines) + "\r\necho.\r\necho Готово. Нажми любую клавишу, чтобы закрыть окно.\r\npause >nul\r\n", new System.Text.UTF8Encoding(false));
-            try { Process.Start(new ProcessStartInfo("cmd.exe", $"/c \"\"{file}\"\"") { UseShellExecute = true, Verb = "runas" }); }
-            catch { }
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(new ScriptJob(script, files ?? new(), console));
+            var file = Path.Combine(Dir, $"{name}-{DateTime.Now:yyyyMMdd-HHmmss}.job.json");
+            File.WriteAllBytes(file, bytes);
+            foreach (var old in new DirectoryInfo(Dir).GetFiles("*.job.json").OrderByDescending(f => f.CreationTime).Skip(30)) try { old.Delete(); } catch { }
+            foreach (var old in new DirectoryInfo(Dir).GetFiles("*.cmd")) try { old.Delete(); } catch { }   // старые скрипты прошлых версий
+            var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            return RunAs(Environment.ProcessPath, $"--elevated-script \"{file}\" {hash}");
+        }
+
+        /// <summary>Точка входа второго процесса (уже с правами администратора): сверить хеш, разложить файлы в закрытую папку, выполнить.</summary>
+        public static int RunScriptJob(string[] args)
+        {
+            string dir = null;
+            try
+            {
+                var bytes = File.ReadAllBytes(args[1]);
+                if (!string.Equals(Convert.ToHexString(SHA256.HashData(bytes)), args[2], StringComparison.OrdinalIgnoreCase)) return -3;   // файл подменили
+                var job = JsonSerializer.Deserialize<ScriptJob>(bytes);
+                if (job?.Script == null) return -4;
+                dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp", "NIsland-" + Guid.NewGuid().ToString("N"));
+                // папка только для администраторов и SYSTEM, без наследования прав «Пользователи: создавать файлы»
+                var sec = new System.Security.AccessControl.DirectorySecurity();
+                sec.SetAccessRuleProtection(true, false);
+                foreach (var sid in new[] { System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, System.Security.Principal.WellKnownSidType.LocalSystemSid })
+                    sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(new System.Security.Principal.SecurityIdentifier(sid, null),
+                        System.Security.AccessControl.FileSystemRights.FullControl,
+                        System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                        System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
+                System.IO.FileSystemAclExtensions.Create(new DirectoryInfo(dir), sec);
+                foreach (var (fname, content) in job.Files ?? new())
+                {
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(fname, @"^[\w\-]+\.[a-z]{1,5}$")) return -5;
+                    File.WriteAllText(Path.Combine(dir, fname), content, fname.EndsWith(".reg") ? System.Text.Encoding.Unicode : new System.Text.UTF8Encoding(false));
+                }
+                var cmd = Path.Combine(dir, "run.cmd");
+                File.WriteAllText(cmd, job.Script, new System.Text.UTF8Encoding(false));
+                var psi = new ProcessStartInfo("cmd.exe", $"/d /c \"\"{cmd}\"\"") { UseShellExecute = false, CreateNoWindow = job.ConsoleTitle == null, WorkingDirectory = dir };
+                psi.Environment["NI_DIR"] = dir;
+                using var p = Process.Start(psi);
+                p.WaitForExit();
+                return p.ExitCode;
+            }
+            catch (Exception e) { Log.Info("elevated script: " + e.Message); return -1; }
+            finally { if (dir != null) try { Directory.Delete(dir, true); } catch { } }
         }
 
         /// <summary>Чистка системных папок: этот же exe с ключом --elevated-clean и теми же проверками безопасности.</summary>
@@ -527,7 +576,14 @@ namespace NIsland.Services
                     var r = Cleaner.CleanOne(t);
                     freed += r.Freed; del += r.Deleted; skip += r.Skipped;
                 }
-                File.WriteAllText(args[2], JsonSerializer.Serialize(new CleanResult(freed, del, skip, null)));
+                // файл результата — только в папке admin N-Island и не через символическую ссылку/junction
+                var res = Path.GetFullPath(args[2]);
+                var resDir = Path.GetDirectoryName(res);
+                if (!res.StartsWith(Dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(res) != "clean-result.json") return 2;
+                if ((File.GetAttributes(resDir) & FileAttributes.ReparsePoint) != 0) return 2;
+                if (File.Exists(res)) { if ((File.GetAttributes(res) & FileAttributes.ReparsePoint) != 0) return 2; File.Delete(res); }
+                using (var fs = new FileStream(res, FileMode.CreateNew, FileAccess.Write))
+                    JsonSerializer.Serialize(fs, new CleanResult(freed, del, skip, null));
                 return 0;
             }
             catch { return 1; }

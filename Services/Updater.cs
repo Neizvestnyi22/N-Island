@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -71,9 +71,15 @@ namespace NIsland.Services
         /// <summary>
         /// Скачать и поставить обновление. progress — 0..1. Возвращает null при успехе (программа перезапустится) или текст ошибки.
         /// </summary>
+        static bool IsGitHub(string url) =>
+            Uri.TryCreate(url, UriKind.Absolute, out var x) && x.Scheme == Uri.UriSchemeHttps &&
+            (x.Host == "github.com" || x.Host.EndsWith(".github.com") || x.Host.EndsWith(".githubusercontent.com"));
+
         public static async Task<string> Install(UpdateInfo u, Action<double> progress)
         {
             if (u?.AssetUrl == null) return "В релизе нет файла для этой версии (" + Suffix.TrimStart('-') + ") — скачай вручную со страницы релиза";
+            // скачиваем только с GitHub и только со сверкой контрольной суммы
+            if (!IsGitHub(u.AssetUrl) || u.SumsUrl == null || !IsGitHub(u.SumsUrl)) return "В релизе нет проверочного файла SHA256SUMS.txt с GitHub — обновление отменено, скачай вручную со страницы релиза";
             var exe = Environment.ProcessPath;
             if (string.IsNullOrEmpty(exe)) return "Не удалось определить, где лежит программа";
             var dir = Path.Combine(Path.GetTempPath(), "NIsland-update");
@@ -81,7 +87,7 @@ namespace NIsland.Services
             {
                 if (Directory.Exists(dir)) Directory.Delete(dir, true);
                 Directory.CreateDirectory(dir);
-                var file = Path.Combine(dir, u.AssetName);
+                var file = Path.Combine(dir, Path.GetFileName(u.AssetName));
 
                 // 1. скачиваем с прогрессом
                 using (var resp = await Http.GetAsync(u.AssetUrl, HttpCompletionOption.ResponseHeadersRead))

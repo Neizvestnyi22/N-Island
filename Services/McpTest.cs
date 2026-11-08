@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -30,11 +30,12 @@ namespace NIsland.Services
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(McpServer.Apply);
             sb.AppendLine("running=" + McpServer.Running + " err=" + McpServer.Error);
             using var http = new HttpClient();
-            async Task<string> Post(string json, string token = null, string origin = null)
+            async Task<string> Post(string json, string token = null, string origin = null, string host = null)
             {
                 using var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:7399/mcp") { Content = new StringContent(json, Encoding.UTF8, "application/json") };
                 req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + (token ?? McpServer.Token));
                 if (origin != null) req.Headers.TryAddWithoutValidation("Origin", origin);
+                if (host != null) req.Headers.Host = host;
                 using var r = await http.SendAsync(req);
                 var body = await r.Content.ReadAsStringAsync();
                 return $"{(int)r.StatusCode} {(body.Length > 700 ? body[..700] + "…" : body)}";
@@ -56,6 +57,12 @@ namespace NIsland.Services
             sb.AppendLine("batch: " + await Post("[{\"jsonrpc\":\"2.0\",\"id\":201,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"method\":\"notifications/x\"}]"));
             sb.AppendLine("bad token: " + await Post(Call("island_status"), token: "wrong"));
             sb.AppendLine("evil origin: " + await Post(Call("island_status"), origin: "https://evil.example"));
+            sb.AppendLine("lookalike origin: " + await Post(Call("island_status"), origin: "http://localhost.evil.example"));
+            sb.AppendLine("local origin: " + (await Post(Call("island_status"), origin: "http://localhost:3000"))[..3]);
+            sb.AppendLine("rebinding host: " + await Post(Call("island_status"), host: "evil.example:7399"));
+            s.McpLevel = 1;
+            sb.AppendLine("open program at level 1: " + await Post(Call("open", "{\"target\":\"calc.exe\"}")));
+            s.McpLevel = 2;
             using (var g = await http.GetAsync("http://127.0.0.1:7399/mcp")) sb.AppendLine("GET (no auth): " + (int)g.StatusCode);
             using (var g = await http.GetAsync("http://127.0.0.1:7399/health")) sb.AppendLine("health: " + (int)g.StatusCode);
             sb.AppendLine("screenshot: " + (await Post(Call("screenshot", "{\"window\":true}"))).Substring(0, 120));

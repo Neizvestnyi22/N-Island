@@ -332,6 +332,8 @@ namespace NIsland
             var p = P(prop);
             var label = UI.Text("", 13, true);
             label.MinWidth = 64;
+            label.Margin = new Thickness(8, 0, 8, 0);   // длинные значения («Всесвітня ісламська ліга», «Основний») налезали на − и +
+            label.VerticalAlignment = VerticalAlignment.Center;
             label.TextAlignment = TextAlignment.Center;
             void Upd() => label.Text = fmt((int)p.GetValue(S));
             void Change(int d)
@@ -406,7 +408,7 @@ namespace NIsland
             var sp = new StackPanel { Margin = new Thickness(14, 10, 14, 10) };
             sp.Children.Add(new TextBlock { Text = title, FontSize = 13.5, FontWeight = FontWeights.SemiBold });
             if (!string.IsNullOrEmpty(desc)) sp.Children.Add(new TextBlock { Text = desc, FontSize = 12, Foreground = UI.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 6) });
-            if (control is FrameworkElement fe) fe.Margin = new Thickness(0, 4, 0, 0);
+            if (control is FrameworkElement fe) { fe.Margin = new Thickness(0, 4, 0, 0); fe.HorizontalAlignment = HorizontalAlignment.Left; }
             sp.Children.Add(control);
             return sp;
         }
@@ -596,7 +598,7 @@ namespace NIsland
                 Row("Обложка в чёлке", "Маленькая обложка слева, пока играет музыка", Toggle(nameof(Settings.ArtInNotch))),
                 Row("Полоски в чёлке", "Пляшут справа, пока играет музыка", Toggle(nameof(Settings.Visualizer))),
                 Row("Полоски слушают звук", "Двигаются под настоящую музыку, а не случайно", Toggle(nameof(Settings.LiveBars))),
-                Row("Эквалайзер и визуализатор", "Кривая эквалайзера для всего звука Windows и 13 визуализаторов", UI.Pill("Открыть", () => Open("eq")))),
+                Row("Эквалайзер и визуализатор", "Кривая эквалайзера для всего звука Windows и 61 стиль визуализатора", UI.Pill("Открыть", () => Open("eq")))),
             Group("Плеер",
                 Row("Размер обложки", null, Stepper(nameof(Settings.PlayerArtSize), 40, 80, 4, v => v + " px")),
                 Row("Подсветка под цвет обложки", "Мягкое свечение снизу плеера", Toggle(nameof(Settings.PlayerGlow))),
@@ -812,7 +814,7 @@ namespace NIsland
                 Row("Хранить на диске", "Иначе история живёт только до выхода из программы", Toggle(nameof(Settings.ClipSave))),
                 Row("Всплывашка «Скопировано»", null, Toggle(nameof(Settings.ClipHud))),
                 Row("Очистить историю", "Закреплённые записи останутся", UI.Pill("Очистить", () => ClipboardService.I.Clear()))),
-            Note("Пароли и другой секретный текст тоже попадают в историю — не включай «Хранить на диске», если копируешь их."),
+            Note("Пароли из менеджеров паролей (KeePass, Bitwarden, 1Password, браузеры) в историю не попадают. Другой секретный текст — попадает: не включай «Хранить на диске», если копируешь его."),
             Group("Заметки",
                 Row("Очистить заметки", null, UI.Pill("Очистить", () => { Store.Data.Notes = ""; Store.SaveData(); }))));
 
@@ -976,7 +978,7 @@ namespace NIsland
                     CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(0, 0, 8, 8), Cursor = Cursors.Hand,
                     Background = active ? new SolidColorBrush(ColorUtil.WithAlpha(accent, 0.3)) : UI.Hex("#14FFFFFF"),
                     BorderBrush = UI.Hex(active ? "#60FFFFFF" : "#1AFFFFFF"), BorderThickness = new Thickness(1),
-                    Child = UI.Col(new TextBlock { Text = name, FontSize = 14, FontWeight = FontWeights.SemiBold, Tag = "no-translate" },
+                    Child = UI.Col(new TextBlock { Text = code == "auto" ? I18n.T(name) : name, FontSize = 14, FontWeight = FontWeights.SemiBold, Tag = "no-translate" },
                                    UI.Text(code == "auto" ? I18n.Resolve("auto").ToUpperInvariant() : code.ToUpperInvariant(), 11, false, UI.Dim)),
                 };
                 card.MouseLeftButtonUp += (_, __) =>

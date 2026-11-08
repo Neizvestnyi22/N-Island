@@ -330,7 +330,7 @@ namespace NIsland
             {
                 var a = await Osint.Wayback(d);
                 var sp = (StackPanel)Table(new[] { ("Первый снимок", a.First == "" ? "нет" : a.First), ("Последний снимок", a.Last == "" ? "нет" : a.Last), ("Снимков (по месяцам)", a.Count + (a.Count >= 500 ? "+" : "")) });
-                sp.Children.Add(UI.Pill("Открыть историю сайта", () => SystemService.Run(a.Url)).HA(HorizontalAlignment.Left).M(0, 6, 0, 0));
+                sp.Children.Add(UI.Pill("Открыть историю сайта", () => SystemService.OpenWeb(a.Url)).HA(HorizontalAlignment.Left).M(0, 6, 0, 0));
                 return sp;
             })).M(0, 0, 6, 6));
             domButtons.Children.Add(Act("Безопасность сайта", Show("Проверяю заголовки", async d => Table(await Osint.Headers(d)))).M(0, 0, 6, 6));

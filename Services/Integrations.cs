@@ -309,7 +309,7 @@ namespace NIsland.Services
                 {
                     Kind = important ? "alert" : "hub", Glyph = it.Glyph, Tint = ColorUtil.Parse(it.Color, System.Windows.Media.Colors.White),
                     Title = title, Sub = sub, Seconds = important ? 12 : 6, Wide = true,
-                    OnClick = url != null ? () => SystemService.Run(url) : () => App.Island.Expand("hub"),
+                    OnClick = url != null ? () => SystemService.OpenWeb(url) : () => App.Island.Expand("hub"),
                 });
                 NotificationLog.Add(new Toast { App = it.Name, Title = title, Body = sub });
                 if (important) Publish("alert", title, sub, it);
@@ -483,31 +483,6 @@ namespace NIsland.Services
             }
             if (last != since) SetSt("since", last);
             else if (since == "10m") SetSt("since", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
-        }
-    }
-
-    public class DiscordHub : Integration
-    {
-        public override string Key => "discord";
-        public override string Name => "Discord";
-        public override string Glyph => "";
-        public override string Color => "#5865F2";
-        public override string Desc => "Отправляет события острова в канал Discord через вебхук";
-        public override string Help => "Настройки канала → Интеграции → Вебхуки → Новый вебхук → Копировать URL";
-        public override HubField[] Fields => new[] { new HubField("url", "URL вебхука", "https://discord.com/api/webhooks/…", "secret") };
-        public override string[] CanSend => Integrations.EventKinds.Select(e => e.Key).ToArray();
-
-        public override async Task<string> Test()
-        {
-            await Send(new HubEvent("test", "N-Island подключён ✓", "Сюда будут приходить события острова"));
-            return "Работает ✓ Сообщение отправлено в канал";
-        }
-
-        public override async Task Send(HubEvent e)
-        {
-            if (!V("url").StartsWith("https://")) throw new InvalidOperationException("Нужен адрес вебхука, начинающийся с https://");
-            using var _ = await Integrations.PostJson(V("url"), new { username = "N-Island", content = $"**{e.Title}**" + (e.Text != "" ? "\n" + e.Text : "") });
-            Status = "Отправлено " + DateTime.Now.ToString("HH:mm");
         }
     }
 

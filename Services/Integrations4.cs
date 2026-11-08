@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -90,42 +90,6 @@ namespace NIsland.Services
             }
             SetSt("after", max.ToString(CultureInfo.InvariantCulture));
             Status = "Обновлено " + DateTime.Now.ToString("HH:mm");
-        }
-    }
-
-    public class MatrixHub : Integration
-    {
-        public override string Key => "matrix";
-        public override string Name => "Matrix / Element";
-        public override string Glyph => "";
-        public override string Color => "#0DBD8B";
-        public override string Desc => "События острова в комнату Matrix (Element, свой сервер)";
-        public override string Help => "Element → Настройки → Помощь и о программе → Токен доступа. ID комнаты — в настройках комнаты (вида !abc:matrix.org)";
-        public override HubField[] Fields => new[]
-        {
-            new HubField("server", "Сервер", "https://matrix.org", Default: "https://matrix.org"),
-            new HubField("token", "Токен доступа", "", "secret"),
-            new HubField("room", "ID комнаты", "!abcdef:matrix.org"),
-        };
-        public override string[] CanSend => Integrations.EventKinds.Select(e => e.Key).ToArray();
-
-        public override async Task<string> Test() { await Send(new HubEvent("test", "N-Island подключён ✓", "Проверка связи")); return "Работает ✓ Сообщение отправлено в комнату"; }
-
-        public override async Task Send(HubEvent e)
-        {
-            var url = $"{V("server").TrimEnd('/')}/_matrix/client/v3/rooms/{Esc(V("room"))}/send/m.room.message/nisland{DateTime.UtcNow.Ticks}";
-            var body = e.Title + (e.Text != "" ? "\n" + e.Text : "");
-            var req = new HttpRequestMessage(HttpMethod.Put, url)
-            {
-                Content = new StringContent(JsonSerializer.Serialize(new
-                {
-                    msgtype = "m.text", body, format = "org.matrix.custom.html",
-                    formatted_body = "<b>" + System.Net.WebUtility.HtmlEncode(e.Title) + "</b>" + (e.Text != "" ? "<br>" + System.Net.WebUtility.HtmlEncode(e.Text) : ""),
-                }), Encoding.UTF8, "application/json"),
-            };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", V("token"));
-            using var _ = await Integrations.Json(req);
-            Status = "Отправлено " + DateTime.Now.ToString("HH:mm");
         }
     }
 

@@ -163,7 +163,7 @@ namespace NIsland.Services
                         App.Island?.ShowActivity(new Activity
                         {
                             Kind = "hub", Glyph = "\uE7E7", Tint = System.Windows.Media.Color.FromRgb(0x0A, 0x84, 0xFF),
-                            Title = Clip(q.TryGetValue("title", out var t) ? t : arg, 80), Sub = Clip(q.TryGetValue("text", out var x) ? x : "", 160), Seconds = 6, Wide = true,
+                            Title = Clip(q.TryGetValue("title", out var t) ? t : arg, 80), Sub = "🔗 " + Clip(q.TryGetValue("text", out var x) ? x : "", 150), Seconds = 6, Wide = true,   // видно, что всплывашка пришла по ссылке, а не от системы
                         });
                         break;
                     default: App.Island?.Toast("\uE783", "Неизвестная команда", Clip(cmd, 40)); break;
