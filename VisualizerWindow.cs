@@ -235,10 +235,8 @@ namespace NIsland
         void UpdateLyric()
         {
             var line = S.VizLyrics ? M.CurrentLyric : null;
-            if (_lyric.Text == (line ?? "")) return;
-            _lyric.Text = line ?? "";
             _lyric.FontSize = Math.Clamp(ActualWidth / 28, 18, 40);
-            _lyric.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, TimeSpan.FromMilliseconds(260)));
+            NIsland.Pages.LyricsAnim.ShowLine(_lyric, line, centered: true);
         }
 
         void Wake()

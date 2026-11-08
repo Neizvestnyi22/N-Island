@@ -510,6 +510,7 @@ namespace NIsland.Services
                 l.Insert(0, new QuarantineItem(id, path, Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(), reason, DateTime.Now, data.Length));
                 SaveQ(l);
                 Note("В карантин: " + path);
+                App.Island?.MascotReact("angry", 2.5);   // поймали угрозу — персонаж сердится на вирус
                 Changed?.Invoke();
                 return null;
             }

@@ -158,16 +158,19 @@ namespace NIsland.Services
             catch (TgError) { await Message(html, keys, translate: false); }   // старое сообщение или фото — присылаем новое
         }
 
-        async Task Upload(string method, string field, HttpContent file, string fileName, string caption = null, object keys = null)
+        /// <summary>Отправить файл (фото, документ). Возвращает номер сообщения — нужен «живому экрану», чтобы менять картинку.</summary>
+        async Task<long> Upload(string method, string field, HttpContent file, string fileName, string caption = null, object keys = null)
         {
             using var form = new MultipartFormDataContent { { new StringContent(V("chat")), "chat_id" } };
             if (caption != null) { form.Add(new StringContent(Tr(caption)), "caption"); form.Add(new StringContent("HTML"), "parse_mode"); }
             if (keys != null) form.Add(new StringContent(JsonSerializer.Serialize(keys, JsonOpts)), "reply_markup");
             if (QuietNow()) form.Add(new StringContent("true"), "disable_notification");
             form.Add(file, field, fileName);
-            if (TestSink != null) { TestSink(method, JsonSerializer.Serialize(new { file = fileName, caption, reply_markup = keys }, JsonOpts)); return; }
+            if (TestSink != null) { TestSink(method, JsonSerializer.Serialize(new { file = fileName, caption, reply_markup = keys }, JsonOpts)); return 7; }
             using var resp = await Big.PostAsync(Api(method), form);
-            if (!resp.IsSuccessStatusCode) throw new TgError(Integrations.Snip(await resp.Content.ReadAsStringAsync()), (int)resp.StatusCode);
+            var raw = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode) throw new TgError(Integrations.Snip(raw), (int)resp.StatusCode);
+            try { using var d = JsonDocument.Parse(raw); return d.RootElement.GetProperty("result").GetProperty("message_id").GetInt64(); } catch { return 0; }
         }
 
         static ByteArrayContent Bytes(byte[] data, string mime)
@@ -282,7 +285,7 @@ namespace NIsland.Services
             if (_commandsSet) return;
             try
             {
-                await Call("setMyCommands", new { commands = Commands.Select(c => new { command = c.Cmd, description = T(c.Desc) }).ToArray() });
+                await Call("setMyCommands", new { commands = Commands.Concat(Commands2).Select(c => new { command = c.Cmd, description = T(c.Desc) }).ToArray() });
                 _commandsSet = true;
             }
             catch { }
@@ -429,6 +432,7 @@ namespace NIsland.Services
             {
                 if (!cq.TryGetProperty("message", out var cm) || cm.GetProperty("chat").GetProperty("id").ToString() != V("chat")) return;
                 var data = Integrations.S(cq, "data");
+                App.Island?.MascotReact("curious", 1.2);   // нажали кнопку в Telegram
                 long msgId = cm.TryGetProperty("message_id", out var mi) ? mi.GetInt64() : 0;
                 string answer;
                 try { answer = await Callback(data, msgId); }
@@ -438,11 +442,14 @@ namespace NIsland.Services
             }
             if (!u.TryGetProperty("message", out var m) || m.GetProperty("chat").GetProperty("id").ToString() != V("chat")) return;   // чужие чаты не слушаем
             var text = Integrations.S(m, "text").Trim();
+            App.Island?.MascotReact("wave", 1.6);   // пришла команда из Telegram — персонаж машет
             _lastMsgId = m.TryGetProperty("message_id", out var lm) ? lm.GetInt64() : 0;
             if (text == "")
             {
                 var caption = Integrations.S(m, "caption").Trim();
                 if (caption.StartsWith("/wall", StringComparison.OrdinalIgnoreCase)) { await Reply(await Wallpaper(m)); return; }
+                // голосовое без подписи — звучит на ПК; с подписью /save — сохраняется файлом
+                if (!caption.StartsWith("/save", StringComparison.OrdinalIgnoreCase) && await PlayVoice(m)) return;
                 await ReceiveFile(m, caption);
                 return;
             }
@@ -548,7 +555,7 @@ namespace NIsland.Services
                     return (await Ui(() => { bool was = AudioService.I.Muted; AudioService.I.ToggleMute(); return was ? "🔊 Звук включён" : "🔇 Звук выключен"; }), null);
                 case "mic":
                     if ((no = Need("control")) != null) return (no, null);
-                    return (AudioService.I.ToggleMicMute() ? "🎙 Микрофон выключен" : "🎙 Микрофон включён", null);
+                    return (await Ui(() => AudioService.I.ToggleMicMute()) ? "🎙 Микрофон выключен" : "🎙 Микрофон включён", null);
                 case "sound": case "output": return await Menu("sound");
                 case "eq":
                     if (arg == "") return await Menu("eq");
@@ -780,6 +787,9 @@ namespace NIsland.Services
                     await Action("typing");
                     return (await Shell(cmd == "ps", arg), null);
                 default:
+                    if (await Command2(cmd, arg) is { } r2) return r2;
+                    if (Commands2.Any(c => c.Cmd == cmd) || cmd is "cover" or "dash" or "stream" or "scenario" or "clips" or "played" or "defender" or "translate" or "c" or "wol" or "speedtest" or "bt" or "bluetooth" or "airplane" or "autorun")
+                        return null;   // команда 2.0 ответила сама (фото, живая панель)
                     return ("Не знаю такой команды. /help — список, /menu — пульт", null);
             }
         }
@@ -798,6 +808,10 @@ namespace NIsland.Services
                    "<b>Полезное</b>\n/note · /todo · /remind 30 текст · /remind 18:30 текст · /timer 10 · /clip · /copy · /say · /speak · /find · /cam · /where" +
                    "\n/weather · /ttn · /ai вопрос · /mode · /dnd · /awake · /ram · /dns\n\n" +
                    "<b>Консоль и ИИ-агенты</b>" + Lock("shell") + "\n/cmd ipconfig · /ps Get-Date · /agents · /agent задание (Claude Code, Codex…)\n\n" +
+                   "<b>✨ Новое</b>\n/do громкость 30 и выключи экран — умная команда обычными словами\n/now — трек с обложкой · /live — живая панель · /watch — живой экран" + Lock("screen") + " · /scene — сценарии\n" +
+                   "/in 10m /lock · /at 23:30 /shutdown 1 · /jobs · /cliphist · /history · /health · /av\n" +
+                   "/tr en текст · /calc 2*21 · /qr текст · /speed · /radio · /wake MAC · /startup · /pin · /seek 1:30 · /shuffle · /repeat\n" +
+                   "🎙 Голосовое боту — прозвучит на ПК (с подписью /save — сохранится файлом)\n\n" +
                    "/settings — что присылать на телефон\n🔐 — выключено, включается только на ПК";
         }
 
@@ -812,11 +826,12 @@ namespace NIsland.Services
             switch (name)
             {
                 case "main":
-                    return ($"🎛 <b>Пульт — {H(Environment.MachineName)}</b>\n{await Task.Run(ShortStatus)}",
+                    return (await Task.Run(() => Dashboard()),
                         K(Row(B("🎵 Музыка", "nav:music"), B("🔊 Звук", "nav:sound"), B("🖥 Экран", "nav:screen")),
                           Row(B("🪟 Окна", "nav:win"), B("⌨️ Клавиши", "nav:input"), B("📁 Файлы", "nav:files")),
                           Row(B("⚙️ Система", "nav:sys"), B("⚡ Питание", "nav:power"), B("🌐 Сеть", "nav:net")),
-                          Row(B("🧰 Полезное", "nav:tools"), B("🧠 ИИ", "nav:ai"), B("🔧 Настройки", "nav:set")),
+                          Row(B("🧰 Полезное", "nav:tools"), B("🧠 ИИ", "nav:ai"), B("🎬 Сценарии", "nav:scenes")),
+                          Row(B("📡 Живая панель", "do2:live"), B("✨ Ещё", "nav:more"), B("🔧 Настройки", "nav:set")),
                           Row(B("🔄 Обновить", "nav:main"))));
 
                 case "music":
@@ -825,7 +840,7 @@ namespace NIsland.Services
                     if (m.HasSession)
                     {
                         sb.Append($"🎵 <b>{H(m.Title)}</b>\n{H(m.Artist)}\n{H(m.AppName)} · {(m.IsPlaying ? "▶ играет" : "⏸ пауза")}");
-                        if (m.HasTime) sb.Append($" · {Fmt.Time(m.Position)} / {Fmt.Time(m.Duration)}");
+                        if (m.HasTime) sb.Append($"\n<code>{TrackBar(m.Position, m.Duration)}</code>");
                         if (m.CurrentLyric is { } line) sb.Append($"\n🎤 <i>{H(line)}</i>");
                     }
                     else sb.Append("🎵 Сейчас ничего не играет");
@@ -834,7 +849,8 @@ namespace NIsland.Services
                         Row(B("⏮", "mu:prev|music"), B(m.IsPlaying ? "⏸" : "▶", "mu:play|music"), B("⏭", "mu:next|music")),
                         Row(B("⏪ 10 с", "mu:back|music"), B(m.IsFavorite ? "💖" : "🤍", "mu:fav|music"), B("⏩ 10 с", "mu:fwd|music")),
                         Row(B("🔉 −10", "au:vol-|music"), B(a.Muted ? "🔈" : "🔇", "au:mute|music"), B("🔊 +10", "au:vol+|music")),
-                        Row(B("📝 Текст песни", "do:lyrics"), B("🎚 Эквалайзер", "nav:eq")),
+                        Row(B("📝 Текст песни", "do:lyrics"), B("🖼 С обложкой", "do2:now"), B("🎚 Эквалайзер", "nav:eq")),
+                        m.CanShuffle || m.CanRepeat ? Row(m.CanShuffle ? B(m.Shuffle ? "🔀 Перемешано" : "🔀 Перемешать", "do2:shuffle") : null, m.CanRepeat ? B(m.Repeat == 0 ? "🔁 Без повтора" : m.Repeat == 1 ? "🔂 Повтор трека" : "🔁 Повтор всего", "do2:repeat") : null) : null,
                         Row(B("🔄", "nav:music"), B("⬅️ Назад", "nav:main"))));
                 }
 
@@ -1081,6 +1097,7 @@ namespace NIsland.Services
                             "\nНовые провайдеры и ключи добавляются на ПК: Настройки → ИИ.", K(rows.ToArray()));
                 }
             }
+            if (await Menu2(name) is { } m2) return m2;
             return ("Нет такого раздела", K(Back()));
         }
 
@@ -1177,7 +1194,7 @@ namespace NIsland.Services
                     });
                 case "au":
                     if ((no = Need("control")) != null) return no;
-                    if (rest == "mic") return a.ToggleMicMute() ? "🎙 Микрофон выключен" : "🎙 Микрофон включён";
+                    if (rest == "mic") return await Ui(() => a.ToggleMicMute()) ? "🎙 Микрофон выключен" : "🎙 Микрофон включён";
                     return await Ui(() =>
                     {
                         if (rest == "mute") { bool was = a.Muted; a.ToggleMute(); return was ? "🔊 Звук включён" : "🔇 Без звука"; }
@@ -1461,7 +1478,7 @@ namespace NIsland.Services
                     return "";
                 }
             }
-            return "";
+            return await Do2(head, rest, msgId) ?? "";
         }
 
         async Task<string> PowerButton(string what, long msgId)

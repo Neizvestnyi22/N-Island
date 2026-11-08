@@ -371,6 +371,8 @@ namespace NIsland.Services
                 lyricsStyles = new[] { "apple", "classic", "neon", "minimal", "bounce" }, modes = Modes.All.Select(m => m.Key),
             })),
 
+            new("integrations_status", "Состояние интеграций", "Какие интеграции включены (Telegram, почта, GitHub, курсы…), работают ли они и что пишут о последней проверке. Ключи и токены не показываются.", 0, Schema(),
+                async _ => await Ui(() => Integrations.All.Where(i => i.Enabled).Select(i => new { key = i.Key, name = i.Name, ready = i.Ready, ok = i.Ok, status = i.Status }).ToList())),
             new("security_audit", "Проверка безопасности Windows", "Защитник и его базы, брандмауэр, UAC, SmartScreen, подмена сайтов в hosts, прокси, RDP, неподписанные программы в автозапуске.", 0, Schema(),
                 async _ => (await Antivirus.Audit()).Select(x => new { level = x.Level == 2 ? "danger" : x.Level == 1 ? "warning" : "ok", title = x.Title, advice = x.Advice }).ToList()),
             new("av_scan_file", "Проверить файл на вирусы", "Проверка файла Защитником N-Island: база угроз, движок Windows (AMSI), подпись и эвристики. Возвращает оценку 0–100 и причины.", 1,

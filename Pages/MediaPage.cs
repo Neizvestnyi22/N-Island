@@ -277,8 +277,10 @@ namespace NIsland.Pages
                 if (e.PropertyName is nameof(Settings.LyricsStyle) or nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsAlign)
                     or nameof(Settings.LyricsRoman) or nameof(Settings.LyricsFontSize) or nameof(Settings.LyricsUpper) or nameof(Settings.LyricsLineGap)
                     or nameof(Settings.LyricsActiveScale) or nameof(Settings.LyricsShadow))
-                { _linesDirty = true; if (Visible) Dispatcher.BeginInvoke(new Action(RefreshLyrics)); }
-                if (e.PropertyName is nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsKaraoke)) DesktopLyricsWindow.Apply();
+                { _linesDirty = true; if (Visible) Dispatcher.BeginInvoke(new Action(RefreshLyrics)); _vizLyric.Text = ""; Dispatcher.BeginInvoke(new Action(UpdateVizLyric)); }
+                // текст на рабочем столе — тот же вид, что и в плеере
+                if (e.PropertyName is nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsKaraoke) or nameof(Settings.LyricsUpper)
+                    or nameof(Settings.LyricsShadow) or nameof(Settings.LyricsAnim)) DesktopLyricsWindow.Apply();
             };
             M.LyricIndexChanged += () => { if (Visible) { Highlight(true); UpdateVizLyric(); } };
             M.OffsetChanged += () => { if (Visible) { Karaoke(true); RenderLyricsTools(); } };
@@ -346,10 +348,7 @@ namespace NIsland.Pages
         void UpdateVizLyric()
         {
             if (!VisualOn) return;
-            var line = M.CurrentLyric ?? "";
-            if (_vizLyric.Text == line) return;
-            _vizLyric.Text = line;
-            _vizLyric.BeginAnimation(OpacityProperty, new DoubleAnimation(0.15, 1, TimeSpan.FromMilliseconds(260)));
+            LyricsAnim.ShowLine(_vizLyric, M.CurrentLyric, centered: true);
         }
 
         static readonly int[] SleepSteps = { 0, 15, 30, 60, -1 };
@@ -597,7 +596,7 @@ namespace NIsland.Pages
 
         // ---------- пословная подсветка ----------
         readonly List<List<(Run Run, SolidColorBrush Brush, LyricWord Word)>> _wordRuns = new();
-        readonly DispatcherTimer _wordTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
+        readonly DispatcherTimer _wordTimer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
         readonly Grid _linesHost = new() { ClipToBounds = true };
         int _activeRow = -1;
         static readonly Color Past = Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF);

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using NIsland.Core;
 
 namespace NIsland.Pages
 {
@@ -130,6 +131,26 @@ namespace NIsland.Pages
             el.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, dur) { BeginTime = begin, EasingFunction = ease, FillBehavior = FillBehavior.Stop });
             el.Opacity = 1;
             tr.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(22, 0, dur) { BeginTime = begin, EasingFunction = ease, FillBehavior = FillBehavior.Stop });
+        }
+
+        /// <summary>
+        /// Одна строка песни (свёрнутый остров, визуализатор, текст на рабочем столе) в том же виде, что и в плеере:
+        /// шрифт, цвет текущей строки, заглавные буквы, тень и анимация появления из настроек «Как выглядит текст».
+        /// Возвращает true, если строка сменилась.
+        /// </summary>
+        public static bool ShowLine(System.Windows.Controls.TextBlock tb, string line, bool centered = true, bool animate = true, bool color = true)
+        {
+            var s = Store.Settings;
+            line ??= "";
+            var shown = s.LyricsUpper ? line.ToUpper(System.Globalization.CultureInfo.CurrentCulture) : line;
+            tb.FontFamily = NIsland.DesktopLyricsWindow.Font(s.LyricsFont);
+            if (color) tb.Foreground = new SolidColorBrush(NIsland.DesktopLyricsWindow.Highlight());
+            if (tb.Text == shown) return false;
+            tb.Text = shown;
+            if (animate && shown != "") Play(tb, s.LyricsAnim ?? "rise", s.LyricsAnimMs, NIsland.DesktopLyricsWindow.Highlight(), centered);
+            if (tb.Effect == null || tb.Effect is DropShadowEffect { HasAnimatedProperties: false })
+                tb.Effect = s.LyricsShadow ? new DropShadowEffect { Color = Colors.Black, BlurRadius = 8, ShadowDepth = 1, Opacity = 0.8, RenderingBias = RenderingBias.Performance } : null;
+            return true;
         }
 
         /// <summary>Снять прошлую анимацию (строка снова стала текущей раньше, чем доиграла).</summary>

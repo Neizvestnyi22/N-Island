@@ -32,6 +32,7 @@ namespace NIsland.Services
                     "osint2" => Task.Run(() => Osint2Test(args[2])).GetAwaiter().GetResult(),
                     "tgbot" => TgBotTest.Run(args[2]),
                     "viz" => VizBench(args[2]),
+                    "mascot" => MascotSheet(args[2]),
                     "av" => Task.Run(() => AvTest(args[2])).GetAwaiter().GetResult(),
                     "custom" => Task.Run(() => CustomTest(args[2])).GetAwaiter().GetResult(),
                     "mcp" => McpTest.Run(args[2]),
@@ -196,6 +197,46 @@ namespace NIsland.Services
             sb.AppendLine($"quick scan: {Store.Settings.AvLastCount} files, {found.Count} flagged, {sw.ElapsedMilliseconds} ms");
             foreach (var t in found.Take(15)) sb.AppendLine($"  {t.Score} {t.Verdict} {t.Path} · {string.Join(" | ", t.Reasons)}");
             foreach (var a in await Antivirus.Audit()) sb.AppendLine($"audit {a.Level}: {a.Title} | {a.Advice}");
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        /// <summary>Лист превью персонажа: все настроения × облики и все аксессуары (PNG рядом с выходным файлом).</summary>
+        static int MascotSheet(string output)
+        {
+            const int S = 72;
+            var moods = NIsland.Controls.Mascot.MoodNames;
+            var skins = NIsland.Controls.Mascot.Skins;
+            var hats = NIsland.Controls.Mascot.Hats;
+            int cols = moods.Length, rows = skins.Length + 1;
+            var dv = new System.Windows.Media.DrawingVisual();
+            var sb = new StringBuilder();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(System.Windows.Media.Brushes.Black, null, new System.Windows.Rect(0, 0, cols * S, rows * S + 20));
+                for (int r = 0; r < rows; r++)
+                    for (int c = 0; c < cols; c++)
+                    {
+                        if (r == skins.Length && c >= hats.Length) continue;
+                        var m = new NIsland.Controls.Mascot { Width = S - 12, Height = S - 12, Skin = r < skins.Length ? skins[r].Key : "blob", Hat = r < skins.Length ? "none" : hats[c].Key, IdleAnims = false };
+                        m.Mood = r < skins.Length ? moods[c].Key : "idle";
+                        m.Measure(new System.Windows.Size(S - 12, S - 12));
+                        m.Arrange(new System.Windows.Rect(0, 0, S - 12, S - 12));
+                        var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(S - 12, S - 12, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                        try { rtb.Render(m); } catch (Exception e) { sb.AppendLine($"ERROR {m.Skin}/{m.Mood}/{m.Hat}: {e.Message}"); }
+                        dc.DrawImage(rtb, new System.Windows.Rect(c * S + 6, r * S + 14, S - 12, S - 12));
+                        var label = r < skins.Length ? (r == 0 ? moods[c].Key : null) : hats[c].Key;
+                        if (label != null)
+                            dc.DrawText(new System.Windows.Media.FormattedText(label, System.Globalization.CultureInfo.InvariantCulture, System.Windows.FlowDirection.LeftToRight,
+                                new System.Windows.Media.Typeface("Segoe UI"), 10, System.Windows.Media.Brushes.Gray, 1), new System.Windows.Point(c * S + 3, r * S + (r == 0 ? 0 : 2)));
+                    }
+            }
+            var img = new System.Windows.Media.Imaging.RenderTargetBitmap(cols * S, rows * S + 20, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            img.Render(dv);
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(img));
+            using (var fs = File.Create(Path.ChangeExtension(output, ".png"))) enc.Save(fs);
+            sb.AppendLine($"moods={moods.Length} skins={skins.Length} hats={hats.Length}");
             File.WriteAllText(output, sb.ToString());
             return 0;
         }

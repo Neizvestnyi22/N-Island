@@ -90,6 +90,7 @@ namespace NIsland.Services
         }
 
         double EffRate => Rate > 0.05 && Rate < 8 ? Rate : 1;
+        int _driftSeen;
         void SetPos(double sec, double age = 0) { _posSec = Math.Max(0, sec); _posAt = Now - Math.Max(0, age); }
         void Rebase() => SetPos(Position.TotalSeconds);
 
@@ -139,7 +140,16 @@ namespace NIsland.Services
         public void Resync() => UpdateLyricIndex(true);
 
         /// <summary>Позиция с учётом сдвига текста.</summary>
-        public TimeSpan LyricsPosition => Position + TimeSpan.FromSeconds(LyricsOffset);
+        /// <summary>
+        /// Позиция для текста песни: что сейчас СЛЫШНО. Плеер сообщает позицию декодера, а звук доходит до ушей позже —
+        /// у Bluetooth на 150–250 мс (кодек и буфер радиоканала). Без поправки строки загорались заметно раньше голоса.
+        /// </summary>
+        public TimeSpan LyricsPosition => Position + TimeSpan.FromSeconds(LyricsOffset - OutputLatency);
+
+        /// <summary>Задержка устройства вывода, с: «авто» — 0,2 с для Bluetooth, иначе 0; или своё значение из настроек.</summary>
+        public static double OutputLatency => Store.Settings.LyricsLatencyMs >= 0
+            ? Store.Settings.LyricsLatencyMs / 1000.0
+            : AudioService.I.OutputBluetooth ? 0.2 : 0;
 
         /// <summary>Сколько пройдено текущей строки (для «караоке»-заливки) и сколько осталось до следующей.</summary>
         public (double Progress, TimeSpan Left) LineProgress()
@@ -185,6 +195,8 @@ namespace NIsland.Services
             _tick.Tick += (_, __) => OnTick();
             _tick.Start();
             _lineT.Tick += (_, __) => { _lineT.Stop(); UpdateLyricIndex(); };
+            // наушники ↔ колонки: у Bluetooth своя задержка звука — строки пересчитываем сразу
+            AudioService.I.OutputChanged += _ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() => UpdateLyricIndex(true)));
             _confirm.Tick += (_, __) => { _confirm.Stop(); LoadPlayback(); LoadTimeline(); };
             // после сна Windows иногда «теряет» подписку на медиасессии — переподключаемся
             SystemEvents.PowerModeChanged += (_, e) =>
@@ -470,9 +482,13 @@ namespace NIsland.Services
             if (age > 6 * 3600) age = 0;   // метке «сутки назад» не верим
             if (periodic && IsPlaying)
             {
-                // плановая сверка не должна дёргать позицию из-за мелкой разницы часов
+                // плановая сверка: мелкую разницу часов (до 0,08 с) не трогаем; заметную — исправляем, но только если она
+                // подтвердилась двумя сверками подряд (одна свежая метка от браузера бывает неточной); большую (> 0,6 с) — сразу
                 double fresh = pos.TotalSeconds + age * EffRate;
-                if (Math.Abs(fresh - Position.TotalSeconds) < 0.35) return;
+                double diff = Math.Abs(fresh - Position.TotalSeconds);
+                if (diff < 0.08) { _driftSeen = 0; return; }
+                if (diff < 0.6 && ++_driftSeen < 2) return;
+                _driftSeen = 0;
             }
             SetPos(pos.TotalSeconds, age * EffRate);
             Tick?.Invoke();

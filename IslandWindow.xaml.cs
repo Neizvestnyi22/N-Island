@@ -193,10 +193,12 @@ namespace NIsland
                 if (_mode == Mode.Expanded) _closeT.Start();
                 else if (_mode == Mode.Collapsed) Retarget();
             };
-            Island.MouseLeftButtonUp += (_, __) =>
+            Island.MouseLeftButtonUp += (_, e) =>
             {
                 if (_mode == Mode.Collapsed)
                 {
+                    // клик точно по персонажу — он реагирует, остров не раскрывается
+                    if (!Modes.Hidden && PokeMascot(e)) return;
                     if (Modes.Hidden) Unhide();
                     else Expand();
                 }
@@ -1301,7 +1303,8 @@ namespace NIsland
                 ColMicGlyph.Text = _micMuted ? "" : c.CameraOn ? "" : "";
                 ColLyric.Text = c.MicApp;
             }
-            else if (lyric) ColLyric.Text = m.CurrentLyric;
+            // строка песни в свёрнутом острове — в том же виде, что и в плеере (шрифт, цвет, заглавные, анимация появления)
+            else if (lyric) NIsland.Pages.LyricsAnim.ShowLine(ColLyric, m.CurrentLyric, centered: true, animate: !S.LiteMode);
             ColLyric.Visibility = call || lyric ? Visibility.Visible : Visibility.Collapsed;
             ColTime.Visibility = call || lyric || minimal ? Visibility.Collapsed : Visibility.Visible;
 
@@ -1676,6 +1679,13 @@ namespace NIsland
                 case nameof(Settings.Mascot):
                 case nameof(Settings.MascotColor):
                 case nameof(Settings.MascotMoods):
+                case nameof(Settings.MascotHat):
+                case nameof(Settings.MascotSize):
+                case nameof(Settings.MascotSpeed):
+                case nameof(Settings.MascotIdle):
+                case nameof(Settings.MascotDance):
+                case nameof(Settings.MascotReactPc):
+                case nameof(Settings.MascotNight):
                     UpdateMascot();
                     Retarget();
                     break;
@@ -1721,6 +1731,16 @@ namespace NIsland
                 case nameof(Settings.LyricsTranslate):
                 case nameof(Settings.LyricsTranslateTo):
                     _ = MediaService.I.LoadTranslation();
+                    break;
+                // вид текста песни поменяли в настройках — строка в острове перерисовывается сразу, а не со следующей строкой песни
+                case nameof(Settings.LyricsFont):
+                case nameof(Settings.LyricsColor):
+                case nameof(Settings.LyricsUpper):
+                case nameof(Settings.LyricsShadow):
+                case nameof(Settings.LyricsAnim):
+                    ColLyric.Text = "";
+                    UpdateCollapsed();
+                    if (_mode == Mode.Collapsed) Retarget();
                     break;
                 case nameof(Settings.NotchProgress):
                     UpdateNotchProgress();

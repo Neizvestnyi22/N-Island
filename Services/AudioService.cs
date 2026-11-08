@@ -57,14 +57,20 @@ namespace NIsland.Services
         /// <summary>Сменилось устройство вывода звука (наушники, колонки, Bluetooth).</summary>
         public event Action<string> OutputChanged;
 
-        static string FriendlyName(IMMDevice dev)
+        static string FriendlyName(IMMDevice dev) => StringProp(dev, 14);
+
+        /// <summary>Устройство вывода — Bluetooth (наушники, колонка): звук слышен на 150–250 мс позже, текст песни это учитывает.</summary>
+        public bool OutputBluetooth { get; private set; }
+
+        /// <summary>Строковое свойство устройства из группы {a45c254e…}: 14 — имя, 24 — шина (BTHENUM, HDAUDIO, USB).</summary>
+        static string StringProp(IMMDevice dev, int pid)
         {
             try
             {
                 if (dev.OpenPropertyStore(0, out var store) != 0 || store == null) return null;
                 try
                 {
-                    var key = new PROPERTYKEY { fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), pid = 14 };
+                    var key = new PROPERTYKEY { fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), pid = pid };
                     if (store.GetValue(ref key, out var v) != 0) return null;
                     string name = v.vt == 31 ? Marshal.PtrToStringUni(v.p) : null;
                     PropVariantClear(ref v);
@@ -396,6 +402,8 @@ namespace NIsland.Services
                     bool first = _outId == null;
                     _outId = id;
                     OutputName = FriendlyName(dev) ?? "Динамики";
+                    var bus = StringProp(dev, 24) ?? "";
+                    OutputBluetooth = bus.StartsWith("BTH", StringComparison.OrdinalIgnoreCase);
                     if (!first) OutputChanged?.Invoke(OutputName);
                 }
                 Marshal.ReleaseComObject(dev);

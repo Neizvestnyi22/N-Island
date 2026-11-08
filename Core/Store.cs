@@ -205,6 +205,24 @@ namespace NIsland.Core
         /// <summary>Цвет персонажа: art | accent | #RRGGBB</summary>
         public string MascotColor { get => _mascotColor; set => Set(ref _mascotColor, value); } string _mascotColor = "art";
         public bool MascotMoods { get => _mascotMoods; set => Set(ref _mascotMoods, value); } bool _mascotMoods = true;
+        /// <summary>Аксессуар: auto, none, cap, crown, bow, party, headphones, glasses, santa, flower.</summary>
+        public string MascotHat { get => _mascotHat; set => Set(ref _mascotHat, value); } string _mascotHat = "auto";
+        /// <summary>Размер персонажа, % (100 — 22 px).</summary>
+        public int MascotSize { get => _mascotSize; set => Set(ref _mascotSize, value); } int _mascotSize = 100;
+        /// <summary>Скорость анимаций, %.</summary>
+        public int MascotSpeed { get => _mascotSpeed; set => Set(ref _mascotSpeed, value); } int _mascotSpeed = 100;
+        /// <summary>В покое сам подмигивает, машет, зевает, оглядывается.</summary>
+        public bool MascotIdle { get => _mascotIdle; set => Set(ref _mascotIdle, value); } bool _mascotIdle = true;
+        /// <summary>Реагирует на уведомления и события острова.</summary>
+        public bool MascotReactEvents { get => _mascotEv; set => Set(ref _mascotEv, value); } bool _mascotEv = true;
+        /// <summary>Реагирует на компьютер: нагрузка, батарея, зарядка, погода, режим игры.</summary>
+        public bool MascotReactPc { get => _mascotPc; set => Set(ref _mascotPc, value); } bool _mascotPc = true;
+        /// <summary>Танцует под музыку.</summary>
+        public bool MascotDance { get => _mascotDance; set => Set(ref _mascotDance, value); } bool _mascotDance = true;
+        /// <summary>Спит ночью (0–6).</summary>
+        public bool MascotNight { get => _mascotNight; set => Set(ref _mascotNight, value); } bool _mascotNight = true;
+        /// <summary>Клик по персонажу — реакция вместо открытия острова.</summary>
+        public bool MascotPoke { get => _mascotPoke; set => Set(ref _mascotPoke, value); } bool _mascotPoke = true;
         /// <summary>Жидкое стекло: чёткий яркий фон и преломление по краям.</summary>
         public bool LiquidGlass { get => _liquid; set => Set(ref _liquid, value); } bool _liquid = true;
         public int LiquidRefract { get => _liqRef; set => Set(ref _liqRef, value); } int _liqRef = 60;
@@ -279,6 +297,8 @@ namespace NIsland.Core
         public int LyricsOffsetMs { get => _lyrOff; set => Set(ref _lyrOff, value); } int _lyrOff;
         /// <summary>На сколько раньше подсвечивать строку, мс: глаз успевает прочитать до того, как её споют.</summary>
         public int LyricsLeadMs { get => _lyrLead; set => Set(ref _lyrLead, value); } int _lyrLead = 200;
+        /// <summary>Задержка звука устройства для текста песни, мс; меньше нуля — авто (0,2 с для Bluetooth).</summary>
+        public int LyricsLatencyMs { get => _lyrLat; set => Set(ref _lyrLat, value); } int _lyrLat = -50;
         /// <summary>Подсвечивать слова по одному, если у текста есть пословная синхронизация.</summary>
         public bool LyricsWords { get => _lyrWords; set => Set(ref _lyrWords, value); } bool _lyrWords = true;
         public bool LyricsKaraoke { get => _lyrKar; set => Set(ref _lyrKar, value); } bool _lyrKar = true;
@@ -695,27 +715,40 @@ namespace NIsland.Core
         public static void SaveSettings() { if (ReadOnly) return; _dirtySettings = true; Kick(); }
         public static void SaveData() { if (ReadOnly) return; _dirtyData = true; Kick(); }
 
+        /// <summary>
+        /// Отложенное сохранение. Таймер живёт ТОЛЬКО в потоке интерфейса: раньше его создавал тот, кто первым попросил
+        /// сохранить, — и если это был фоновый поток (обновление списка моделей ИИ, Telegram, агенты), таймер привязывался
+        /// к потоку без цикла сообщений и не срабатывал никогда: в 1.8–1.9 настройки и данные не сохранялись до выхода.
+        /// </summary>
         static void Kick()
         {
+            var ui = System.Windows.Application.Current?.Dispatcher;
+            if (ui == null) { Flush(); return; }                                    // без окон (самопроверка) — сразу
+            if (!ui.CheckAccess()) { ui.BeginInvoke(new Action(Kick)); return; }
             if (_timer == null)
             {
-                _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+                _timer = new DispatcherTimer(DispatcherPriority.Background, ui) { Interval = TimeSpan.FromMilliseconds(700) };
                 _timer.Tick += (_, __) => { _timer.Stop(); Flush(); };
             }
             _timer.Stop();
             _timer.Start();
         }
 
+        static readonly object FlushGate = new();
+
         public static void Flush()
         {
             if (ReadOnly) return;
-            try
+            lock (FlushGate)
             {
-                if (_dirtySettings) Write("settings.json", Settings);
-                if (_dirtyData) Write("data.json", Data);
+                // флаги сбрасываем до записи: изменение во время записи снова пометит файл и запишется следующим разом
+                bool s = _dirtySettings, d = _dirtyData;
                 _dirtySettings = _dirtyData = false;
+                try { if (s) Write("settings.json", Settings); }
+                catch (Exception e) { _dirtySettings = true; Log.Error(e); }
+                try { if (d) Write("data.json", Data); }
+                catch (Exception e) { _dirtyData = true; Log.Error(e); }
             }
-            catch (Exception e) { Log.Error(e); }
         }
 
         /// <summary>Файл повреждён (выключили питание во время записи, диск) — берём резервную копию, а не начинаем с нуля.</summary>

@@ -192,9 +192,10 @@ namespace NIsland
             bool show = cur != null;
             _card.Visibility = show || !S.DeskLyricsLock ? Visibility.Visible : Visibility.Hidden;
             if (!show) { _cur.Text = I18n.T("Текст песни появится здесь"); _next.Text = ""; return; }
-            if (_cur.Text != cur || idx != _line)
+            var shown = S.LyricsUpper ? cur.ToUpper(System.Globalization.CultureInfo.CurrentCulture) : cur;
+            if (_cur.Text != shown || idx != _line)
             {
-                _cur.Text = S.LyricsUpper ? cur.ToUpper(System.Globalization.CultureInfo.CurrentCulture) : cur;
+                _cur.Text = shown;
                 _next.Text = next ?? "";
                 // та же анимация появления, что и в плеере (настройка «Появление строки»)
                 NIsland.Pages.LyricsAnim.Play(_cur, S.LyricsAnim ?? "rise", S.LyricsAnimMs, Highlight(), true);
