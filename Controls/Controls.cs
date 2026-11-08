@@ -83,19 +83,24 @@ namespace NIsland.Controls
         readonly double[] _speed = { 0.35, 0.5, 0.42, 0.3 };
         static readonly (double From, double To)[] Ranges = { (40, 180), (180, 900), (900, 4000), (4000, 14000) };
         readonly Random _rnd = new();
-        readonly DispatcherTimer _timer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(40) };
+        // кадры — от общего такта острова (вместе с персонажем и ободком — одной перерисовкой)
+        IDisposable _clock;
+        void Run(bool on)
+        {
+            if (on && _clock == null) _clock = NIsland.Core.FrameClock.Add(_ => { NIsland.Core.Perf.Hit("eqbars"); Step(); }, 30);
+            else if (!on && _clock != null) { _clock.Dispose(); _clock = null; }
+        }
         IDisposable _lease;
         int _lastFrame, _stale;
 
         public EqBars()
         {
-            _timer.Tick += (_, __) => Step();
             IsVisibleChanged += (_, __) => Update();
         }
 
         void Update()
         {
-            if (IsVisible) _timer.Start(); else _timer.Stop();
+            Run(IsVisible);
             bool listen = IsVisible && IsPlaying && Live;
             if (listen && _lease == null) _lease = NIsland.Services.AudioCapture.I.Use();
             else if (!listen && _lease != null) { _lease.Dispose(); _lease = null; }
@@ -122,7 +127,7 @@ namespace NIsland.Controls
                 if (Math.Abs(_h[i] - _t[i]) > 0.01) settled = false;
             }
             InvalidateVisual();
-            if (!IsPlaying && settled) _timer.Stop();
+            if (!IsPlaying && settled) Run(false);
         }
 
         protected override void OnRender(DrawingContext dc)

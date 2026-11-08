@@ -23,9 +23,6 @@ namespace NIsland.Controls
             new("matrix", "Матрица", "Колонки «кода» падают быстрее там, где громче", "Ностальгия"),
             new("crt", "Экран ЭЛТ", "Осциллограф на ламповом экране: сетка, развёртка и послесвечение", "Ностальгия"),
             new("pixel", "8 бит", "Крупные пиксели, как в играх на приставке", "Ностальгия"),
-            new("cassette", "Кассета", "Крутятся катушки, ленточный индикатор уровня", "Ностальгия"),
-            new("vinyl", "Пластинка", "Вращается винил, дорожки светятся частотами", "Ностальгия"),
-            new("skyline", "Ночной город", "Высотки растут под спектр, окна зажигаются в такт", "Ностальгия"),
             new("voice", "Голосовая волна", "Переплетающиеся мягкие волны, как у голосовых помощников", "Ностальгия"),
             // современные
             new("orb", "Сфера", "Светящаяся сфера дышит и деформируется по частотам", "Современные"),
@@ -76,7 +73,7 @@ namespace NIsland.Controls
 
         void ResetState2()
         {
-            _heat = null; _stars = null; _hist.Clear(); _drops = null; _rip.Clear(); _gal = null; _scan = false; _ecgX = 0; _bld = null;
+            _heat = null; _stars = null; _hist.Clear(); _drops = null; _rip.Clear(); _gal = null; _scan = false; _ecgX = 0;
         }
 
         bool Draw2(double dt)
@@ -96,9 +93,6 @@ namespace NIsland.Controls
                 case "matrix": MatrixRain(dt); return true;
                 case "crt": Crt(); return true;
                 case "pixel": Pixel(); return true;
-                case "cassette": Cassette(dt); return true;
-                case "vinyl": Vinyl(); return true;
-                case "skyline": Skyline(); return true;
                 case "voice": Voice(); return true;
                 case "orb": Orb(); return true;
                 case "waveform": Waveform(); return true;
@@ -394,16 +388,17 @@ namespace NIsland.Controls
         void Plasma()
         {
             double bass = Group(0, 0.15), mid = Group(0.2, 0.5);
-            double sc = 7.0 / Min * (1 + bass * 0.5), t = _t;
+            // 1.9: бас сильнее «дышит» масштабом, а в тишине плазма почти гаснет — иначе узор жил своей жизнью
+            double sc = 7.0 / Min * (1 + bass * 1.4), t = _t;
             double cxs = _w / 2.0 * sc + Math.Sin(t * 0.4) * 2, cys = _h / 2.0 * sc + Math.Cos(t * 0.3) * 2;
-            int a = (int)(150 + _level * 105);
+            int a = (int)(35 + Math.Min(1, _level * 1.5) * 200 + Math.Max(0, 1 - _sinceBeat / 0.25) * 20 * BeatK);
             for (int y = 0; y < _h; y += 2)
                 for (int x = 0; x < _w; x += 2)
                 {
                     double fx = x * sc, fy = y * sc;
                     double v = Math.Sin(fx + t) + Math.Sin(fy * 1.3 - t * 1.1) + Math.Sin((fx + fy) * 0.7 + t * 0.6)
                              + Math.Sin(Math.Sqrt((fx - cxs) * (fx - cxs) + (fy - cys) * (fy - cys)) * 1.4 - t * 1.7);
-                    double u = (v + 4) / 8 + mid * 0.3 + t * 0.03;
+                    double u = (v + 4) / 8 + mid * 0.7 + t * 0.03;
                     u -= Math.Floor(u);
                     u = u < 0.5 ? u * 2 : 2 - u * 2;   // туда-обратно по палитре — без резкой границы
                     uint c = Pal(u);
@@ -592,111 +587,6 @@ namespace NIsland.Controls
             }
         }
 
-        double _reel;
-
-        void Cassette(double dt)
-        {
-            Fade(0);
-            double bw = Math.Min(_w * 0.92, _h * 1.55), bh = bw * 0.63, cx = _w / 2.0, cy = _h / 2.0;
-            double x0 = cx - bw / 2, y0 = cy - bh / 2;
-            bool art = _palette == "art";
-            uint body = art ? 0x26262Bu : Mul(Pal(0.25), 110), label = art ? 0xE9E2CFu : Pal(0.75), win = 0x0E0E10;
-            Block((int)x0, (int)y0, (int)(x0 + bw), (int)(y0 + bh), body, 255);
-            Block((int)(x0 + bw * 0.06), (int)(y0 + bh * 0.08), (int)(x0 + bw * 0.94), (int)(y0 + bh * 0.62), label, 255);
-            Block((int)(x0 + bw * 0.06), (int)(y0 + bh * 0.13), (int)(x0 + bw * 0.94), (int)(y0 + bh * 0.17), art ? 0xE04A3Au : Pal(0.4), 255);
-            Block((int)(x0 + bw * 0.22), (int)(y0 + bh * 0.3), (int)(x0 + bw * 0.78), (int)(y0 + bh * 0.56), win, 255);
-            _reel += dt * (2.2 + _level * 5);
-            double rr = bh * 0.11;
-            for (int s = -1; s <= 1; s += 2)
-            {
-                double rx = cx + s * bw * 0.19, ry = y0 + bh * 0.43;
-                double tape = rr * (s < 0 ? 1.65 : 1.15) * (1 + _level * 0.04);
-                Dot(rx, ry, tape, art ? 0x3A2A1Eu : Mul(Pal(0.2), 160), 255, false);
-                Dot(rx, ry, rr * 0.75, 0xF0F0F0, 255, false);
-                for (int k = 0; k < 6; k++)
-                {
-                    double a = _reel * (s < 0 ? 1 : 1.3) + k * Math.PI / 3;
-                    Line(rx + Math.Cos(a) * rr * 0.25, ry + Math.Sin(a) * rr * 0.25, rx + Math.Cos(a) * rr * 0.72, ry + Math.Sin(a) * rr * 0.72, 0x202020, 255, Math.Max(1.2, rr / 9));
-                }
-            }
-            // ленточный индикатор уровня
-            int segs = 18;
-            double mx0 = x0 + bw * 0.1, mw = bw * 0.8, my = y0 + bh * 0.72, mh = bh * 0.1;
-            int lit = (int)Math.Round(Math.Min(1, _level * 1.3) * segs);
-            for (int k = 0; k < segs; k++)
-            {
-                double t = k / (double)(segs - 1);
-                uint c = art ? ClassicColor(t) : Pal(0.3 + 0.7 * t);
-                Block((int)(mx0 + k * mw / segs + 1), (int)my, (int)(mx0 + (k + 1) * mw / segs - 1), (int)(my + mh), c, k < lit ? 255 : 35);
-            }
-        }
-
-        void Vinyl()
-        {
-            Fade(0);
-            double cx = _w / 2.0, cy = _h / 2.0, R = Min * 0.47;
-            uint label = Pal(0.7), labelDark = Pal(0.45);
-            double spin = _t * 3.5;
-            int x0 = (int)Math.Max(0, cx - R), x1 = (int)Math.Min(_w - 1, cx + R), y0 = (int)Math.Max(0, cy - R), y1 = (int)Math.Min(_h - 1, cy + R);
-            for (int y = y0; y <= y1; y++)
-                for (int x = x0; x <= x1; x++)
-                {
-                    double dx = x - cx, dy = y - cy, d = Math.Sqrt(dx * dx + dy * dy) / R;
-                    if (d > 1) continue;
-                    double th = Math.Atan2(dy, dx);
-                    if (d < 0.03) { Put(x, y, 0x050505, 255); continue; }
-                    if (d < 0.32)
-                    {
-                        // наклейка вращается — на ней полоса, чтобы было видно движение
-                        double a = th - spin;
-                        bool stripe = Math.Abs(Math.Sin(a)) < 0.08 && d > 0.1;
-                        Put(x, y, stripe ? labelDark : label, 255);
-                        continue;
-                    }
-                    double ring = (d - 0.32) / 0.68;
-                    double b = Band(ring);
-                    double groove = 0.5 + 0.5 * Math.Sin(d * R * 2.2);
-                    double sheen = Math.Pow(Math.Abs(Math.Cos(th - Math.PI / 4)), 20) * 0.45;
-                    uint baseC = (uint)(14 + groove * 10);
-                    uint c = Lerp(baseC << 16 | baseC << 8 | baseC, Pal(ring), b * 0.75);
-                    c = Lerp(c, 0xFFFFFF, sheen * (0.6 + b * 0.4));
-                    Put(x, y, c, 255);
-                }
-            double arm = 0.62 + Math.Sin(_t * 0.05) * 0.05;
-            double ax = cx + R * 1.02, ay = cy - R * 0.92, tx = cx + Math.Cos(-0.4) * R * arm, ty = cy + Math.Sin(-0.4) * R * arm;
-            Line(ax, ay, tx, ty, 0xC8C8C8, 255, Math.Max(2, Min / 90));
-            Dot(ax, ay, Min / 40, 0x9A9A9A, 255, false);
-        }
-
-        float[] _bld;
-
-        void Skyline()
-        {
-            for (int y = 0; y < _h; y++)
-            {
-                uint c = Pal(0.04 + 0.22 * y / _h);
-                int row = y * _w;
-                for (int x = 0; x < _w; x++) _px[row + x] = 0xFF000000u | Mul(c, 150);
-            }
-            for (int k = 0; k < 40; k++) { int sx = (int)(Rnd01(k, 1) * _w), sy = (int)(Rnd01(k, 2) * _h * 0.5); Plus(sx, sy, 0xFFFFFF, (int)(80 + 120 * Rnd01(k, (int)(_t * 2)))); }
-            Dot(_w * 0.82, _h * 0.2, Min * 0.07 * (1 + Group(0, 0.12) * 0.35), 0xFFF3D0, 235, false);
-            int cols = (int)Math.Clamp(18 * Dens, 8, 48);
-            if (_bld == null || _bld.Length != cols) _bld = new float[cols];
-            double cw = _w / (double)cols;
-            for (int c = 0; c < cols; c++)
-            {
-                float target = 0.18f + Band((c + 0.5) / cols) * 0.72f;
-                _bld[c] += (target - _bld[c]) * 0.25f;
-                int bx0 = (int)(c * cw + 1), bx1 = (int)((c + 1) * cw - 1), top = (int)(_h * (1 - _bld[c] * (0.8 + 0.2 * Rnd01(c, 9))));
-                Block(bx0, top, bx1, _h, 0x0B0B14, 255);
-                int win = Math.Max(2, (int)(cw / 6));
-                for (int wy = top + win; wy < _h - win; wy += win * 2)
-                    for (int wx = bx0 + win; wx < bx1 - win; wx += win * 2)
-                        if (Rnd01(wx * 3 + c, wy) < 0.15 + _bld[c] * 0.6)
-                            Block(wx, wy, wx + win, wy + win, _palette == "art" ? 0xFFD27Au : Pal(0.85), 230);
-            }
-        }
-
         void Voice()
         {
             Fade(0);
@@ -724,7 +614,8 @@ namespace NIsland.Controls
         {
             Fade(0);
             double cx = _w / 2.0, cy = _h / 2.0;
-            double R = Min * 0.26 * (1 + _level * 0.35 + Math.Max(0, 1 - _sinceBeat * 5) * 0.08 * BeatK);
+            // 1.9: сфера заметно растёт с громкостью и вздрагивает на удар, край сильнее деформируется частотами
+            double R = Min * (0.15 + Math.Min(1, _level * 1.3) * 0.15 + Math.Max(0, 1 - _sinceBeat * 4) * 0.04 * BeatK);
             var g = new double[8];
             for (int j = 0; j < 8; j++) g[j] = Group(j / 8.0, (j + 1) / 8.0);
             // искажение края — таблицей по углу (раньше 8 синусов на каждый пиксель)
@@ -733,7 +624,7 @@ namespace NIsland.Controls
             for (int i = 0; i <= AN; i++)
             {
                 double th0 = -Math.PI + 2 * Math.PI * i / AN, e0 = 1;
-                for (int j = 0; j < 8; j++) e0 += g[j] * 0.07 * Math.Sin(th0 * (j + 3) + _t * (1 + j * 0.3) + j);
+                for (int j = 0; j < 8; j++) e0 += g[j] * 0.2 * Math.Sin(th0 * (j + 3) + _t * (1 + j * 0.3) + j);
                 edge[i] = e0;
             }
             double box = R * 2;
@@ -882,16 +773,21 @@ namespace NIsland.Controls
             }
         }
 
+        double _synthMove;
+
         void Synthwave()
         {
             double horizon = _h * 0.56;
+            int sky = (int)(70 + 130 * Math.Min(1, _level * 1.5));   // небо светлеет с громкостью
             for (int y = 0; y < (int)horizon; y++)
             {
-                uint c = Mul(Pal(0.05 + 0.4 * y / horizon), 170);
+                uint c = Mul(Pal(0.05 + 0.4 * y / horizon), sky);
                 for (int x = 0; x < _w; x++) _px[y * _w + x] = 0xFF000000u | c;
             }
             double bass = Group(0, 0.12);
-            double sx = _w / 2.0, R = Min * 0.3 * (1 + bass * 0.12), scy = horizon - R * 0.15;
+            // 1.9: солнце пульсирует басом, сетка разгоняется громкостью, горы выше
+            double kick = Math.Max(0, 1 - _sinceBeat / 0.3) * BeatK;
+            double sx = _w / 2.0, R = Min * 0.3 * (0.85 + bass * 0.35 + kick * 0.08), scy = horizon - R * 0.15;
             for (int y = (int)Math.Max(0, scy - R); y < (int)horizon; y++)
             {
                 double dy = y - scy, t = (y - (scy - R)) / (R * 1.15);
@@ -904,18 +800,19 @@ namespace NIsland.Controls
             for (int x = 0; x < _w; x++)
             {
                 double u = Math.Abs(x / (double)_w - 0.5) * 2;
-                int mh = (int)((Band(0.05 + u * 0.7) * 0.7 + 0.05 + 0.04 * Math.Sin(x * 0.07)) * _h * 0.3);
+                int mh = (int)((Band(0.05 + u * 0.7) * 1.3 + 0.03 + 0.03 * Math.Sin(x * 0.07)) * _h * 0.3);
                 for (int y = (int)horizon - mh; y < (int)horizon; y++) Put(x, y, Mul(Pal(0.1), 90), 255);
             }
             uint floor = 0x07020F, grid = _palette == "art" ? 0xFF3AD0u : Pal(0.9);
             for (int y = (int)horizon; y < _h; y++) for (int x = 0; x < _w; x++) _px[y * _w + x] = 0xFF000000u | floor;
             int lines = 14;
-            double move = _t * 0.35 * (1 + bass * 1.5);
+            _synthMove += (0.004 + Math.Min(1, _level * 1.5) * 0.02);
+            double move = _synthMove;
             for (int k = 0; k < lines; k++)
             {
                 double p = (k / (double)lines + move) % 1;
                 int y = (int)(horizon + (_h - horizon) * p * p);
-                for (int x = 0; x < _w; x++) Plus(x, y, grid, (int)(80 + 160 * p));
+                for (int x = 0; x < _w; x++) Plus(x, y, grid, (int)((50 + 160 * p) * (0.5 + 0.5 * Math.Min(1, _level * 1.5)) + kick * 60));
             }
             for (int k = -12; k <= 12; k++)
             {
@@ -991,8 +888,14 @@ namespace NIsland.Controls
 
         void Lightning()
         {
-            Fade(140);
-            if (!(_beat || _rnd.NextDouble() < _level * 0.03)) return;
+            Fade(190);
+            // 1.9: между ударами небо не пустое — облака подсвечены громкостью, разряды чаще на громких местах
+            for (int x = 0; x < _w; x += 8)
+            {
+                double v = Band(x / (double)_w);
+                Dot(x, _h * 0.04, Min * (0.06 + v * 0.12), Pal(0.15 + v * 0.3), (int)(10 + 50 * Math.Min(1, _level * 1.5)), true);
+            }
+            if (!(_beat || _rnd.NextDouble() < _level * 0.08)) return;
             var pts = new List<(double X, double Y)> { (_rnd.NextDouble() * _w, 0), (_rnd.NextDouble() * _w, _h) };
             double disp = _w * 0.25;
             for (int depth = 0; depth < 7; depth++)

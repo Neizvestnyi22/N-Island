@@ -105,8 +105,10 @@ namespace NIsland.Pages
             Content = UI.Grid(null, "*,a,a").M(8, 0, 8, 0).Add(_scroll, bar.At(1, 0).M(0, 3, 0, 3), input.At(2, 0));
             _flush.Tick += (_, __) => Flush();
             // сообщения из Telegram-бота появляются и здесь
-            Ai.ChatChanged += () => Dispatcher.BeginInvoke(new Action(() => { if (_cts == null) Rebuild(); }));
+            // скрытая страница не перестраивается на каждое сообщение — только отмечает, что при показе нужно обновить
+            Ai.ChatChanged += () => Dispatcher.BeginInvoke(new Action(() => { if (_cts != null) return; if (Visible) Rebuild(); else _chatDirty = true; }));
         }
+        bool _chatDirty;
 
         /// <summary>Вопрос, который нужно отправить при открытии (ключ запуска --ai).</summary>
         public static string PendingPrompt;
@@ -114,7 +116,7 @@ namespace NIsland.Pages
         public override void OnShown()
         {
             RenderBar();
-            if (_chat.Children.Count == 0) Rebuild();
+            if (_chat.Children.Count == 0 || _chatDirty) { _chatDirty = false; Rebuild(); }
             if (PendingPrompt != null) { var q = PendingPrompt; PendingPrompt = null; Send(q); }
         }
 

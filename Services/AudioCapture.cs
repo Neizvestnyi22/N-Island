@@ -110,9 +110,14 @@ namespace NIsland.Services
             for (int i = 0; i < N; i++) _win[i] = (float)(0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (N - 1)));
         }
 
-        /// <summary>Попросить захват звука. Пока жив хоть один «арендатор», анализ идёт; Dispose — отпустить.</summary>
-        public IDisposable Use()
+        int _fastUsers;
+
+        /// <summary>Попросить захват звука. Пока жив хоть один «арендатор», анализ идёт; Dispose — отпустить.
+        /// hz — сколько раз в секунду нужен свежий спектр: полоскам в чёлке хватает 30, визуализатору на весь экран — 60.</summary>
+        public IDisposable Use(int hz = 30)
         {
+            bool fast = hz >= 50;
+            if (fast) Interlocked.Increment(ref _fastUsers);
             if (Interlocked.Increment(ref _users) == 1)
             {
                 if (_thread == null)
@@ -129,17 +134,20 @@ namespace NIsland.Services
                 }
                 _wake.Set();
             }
-            return new Lease(this);
+            return new Lease(this, fast);
         }
 
         sealed class Lease : IDisposable
         {
             AudioCapture _owner;
-            public Lease(AudioCapture o) => _owner = o;
+            readonly bool _fast;
+            public Lease(AudioCapture o, bool fast) { _owner = o; _fast = fast; }
             public void Dispose()
             {
                 var o = Interlocked.Exchange(ref _owner, null);
-                if (o != null) Interlocked.Decrement(ref o._users);
+                if (o == null) return;
+                if (_fast) Interlocked.Decrement(ref o._fastUsers);
+                Interlocked.Decrement(ref o._users);
             }
         }
 
@@ -258,8 +266,11 @@ namespace NIsland.Services
                         PushSilence((int)(rate * (now - lastData)));
                         lastData = now;
                     }
-                    // Sleep(8) у Windows длится ~15,6 мс — анализируем на каждом шаге (~60 кадров в секунду)
-                    if (now - lastAnalyze >= 0.012) { lastAnalyze = now; Analyze(now); }
+                    // Sleep(8) у Windows длится ~15,6 мс. Анализ (БПФ + темп) — по запросу: 60 раз в секунду для визуализатора,
+                    // 30 для полосок в чёлке, а в долгой тишине — 10 (полоскам нужно только плавно опасть)
+                    double step = Volatile.Read(ref _fastUsers) > 0 ? 0.012 : 0.030;
+                    if (!got && now - lastData > 1.5 && Level < 0.003) step = 0.1;
+                    if (now - lastAnalyze >= step) { lastAnalyze = now; Analyze(now); }
                 }
                 try { ac.Stop(); } catch { }
             }

@@ -53,7 +53,7 @@ namespace NIsland.Controls
         void Sync()
         {
             bool on = IsVisible && IsLoaded && ShowSpectrum;
-            if (on) { _lease ??= AudioCapture.I.Use(); _anim.Start(); }
+            if (on) { _lease ??= AudioCapture.I.Use(60); _anim.Start(); }
             else { _anim.Stop(); _lease?.Dispose(); _lease = null; Array.Clear(_bands); }
         }
 

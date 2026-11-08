@@ -297,6 +297,18 @@ namespace NIsland.Core
         public string LyricsFont { get => _lyrFont; set => Set(ref _lyrFont, value); } string _lyrFont = "default";
         /// <summary>Под строкой — латиницей (кириллица, греческий, корейский).</summary>
         public bool LyricsRoman { get => _lyrRoman; set => Set(ref _lyrRoman, value); } bool _lyrRoman;
+        /// <summary>Как появляется новая текущая строка: none, fade, rise, drop, slide, zoom, flip, blur, glow, wipe, typewriter, random.</summary>
+        public string LyricsAnim { get => _lyrAnim; set => Set(ref _lyrAnim, value); } string _lyrAnim = "rise";
+        public int LyricsAnimMs { get => _lyrAnimMs; set => Set(ref _lyrAnimMs, value); } int _lyrAnimMs = 420;
+        /// <summary>При смене песни строки въезжают лесенкой.</summary>
+        public bool LyricsCascade { get => _lyrCascade; set => Set(ref _lyrCascade, value); } bool _lyrCascade = true;
+        /// <summary>Размер текущей строки относительно остальных, %.</summary>
+        public int LyricsActiveScale { get => _lyrActScale; set => Set(ref _lyrActScale, value); } int _lyrActScale = 105;
+        /// <summary>Расстояние между строками, px.</summary>
+        public int LyricsLineGap { get => _lyrGap; set => Set(ref _lyrGap, value); } int _lyrGap = 6;
+        public bool LyricsUpper { get => _lyrUpper; set => Set(ref _lyrUpper, value); } bool _lyrUpper;
+        /// <summary>Мягкая тень под текущей строкой — читается на любом фоне.</summary>
+        public bool LyricsShadow { get => _lyrShadow; set => Set(ref _lyrShadow, value); } bool _lyrShadow;
         public bool DesktopLyrics { get => _deskLyr; set => Set(ref _deskLyr, value); } bool _deskLyr;
         public int DeskLyricsSize { get => _deskSize; set => Set(ref _deskSize, value); } int _deskSize = 30;
         public bool DeskLyricsLock { get => _deskLock; set => Set(ref _deskLock, value); } bool _deskLock = true;

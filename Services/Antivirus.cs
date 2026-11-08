@@ -571,7 +571,9 @@ namespace NIsland.Services
             {
                 try
                 {
-                    var w = new FileSystemWatcher(d) { IncludeSubdirectories = !d.Contains("Startup"), NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size };
+                    // Рабочий стол — только верхний уровень: в его подпапках часто проекты, и сборка создаёт сотни .dll/.exe/.js
+                    bool deep = d.EndsWith("Downloads", StringComparison.OrdinalIgnoreCase);
+                    var w = new FileSystemWatcher(d) { IncludeSubdirectories = deep, NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size, InternalBufferSize = 32 * 1024 };
                     w.Created += (_, e) => Queue(e.FullPath);
                     w.Renamed += (_, e) => Queue(e.FullPath);
                     w.Changed += (_, e) => Queue(e.FullPath);
@@ -599,12 +601,19 @@ namespace NIsland.Services
             }
         }
 
+        // папки сборок и зависимостей: тысячи «программ», которые пишет сам компилятор или npm, — не проверяем на лету
+        static readonly string[] BuildDirs = { @"\node_modules\", @"\.git\", @"\bin\", @"\obj\", @"\.vs\", @"\__pycache__\", @"\Library\", @"\.gradle\", @"\build\intermediates\", @"\target\" };
+        // проверки по одной: сборка или распаковка архива не должны запускать сотни проверок разом и забивать пул потоков
+        static readonly SemaphoreSlim ScanGate = new(1, 1);
+
         static void Queue(string path, bool force = false)
         {
             if (!force && !Risky.Contains(Path.GetExtension(path).ToLowerInvariant())) return;
+            if (!force && BuildDirs.Any(b => path.Contains(b, StringComparison.OrdinalIgnoreCase))) return;
             lock (Pending)
             {
                 bool first = !Pending.ContainsKey(path);
+                if (first && Pending.Count > 300) return;   // лавина файлов — остальные проверит «Быстрая проверка»
                 Pending[path] = DateTime.Now;
                 if (!first) return;
             }
@@ -616,6 +625,7 @@ namespace NIsland.Services
                     await Task.Delay(2500);
                     lock (Pending) { if ((DateTime.Now - Pending[path]).TotalSeconds >= 2.4) { Pending.Remove(path); break; } }
                 }
+                await ScanGate.WaitAsync();
                 try
                 {
                     if (!File.Exists(path) || path.EndsWith(".crdownload") || path.EndsWith(".part") || path.EndsWith(".tmp")) return;
@@ -624,6 +634,7 @@ namespace NIsland.Services
                     if (t.Score >= 40) OnThreat?.Invoke(t);
                 }
                 catch { }
+                finally { ScanGate.Release(); }
             });
         }
 

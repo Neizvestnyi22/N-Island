@@ -168,7 +168,7 @@ namespace NIsland.Pages
                 _trBtn,
                 Small("", ShowPicker, "Не тот текст? Выбрать другой"),
                 Small("", CopyLyrics, "Скопировать текст песни (правый клик — сохранить .lrc в «Музыка\\Lyrics»)"),
-                Small("", CycleLyricsStyle, "Стиль текста: Apple, классика, неон, минимал, прыжок"),
+                StyleBtn(),
                 Small("", () => { DesktopLyricsWindow.Toggle(); App.Island.Toast("", S.DesktopLyrics ? "Текст на рабочем столе" : "Текст убран с рабочего стола", S.DesktopLyrics ? "Закрепить и настроить — в настройках «Музыка»" : null); }, "Текст песни на рабочем столе — строка поверх всех окон"),
                 _focusBtn);
             // правый клик по «копировать» — сохранить файл
@@ -275,7 +275,8 @@ namespace NIsland.Pages
             S.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName is nameof(Settings.LyricsStyle) or nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsAlign)
-                    or nameof(Settings.LyricsRoman) or nameof(Settings.LyricsFontSize))
+                    or nameof(Settings.LyricsRoman) or nameof(Settings.LyricsFontSize) or nameof(Settings.LyricsUpper) or nameof(Settings.LyricsLineGap)
+                    or nameof(Settings.LyricsActiveScale) or nameof(Settings.LyricsShadow))
                 { _linesDirty = true; if (Visible) Dispatcher.BeginInvoke(new Action(RefreshLyrics)); }
                 if (e.PropertyName is nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsKaraoke)) DesktopLyricsWindow.Apply();
             };
@@ -540,12 +541,12 @@ namespace NIsland.Pages
                             foreach (var w in l.Words)
                             {
                                 var br = new SolidColorBrush(Dim);
-                                var run = new Run(w.Text) { Foreground = br };
+                                var run = new Run(S.LyricsUpper ? w.Text.ToUpper(CultureInfo.CurrentCulture) : w.Text) { Foreground = br };
                                 tb.Inlines.Add(run);
                                 runs.Add((run, br, w));
                             }
                         }
-                        else tb.Text = l.Text;
+                        else tb.Text = S.LyricsUpper ? l.Text.ToUpper(CultureInfo.CurrentCulture) : l.Text;
                         _wordRuns.Add(runs);
                         FrameworkElement row = tb;
                         var tr = M.Translation != null && i < M.Translation.Count ? M.Translation[i] : null;
@@ -563,7 +564,9 @@ namespace NIsland.Pages
                                 });
                             row = col;
                         }
-                        row.Margin = new Thickness(0, 3, Math.Ceiling(size * 0.9), 3);   // запас: текущая строка увеличивается на 4–10 %
+                        double lineGap = Math.Clamp(S.LyricsLineGap, 0, 30) / 2.0;
+                        // запас справа: текущая строка увеличивается (до 30 %)
+                        row.Margin = new Thickness(0, lineGap, Math.Ceiling(size * (0.4 + (Math.Clamp(S.LyricsActiveScale, 100, 130) - 100) / 100.0 * 9)), lineGap);
                         row.RenderTransform = new ScaleTransform(1, 1);
                         row.RenderTransformOrigin = align == TextAlignment.Center ? new Point(0.5, 0.5) : new Point(0, 0.5);
                         if (synced && M.CanSeek)
@@ -577,6 +580,11 @@ namespace NIsland.Pages
                         _lineBlocks.Add(tb);
                         _lineRows.Add(row);
                     }
+                    // новая песня — строки въезжают лесенкой (при перестройке из-за настроек — нет)
+                    var key = M.Title + "|" + M.Artist;
+                    if (S.LyricsCascade && key != _cascadeKey && Visible)
+                        for (int i = 0; i < Math.Min(_lineBlocks.Count, 40); i++) LyricsAnim.Cascade(_lineBlocks[i], i, Math.Max(250, S.LyricsAnimMs));
+                    _cascadeKey = key;
                 }
             }
             _lyricsStatus.Text = M.LyricsLoading ? "Ищу текст песни…"
@@ -655,12 +663,22 @@ namespace NIsland.Pages
             var style = S.LyricsStyle ?? "apple";
             if (_activeRow != idx)
             {
-                if (_activeRow >= 0 && _activeRow < _lineRows.Count) { Scale(_lineRows[_activeRow], 1, animate); _lineBlocks[_activeRow].Effect = null; }
+                if (_activeRow >= 0 && _activeRow < _lineRows.Count) { Scale(_lineRows[_activeRow], 1, animate); LyricsAnim.Reset(_lineBlocks[_activeRow]); _lineBlocks[_activeRow].Effect = null; }
                 if (idx >= 0 && idx < _lineRows.Count && M.Lyrics[idx].Text != "♪")
                 {
-                    double to = style switch { "classic" or "minimal" => 1.0, "bounce" => FocusMode ? 1.08 : 1.1, _ => FocusMode ? 1.03 : 1.045 };
+                    // размер текущей строки — из настройки; «классика» и «минимал» без увеличения, «прыжок» чуть больше
+                    double user = Math.Clamp(S.LyricsActiveScale, 100, 130) / 100.0;
+                    double to = style switch { "classic" or "minimal" => 1.0, "bounce" => user + 0.05, _ => FocusMode ? 1 + (user - 1) * 0.7 : user };
                     if (style == "bounce" && animate) Bounce(_lineRows[idx], to); else Scale(_lineRows[idx], to, animate);
-                    if (style == "neon") _lineBlocks[idx].Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Hi, BlurRadius = 16, ShadowDepth = 0, Opacity = 0.95 };
+                    var tb = _lineBlocks[idx];
+                    if (style == "neon") tb.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Hi, BlurRadius = 16, ShadowDepth = 0, Opacity = 0.95 };
+                    else if (S.LyricsShadow) tb.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.Black, BlurRadius = 10, ShadowDepth = 1.5, Opacity = 0.85, RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance };
+                    // появление строки: у «неона» своя подсветка, поэтому «вспышку» там не накладываем
+                    var anim = S.LyricsAnim ?? "rise";
+                    if (animate && !(style == "neon" && anim == "glow"))
+                    {
+                        LyricsAnim.Play(tb, anim, S.LyricsAnimMs, Hi, FocusMode || S.LyricsAlign == "center");
+                    }
                 }
                 _activeRow = idx;
             }
@@ -711,6 +729,25 @@ namespace NIsland.Pages
 
         static readonly string[] LyricStyles = { "apple", "classic", "neon", "minimal", "bounce" };
         static readonly string[] LyricStyleNames = { "Apple — плавно", "Классика", "Неон", "Минимал", "Прыжок" };
+
+        /// <summary>Кнопка стиля: клик — следующий стиль, правый клик — следующая анимация появления строк.</summary>
+        Button StyleBtn()
+        {
+            var b = Small("", CycleLyricsStyle, "Стиль текста: Apple, классика, неон, минимал, прыжок · правый клик — анимация появления строк");
+            b.MouseRightButtonUp += (_, e) =>
+            {
+                var kinds = LyricsAnim.Kinds;
+                int i = Array.FindIndex(kinds, k => k.Key == S.LyricsAnim);
+                var next = kinds[(i + 1) % kinds.Length];
+                S.LyricsAnim = next.Key;
+                App.Island.Toast("", "Появление строки", next.Name);
+                // сразу показать на текущей строке
+                int idx = M.LyricIndex;
+                if (idx >= 0 && idx < _lineBlocks.Count) LyricsAnim.Play(_lineBlocks[idx], next.Key, S.LyricsAnimMs, Hi, FocusMode || S.LyricsAlign == "center");
+                e.Handled = true;
+            };
+            return b;
+        }
 
         void CycleLyricsStyle()
         {
@@ -788,6 +825,7 @@ namespace NIsland.Pages
         // ---------- язык перевода ----------
         readonly Border _langPick = new() { Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Top, CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 8, 6, 8) };
         bool _trClicked;
+        string _cascadeKey;
 
         void ShowLangPick()
         {

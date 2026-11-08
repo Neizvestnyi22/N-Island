@@ -31,7 +31,7 @@ namespace NIsland.Controls
             new("spectrogram", "Спектрограмма", "Бегущая карта частот: видно, как меняется музыка"),
             new("neon", "Неоновые волны", "Бас, середина и верха — отдельными светящимися волнами"),
             new("blob", "Капля", "Жидкая капля меняет форму под музыку"),
-        }.Concat(MoreStyles).ToArray();
+        }.Concat(MoreStyles).Concat(NewStyles).ToArray();
 
         public static readonly (string Key, string Name)[] Palettes =
         {
@@ -59,7 +59,7 @@ namespace NIsland.Controls
         public string VisualStyle
         {
             get => _style;
-            set { value ??= "bars"; if (_style == value) return; _style = value; ResetState(); }
+            set { value = Replacement(value ?? "bars"); if (_style == value) return; _style = value; ResetState(); }
         }
 
         public string Palette { get => _palette; set { value ??= "art"; if (_palette != value) { _palette = value; _lutKey = null; } } }
@@ -101,7 +101,7 @@ namespace NIsland.Controls
             if (on && !_hooked)
             {
                 _hooked = true;
-                _lease ??= AudioCapture.I.Use();
+                _lease ??= AudioCapture.I.Use(60);
                 _lastT = 0;
                 CompositionTarget.Rendering += OnFrame;
             }
@@ -181,7 +181,7 @@ namespace NIsland.Controls
                 case "spectrogram": Spectrogram(); break;
                 case "neon": Neon(); break;
                 case "blob": Blob(); break;
-                default: if (!Draw2(dt)) Bars(); break;
+                default: if (!Draw2(dt) && !Draw3(dt)) Bars(); break;
             }
         }
 
@@ -190,6 +190,7 @@ namespace NIsland.Controls
             if (_px != null) Array.Clear(_px);
             _parts.Clear();
             ResetState2();
+            ResetState3();
         }
 
         // ------------------------------------------------------------------
@@ -727,13 +728,15 @@ namespace NIsland.Controls
         void Blob()
         {
             Fade(0);
-            double cx = _w / 2.0, cy = _h / 2.0, r0 = Min * 0.24 * (1 + _level * 0.25);
+            // 1.9: капля сильнее слушает звук — размер и деформация от громкости, удар раздувает её
+            double kick = Math.Max(0, 1 - _sinceBeat / 0.3) * Math.Clamp(St.VizBeatFx, 0, 200) / 100.0;
+            double cx = _w / 2.0, cy = _h / 2.0, r0 = Min * (0.15 + Math.Min(1, _level * 1.3) * 0.15 + kick * 0.04);
             var g = new double[6];
             for (int j = 0; j < 6; j++) g[j] = Group(j / 6.0, (j + 1) / 6.0);
             for (int k = 0; k < _blobR.Length; k++)
             {
                 double th = 2 * Math.PI * k / _blobR.Length, r = 1;
-                for (int j = 0; j < 6; j++) r += g[j] * 0.17 * Math.Sin(th * (j + 2) + _t * (0.7 + j * 0.3) + j);
+                for (int j = 0; j < 6; j++) r += g[j] * 0.32 * Math.Sin(th * (j + 2) + _t * (0.7 + j * 0.3) + j);
                 _blobR[k] = r0 * r;
             }
             double box = r0 * 1.9;
@@ -750,7 +753,7 @@ namespace NIsland.Controls
                     if (d < r)
                     {
                         double t = d / r;
-                        Over(x, y, Pal(0.1 + t * 0.85), (int)(255 * (0.55 + 0.45 * t)));
+                        Over(x, y, Pal(0.1 + t * 0.85), (int)(255 * (0.3 + 0.7 * t) * (0.45 + 0.55 * Math.Min(1, _level * 1.5))));
                     }
                     else if (d < r + 7)
                         Plus(x, y, Pal(1), (int)(90 * (1 - (d - r) / 7)));

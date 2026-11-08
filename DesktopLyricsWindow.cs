@@ -194,12 +194,10 @@ namespace NIsland
             if (!show) { _cur.Text = I18n.T("Текст песни появится здесь"); _next.Text = ""; return; }
             if (_cur.Text != cur || idx != _line)
             {
-                _cur.Text = cur;
+                _cur.Text = S.LyricsUpper ? cur.ToUpper(System.Globalization.CultureInfo.CurrentCulture) : cur;
                 _next.Text = next ?? "";
-                _cur.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, TimeSpan.FromMilliseconds(220)));
-                var tt = new TranslateTransform(0, 10);
-                _cur.RenderTransform = tt;
-                tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(320)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+                // та же анимация появления, что и в плеере (настройка «Появление строки»)
+                NIsland.Pages.LyricsAnim.Play(_cur, S.LyricsAnim ?? "rise", S.LyricsAnimMs, Highlight(), true);
                 _line = idx;
                 _k1 = null;
             }

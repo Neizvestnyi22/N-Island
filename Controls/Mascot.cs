@@ -7,7 +7,9 @@ using NIsland.Services;
 namespace NIsland.Controls
 {
     /// <summary>
-    /// Персонаж острова. Рисуется сам (без картинок), 30 кадров в секунду и только пока виден.
+    /// Персонаж острова. Рисуется сам (без картинок) и только пока виден. Частота — по настроению:
+    /// спит 6 кадров/с, спокоен 12, танцует и эмоции 24–30. Без CompositionTarget.Rendering: подписка на него
+    /// заставляет WPF перерисовывать всё окно острова на частоте монитора — это и были подтормаживания 1.8.0.
     /// Настроение задаёт остров: музыка — танцует в такт, ночь и «Не беспокоить» — спит, уведомление — удивляется,
     /// низкий заряд — грустит, тревога — пугается, ИИ отвечает — думает, звонок — слушает, курсор рядом — смотрит на него.
     /// </summary>
@@ -37,8 +39,7 @@ namespace NIsland.Controls
         string _flash;
         DateTime _flashUntil;
         double _t, _blinkAt = 2, _lookCur, _jump;
-        TimeSpan _last;
-        bool _hooked;
+        IDisposable _clock;
         readonly Random _rnd = new();
 
         public string Current => _flash != null && DateTime.Now < _flashUntil ? _flash : Mood;
@@ -49,6 +50,7 @@ namespace NIsland.Controls
             _flash = mood;
             _flashUntil = DateTime.Now.AddSeconds(seconds);
             if (jump) _jump = 1;
+            Retime();
         }
 
         public Mascot()
@@ -62,20 +64,30 @@ namespace NIsland.Controls
         void Sync(bool? force = null)
         {
             bool on = force ?? (IsLoaded && IsVisible);
-            if (on && !_hooked) { _hooked = true; _last = TimeSpan.Zero; CompositionTarget.Rendering += OnFrame; }
-            else if (!on && _hooked) { _hooked = false; CompositionTarget.Rendering -= OnFrame; }
+            if (on && _clock == null) { _clock = NIsland.Core.FrameClock.Add(Step, 12); Retime(); }
+            else if (!on && _clock != null) { _clock.Dispose(); _clock = null; }
         }
 
-        void OnFrame(object sender, EventArgs e)
+        /// <summary>Частота кадров по тому, что сейчас происходит.</summary>
+        void Retime()
         {
-            var now = ((RenderingEventArgs)e).RenderingTime;
-            if (_last != TimeSpan.Zero && (now - _last).TotalSeconds < 1 / 30.0) return;
-            double dt = _last == TimeSpan.Zero ? 1 / 30.0 : Math.Min(0.1, (now - _last).TotalSeconds);
-            _last = now;
+            double fps = _jump > 0 ? 30 : Current switch
+            {
+                "dance" or "surprised" or "alert" or "love" or "happy" => 30,
+                "sleep" => 6,
+                _ => 10,
+            };
+            if (_clock != null) NIsland.Core.FrameClock.SetFps(_clock, fps);
+        }
+
+        void Step(double dt)
+        {
+            NIsland.Core.Perf.Hit("mascot-draw");
             _t += dt;
             _lookCur += (LookX - _lookCur) * Math.Min(1, dt * 8);
             _jump = Math.Max(0, _jump - dt * 2.4);
             InvalidateVisual();
+            Retime();
         }
 
         static Brush B(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }

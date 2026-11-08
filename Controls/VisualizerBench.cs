@@ -56,6 +56,10 @@ namespace NIsland.Controls
                 sheet.WritePixels(new Int32Rect((idx % cols) * w, (idx / cols) * h, w, h), last, w * 4, 0);
                 idx++;
             }
+            sb.AppendLine();
+            sb.AppendLine("отклик на музыку (доля яркости, которая меняется от звука, %; 100 — в тишине пусто, меньше 35 — звук почти не влияет):");
+            foreach (var st in Styles)
+                sb.AppendLine($"  {st.Key,-12} {Reactivity(st.Key, w, h),5:0.0}");
             var enc = new PngBitmapEncoder();
             // на чёрном фоне — как в плеере
             var dv = new DrawingVisual();
@@ -73,6 +77,54 @@ namespace NIsland.Controls
             enc.Frames.Add(BitmapFrame.Create(rtb));
             using (var fs = File.Create(pngPath)) enc.Save(fs);
             return sb.ToString();
+        }
+
+        /// <summary>Насколько стиль меняется от звука: одни и те же 60 кадров в тишине и под громкий ритм, сравнение яркости.</summary>
+        static double Reactivity(string key, int w, int h)
+        {
+            uint[] Run(bool loud)
+            {
+                var v = new Visualizer { _w = w, _h = h, _px = new uint[w * h], _tmp = new uint[w * h] };
+                v._style = key;
+                v._palette = "neon";
+                v.ResetState();
+                uint[] last = v._px;
+                var rnd = new Random(7);
+                for (int f = 0; f < 60; f++)
+                {
+                    double t = f / 45.0;
+                    // громко: бас качается с ударами каждые 10 кадров, середина и верх живут своей жизнью
+                    double kick = loud ? Math.Exp(-(f % 10) * 0.45) : 0;
+                    for (int i = 0; i < v._bands.Length; i++)
+                    {
+                        double u = i / (double)v._bands.Length;
+                        double val = loud ? Math.Clamp((u < 0.2 ? 0.35 + 0.6 * kick : 0.55 - u * 0.35) * (0.7 + 0.3 * Math.Sin(t * 7 + i * 0.4)) + rnd.NextDouble() * 0.08, 0, 1) : 0;
+                        v._bands[i] = (float)val;
+                        v._peaks[i] = (float)Math.Min(1, val + (loud ? 0.08 : 0));
+                    }
+                    for (int i = 0; i < v._wave.Length; i++) v._wave[i] = loud ? (float)((0.4 + 0.4 * kick) * Math.Sin(i * 0.11 + t * 9) + 0.2 * Math.Sin(i * 0.37)) : 0;
+                    v._level = loud ? (float)(0.45 + 0.4 * kick) : 0;
+                    v._beat = loud && f % 10 == 0;
+                    v._sinceBeat = v._beat ? 0 : v._sinceBeat + 1 / 45.0;
+                    v._t += 1 / 45.0;
+                    v.BuildLut();
+                    try { v.Draw(1 / 45.0); last = (uint[])v.Post().Clone(); } catch { }
+                }
+                return last;
+            }
+            var a = Run(false);
+            var b = Run(true);
+            // относительная разница: сколько яркости «переехало» между тишиной и музыкой от всей яркости картинки
+            double diff = 0, total = 0;
+            for (int i = 0; i < a.Length; i++)
+            {
+                uint p = a[i], q = b[i];
+                double la = ((p >> 16) & 255) * 0.3 + ((p >> 8) & 255) * 0.59 + (p & 255) * 0.11;
+                double lb = ((q >> 16) & 255) * 0.3 + ((q >> 8) & 255) * 0.59 + (q & 255) * 0.11;
+                diff += Math.Abs(la - lb);
+                total += Math.Max(la, lb);
+            }
+            return total < 1 ? 0 : diff / total * 100;
         }
     }
 }

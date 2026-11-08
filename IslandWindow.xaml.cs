@@ -1034,6 +1034,7 @@ namespace NIsland
         void OnFrame(object sender, EventArgs e)
         {
             var t = ((RenderingEventArgs)e).RenderingTime;
+            Perf.Hit("island-frame");
             if (t == _last) return;
             double dt = _last == TimeSpan.Zero ? 1 / 60.0 : Math.Clamp((t - _last).TotalSeconds, 0.001, 0.05);
             _last = t;

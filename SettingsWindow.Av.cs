@@ -127,7 +127,11 @@ namespace NIsland
                 }
             }
             RenderQ();
-            Antivirus.Changed += () => Dispatcher.BeginInvoke(new Action(() => { RenderQ(); Upd(); }));
+            // подписка живёт, пока раздел на экране: иначе каждое открытие оставляло обработчик, и все старые копии раздела
+            // перерисовывались на каждую проверку файла
+            Action onAv = () => Dispatcher.BeginInvoke(new Action(() => { RenderQ(); Upd(); }));
+            page.Loaded += (_, __) => { Antivirus.Changed -= onAv; Antivirus.Changed += onAv; };
+            page.Unloaded += (_, __) => Antivirus.Changed -= onAv;
             page.Children.Add(Group("Карантин", Info("Файлы в карантине зашифрованы и не могут запуститься. Вернуть можно в любой момент."), qBox));
 
             var hist = new StackPanel();

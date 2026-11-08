@@ -114,8 +114,6 @@ namespace NIsland
                 BorderBrush = UI.Hex("#30FFFFFF"),
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(14),
-                // тень на слабом ПК без видеоускорения заметно тормозит прокрутку
-                Effect = S.LiteMode ? null : new DropShadowEffect { BlurRadius = 26, ShadowDepth = 6, Opacity = 0.45, RenderingBias = RenderingBias.Performance },
             };
             var grid = UI.Grid("216,*");
 
@@ -142,7 +140,28 @@ namespace NIsland
             right.MouseLeftButtonDown += Drag;
             grid.Add(side, right.At(0, 1));
             root.Child = grid;
-            Content = root;
+            // Тень — отдельным неподвижным слоем ПОД содержимым, а не эффектом на нём: окно прозрачное (layered) и рисуется
+            // программно, и эффект на корне заставлял пересчитывать размытие всего окна на любую мелочь внутри —
+            // это давало 25–35 % ядра, пока окно открыто и играет музыка.
+            var shadow = new Border
+            {
+                CornerRadius = new CornerRadius(14), Margin = new Thickness(14), Background = Brushes.Black, IsHitTestVisible = false,
+                Effect = S.LiteMode ? null : new DropShadowEffect { BlurRadius = 26, ShadowDepth = 6, Opacity = 0.45, RenderingBias = RenderingBias.Performance },
+                CacheMode = new BitmapCache(),
+            };
+            // тень видна только снаружи окна: иначе чёрная подложка просвечивала бы сквозь полупрозрачный фон
+            shadow.SizeChanged += (_, e) =>
+            {
+                var inner = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 14, 14);
+                var outer = new RectangleGeometry(new Rect(-60, -60, e.NewSize.Width + 120, e.NewSize.Height + 120));
+                var clip = new CombinedGeometry(GeometryCombineMode.Exclude, outer, inner);
+                clip.Freeze();
+                shadow.Clip = clip;
+            };
+            var frame = new Grid();
+            frame.Children.Add(shadow);
+            frame.Children.Add(root);
+            Content = frame;
 
             KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
             // открываемся там, где закрыли в прошлый раз
@@ -546,6 +565,20 @@ namespace NIsland
             return card;
         }
 
+        /// <summary>Выбор анимации появления строки: чипы в несколько рядов (вариантов больше, чем влезает в одну полосу).</summary>
+        static UIElement LyricsAnimPick()
+        {
+            var wrap = new WrapPanel();
+            foreach (var (key, name) in NIsland.Pages.LyricsAnim.Kinds)
+            {
+                var k = key;
+                var rb = new RadioButton { Style = UI.St("Segment"), Content = name, GroupName = "lyranim", IsChecked = (S.LyricsAnim ?? "rise") == k, Margin = new Thickness(0, 0, 4, 4) };
+                rb.Checked += (_, __) => S.LyricsAnim = k;
+                wrap.Children.Add(rb);
+            }
+            return wrap;
+        }
+
         UIElement Music() => Panel(
             Group(null,
                 Row("Живой текст в чёлке", "Текущая строчка песни прямо в свёрнутой чёлке", Toggle(nameof(Settings.LiveLyrics))),
@@ -572,6 +605,13 @@ namespace NIsland
                 Row("Шрифт", null, Seg(nameof(Settings.LyricsFont), ("default", "Обычный"), ("light", "Тонкий"), ("serif", "С засечками"), ("mono", "Моно"), ("script", "Рукописный"))),
                 Row("Выравнивание", null, Seg(nameof(Settings.LyricsAlign), ("left", "Слева"), ("center", "По центру"))),
                 Row("Латиницей", "Под строкой — то же латинскими буквами: для песен на кириллице, греческом и корейском", Toggle(nameof(Settings.LyricsRoman))),
+                Wide("Появление строки", "Как загорается новая строка — в плеере и в тексте на рабочем столе. Быстро сменить: правый клик по кнопке стиля в плеере", LyricsAnimPick()),
+                Row("Скорость анимации", null, Stepper(nameof(Settings.LyricsAnimMs), 150, 1500, 50, v => v + " мс")),
+                Row("Лесенкой при смене песни", "Строки нового текста въезжают по очереди", Toggle(nameof(Settings.LyricsCascade))),
+                Row("Размер текущей строки", "Насколько она крупнее остальных (у «Классики» и «Минимала» — без увеличения)", Stepper(nameof(Settings.LyricsActiveScale), 100, 130, 5, v => v + "%")),
+                Row("Расстояние между строками", null, Stepper(nameof(Settings.LyricsLineGap), 0, 24, 2, v => v + " px")),
+                Row("Заглавными буквами", null, Toggle(nameof(Settings.LyricsUpper))),
+                Row("Тень под текущей строкой", "Строка читается на любом фоне, даже при прозрачном острове", Toggle(nameof(Settings.LyricsShadow))),
                 Row("Скопировать или сохранить", "Кнопки в заголовке текста: копировать (правый клик — сохранить .lrc в «Музыка\\Lyrics»)", null)),
             Group("Текст на рабочем столе",
                 Row("Показывать", "Текущая строка крупно поверх всех окон, с караоке-заливкой", ToggleAct(nameof(Settings.DesktopLyrics), v => { S.DesktopLyrics = v; DesktopLyricsWindow.Apply(); })),

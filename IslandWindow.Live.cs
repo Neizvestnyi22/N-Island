@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using NIsland.Controls;
 using NIsland.Core;
 using NIsland.Pages;
@@ -21,7 +22,6 @@ namespace NIsland
         Border _glint, _shine;
         RadialGradientBrush _lensMask;
         bool _liveHooked;
-        TimeSpan _liveLast;
         double _mouseX = -1, _glintX, _liveT, _rimLevel;
 
         bool MascotOn => S.Mascot != "none" && S.Mode != "minimal" && !Modes.Hidden;
@@ -169,23 +169,30 @@ namespace NIsland
 
         void SyncLive()
         {
-            bool want = !S.LiteMode && (S.IslandGlint || S.BeatRim) && (_hover || _mode != Mode.Collapsed || (S.BeatRim && MediaService.I.IsPlaying));
-            if (want && !_liveHooked) { _liveHooked = true; _liveLast = TimeSpan.Zero; CompositionTarget.Rendering += OnLiveFrame; }
+            // кадры нужны только под курсором (блик) или пока играет музыка (ободок в такт); таймер, а не CompositionTarget.Rendering —
+            // тот заставляет WPF перерисовывать окно на частоте монитора даже без изменений
+            bool want = !S.LiteMode && !_hiddenFs && ((S.IslandGlint && _hover) || (S.BeatRim && MediaService.I.IsPlaying));
+            if (want && !_liveHooked)
+            {
+                _liveHooked = true;
+                _liveClock = FrameClock.Add(OnLiveFrame, 30);
+            }
             else if (!want && _liveHooked)
             {
                 _liveHooked = false;
-                CompositionTarget.Rendering -= OnLiveFrame;
+                _liveClock?.Dispose();
+                _liveClock = null;
                 Rim.Opacity = 1;
                 _glint.Opacity = 0;
             }
         }
 
-        void OnLiveFrame(object sender, EventArgs e)
+        IDisposable _liveClock;
+
+        void OnLiveFrame(double dt)
         {
-            var now = ((RenderingEventArgs)e).RenderingTime;
-            if (_liveLast != TimeSpan.Zero && (now - _liveLast).TotalSeconds < 1 / 40.0) return;
-            double dt = _liveLast == TimeSpan.Zero ? 1 / 40.0 : Math.Min(0.1, (now - _liveLast).TotalSeconds);
-            _liveLast = now;
+            Perf.Hit("live-frame");
+            dt = Math.Min(dt, 0.1);
             _liveT += dt;
             double w = Island.ActualWidth, h = Island.ActualHeight;
 
@@ -215,7 +222,7 @@ namespace NIsland
                 _mascot.LookX = _mouseX >= 0 && w > 0 ? Math.Clamp(_mouseX / w * 2 - 1, -1, 1) : Math.Sin(_liveT * 0.5) * 0.4;
 
             // музыка кончилась, курсор ушёл — перестаём рисовать
-            if (!_hover && _mode == Mode.Collapsed && !(S.BeatRim && MediaService.I.IsPlaying)) SyncLive();
+            if (!_hover && !(S.BeatRim && MediaService.I.IsPlaying)) SyncLive();
         }
 
         // ------------------------------------------------------------------

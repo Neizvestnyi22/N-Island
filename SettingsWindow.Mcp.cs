@@ -39,8 +39,9 @@ namespace NIsland
             }
             RenderLog();
             Action onChange = () => Dispatcher.BeginInvoke(new Action(() => { Upd(); RenderLog(); }));
-            McpServer.Changed += onChange;
-            Unloaded += (_, __) => McpServer.Changed -= onChange;
+            // подписка — пока раздел на экране (не до закрытия окна: при переходах между разделами обработчики копились)
+            log.Loaded += (_, __) => { McpServer.Changed -= onChange; McpServer.Changed += onChange; };
+            log.Unloaded += (_, __) => McpServer.Changed -= onChange;
 
             var tools = new WrapPanel { Margin = new Thickness(14, 4, 14, 10) };
             foreach (var t in McpServer.Tools)
