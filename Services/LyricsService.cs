@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -110,16 +110,31 @@ namespace NIsland.Services
             Task<Res<List<(LyricsResult, double)>>> ne = null, kg = null;
             if (Store.Settings.LyricsFallback)
             {
-                ne = Try(() => NetEase(q, dur));
-                kg = Try(() => Kugou(q, dur));
+                ne = Try("netease", () => NetEase(q, dur));
+                kg = Try("kugou", () => Kugou(q, dur));
             }
 
             // 1) LRCLIB: точный запрос (название + исполнитель + альбом + длительность) и поиск — параллельно
             var main = q.Variants[0];
-            var exact = Try(() => LrcLibGet(main.Title, main.Artist, q.Album, dur));
-            var search = Try(() => LrcLibSearch(main.Title, main.Artist, q, dur));
-            var loose = Try(() => LrcLibQuery((main.Title + " " + main.Artist).Trim(), q, dur));
-            await Task.WhenAll(exact, search, loose);
+            var exact = Try("lrclib", () => LrcLibGet(main.Title, main.Artist, q.Album, dur));
+            var search = Try("lrclib", () => LrcLibSearch(main.Title, main.Artist, q, dur));
+            var loose = Try("lrclib", () => LrcLibQuery((main.Title + " " + main.Artist).Trim(), q, dur));
+            var lrclib = Task.WhenAll(exact, search, loose);
+            // LRCLIB тормозит, а запасной источник уже нашёл точный синхронный текст — не ждём LRCLIB дольше 3,5 с
+            if (ne != null && await Task.WhenAny(lrclib, Task.Delay(3500)) != lrclib)
+            {
+                var quick = new List<(LyricsResult R, double Score)>();
+                foreach (var t in new[] { ne, kg })
+                    if (t.IsCompletedSuccessfully && t.Result.Ok) quick.AddRange(t.Result.Value.Where(x => x.Item1 != null && x.Item1.Synced && x.Item2 >= 85));
+                if (quick.Count > 0)
+                {
+                    var fast = quick.OrderByDescending(x => (x.R.HasWords ? 5 : 0) + x.Score).First().R;
+                    Cache[q.Key] = fast;
+                    WriteDisk(q.Key, fast);
+                    return fast;
+                }
+            }
+            await lrclib;
             Note(exact.Result); Note(search.Result); Note(loose.Result);
             if (exact.Result.Ok) { reached = true; if (exact.Result.Value is { } ex) found.Add((ex, 95)); }
             if (search.Result.Ok) Take(search.Result.Value, ref reached);
@@ -129,7 +144,7 @@ namespace NIsland.Services
             for (int i = 1; i < q.Variants.Count && !Done() && i < 4; i++)
             {
                 var v = q.Variants[i];
-                var r = await Try(() => LrcLibSearch(v.Title, v.Artist, q, dur));
+                var r = await Try("lrclib", () => LrcLibSearch(v.Title, v.Artist, q, dur));
                 Note(r);
                 if (r.Ok) Take(r.Value, ref reached);
             }
@@ -146,7 +161,7 @@ namespace NIsland.Services
             // 4) хоть какой-то текст без синхронизации
             if (!found.Any(f => f.R.Synced))
             {
-                var ovh = await Try(() => LyricsOvh(main.Title, main.Artist));
+                var ovh = await Try("ovh", () => LyricsOvh(main.Title, main.Artist));
                 if (ovh.Ok) { reached = true; if (ovh.Value != null) found.Add((ovh.Value, 20)); }
             }
 
@@ -162,18 +177,35 @@ namespace NIsland.Services
 
         readonly struct Res<T> { public readonly bool Ok; public readonly T Value; public Res(bool ok, T v) { Ok = ok; Value = v; } }
 
-        static async Task<Res<T>> Try<T>(Func<Task<T>> f)
+        // источник, который несколько раз подряд не ответил, отдыхает 10 минут — не ждём его тайм-аутов на каждой песне
+        static readonly ConcurrentDictionary<string, (int Fails, DateTime Until)> Health = new();
+
+        /// <summary>Состояние источников (для настроек): имя → «работает» / «отдыхает до 14:20».</summary>
+        public static IEnumerable<(string Source, string State)> SourceHealth() =>
+            new[] { "lrclib", "netease", "kugou", "ovh" }.Select(s => (s, Health.TryGetValue(s, out var h) && h.Until > DateTime.Now ? $"не отвечает, пробую снова в {h.Until:HH:mm}" : h.Fails > 0 ? "были сбои" : "работает"));
+
+        static async Task<Res<T>> Try<T>(string source, Func<Task<T>> f)
         {
+            if (Health.TryGetValue(source, out var hs) && hs.Until > DateTime.Now) return new Res<T>(false, default);
             for (int attempt = 0; ; attempt++)
             {
-                try { return new Res<T>(true, await f()); }
-                catch (HttpRequestException e) when (attempt == 0 && (e.StatusCode is null or >= HttpStatusCode.InternalServerError))
+                try
                 {
-                    await Task.Delay(1200);   // LRCLIB иногда отвечает 503 — одна повторная попытка
+                    var v = await f();
+                    Health[source] = (0, DateTime.MinValue);
+                    return new Res<T>(true, v);
+                }
+                catch (HttpRequestException e) when (attempt == 0 && (e.StatusCode is null or HttpStatusCode.TooManyRequests or >= HttpStatusCode.InternalServerError))
+                {
+                    // LRCLIB иногда отвечает 503, а при частых запросах — 429: одна повторная попытка после паузы
+                    await Task.Delay(e.StatusCode == HttpStatusCode.TooManyRequests ? 2500 : 1200);
                 }
                 catch (Exception e)
                 {
-                    Log.Info("lyrics: " + e.Message);
+                    Log.Info($"lyrics {source}: " + e.Message);
+                    var h = Health.TryGetValue(source, out var old) ? old : (0, DateTime.MinValue);
+                    int fails = h.Item1 + 1;
+                    Health[source] = (fails, fails >= 3 ? DateTime.Now.AddMinutes(10) : DateTime.MinValue);
                     return new Res<T>(false, default);
                 }
             }

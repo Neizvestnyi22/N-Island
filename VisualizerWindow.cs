@@ -88,7 +88,7 @@ namespace NIsland
 
             Button B(string glyph, Action a, string tip, double size = 13) { var b = UI.IconBtn(glyph, a, size, 34, tip); b.Foreground = Brushes.White; return b; }
             _play = B("\uE768", () => M.TogglePlay(), "Пауза / воспроизведение (пробел)", 15);
-            _auto = B("\uE895", () => { S.VizAuto = !S.VizAuto; SyncButtons(); Flash(S.VizAuto ? "Автосмена стилей каждые 30 с" : "Автосмена выключена"); }, "Автосмена стилей (A)");
+            _auto = B("\uE895", () => { S.VizAuto = !S.VizAuto; SyncButtons(); Flash(S.VizAuto ? I18n.T("Автосмена стилей каждые ") + S.VizAutoSec + " с" : "Автосмена выключена"); }, "Автосмена стилей (A)");
             _lyr = B("\uE8D2", () => { S.VizLyrics = !S.VizLyrics; SyncButtons(); UpdateLyric(); }, "Текст песни (L)");
             _pal = B("\uE790", NextPalette, "Палитра (C)");
             _bar.Child = UI.Row(
@@ -119,7 +119,7 @@ namespace NIsland
             MouseWheel += (_, e) => Step(e.Delta > 0 ? -1 : 1);
             KeyDown += OnKey;
             _idle.Tick += (_, __) => { _idle.Stop(); Hide(_bar); Hide(_hint); if (!_full) Mouse.OverrideCursor = null; else Cursor = Cursors.None; };
-            _cycle.Tick += (_, __) => { if (S.VizAuto) Step(1, quiet: true); };
+            _cycle.Tick += (_, __) => { _cycle.Interval = TimeSpan.FromSeconds(Math.Clamp(S.VizAutoSec, 10, 300)); if (S.VizAuto) Step(1, quiet: true); };
             _cycle.Start();
 
             M.Changed += OnTrack;

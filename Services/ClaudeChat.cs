@@ -77,27 +77,40 @@ namespace NIsland.Services
                 };
             }
 
-            var sb = new StringBuilder();
-            if (stream)
+            // свой прокси или старая модель могут не знать «усилие» и бета-функции — тогда повторяем без них
+            for (int attempt = 0; ; attempt++)
             {
-                await foreach (var ev in client.Beta.Messages.CreateStreaming(p, ct))
+                var sb = new StringBuilder();
+                try
                 {
-                    if (ev.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                    if (stream)
                     {
-                        sb.Append(text.Text);
-                        onDelta?.Invoke(text.Text);
+                        await foreach (var ev in client.Beta.Messages.CreateStreaming(p, ct))
+                        {
+                            if (ev.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                            {
+                                sb.Append(text.Text);
+                                onDelta?.Invoke(text.Text);
+                            }
+                        }
                     }
+                    else
+                    {
+                        var resp = await client.Beta.Messages.Create(p, ct);
+                        foreach (var block in resp.Content)
+                            if (block.TryPickText(out var t)) sb.Append(t.Text);
+                        if (resp.StopReason == "refusal" && sb.Length == 0) sb.Append("Claude отказался отвечать на этот запрос.");
+                        onDelta?.Invoke(sb.ToString());
+                    }
+                    return sb.ToString();
+                }
+                catch (Exception e) when (attempt < 2 && sb.Length == 0 && !ct.IsCancellationRequested &&
+                                          (e.Message.Contains("effort", StringComparison.OrdinalIgnoreCase) || e.Message.Contains("output_config") ||
+                                           e.Message.Contains("beta", StringComparison.OrdinalIgnoreCase) || e.Message.Contains("fallback", StringComparison.OrdinalIgnoreCase)))
+                {
+                    p = p with { OutputConfig = null, Betas = null, Fallbacks = null };
                 }
             }
-            else
-            {
-                var resp = await client.Beta.Messages.Create(p, ct);
-                foreach (var block in resp.Content)
-                    if (block.TryPickText(out var t)) sb.Append(t.Text);
-                if (resp.StopReason == "refusal" && sb.Length == 0) sb.Append("Claude отказался отвечать на этот запрос.");
-                onDelta?.Invoke(sb.ToString());
-            }
-            return sb.ToString();
         }
 
         public static async Task<List<string>> Models(string apiKey, string baseUrl)

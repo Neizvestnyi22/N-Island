@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -181,6 +181,8 @@ namespace NIsland.Core
         public Dictionary<string, string> AiModels { get; set; } = new();
         public Dictionary<string, string> AiUrls { get; set; } = new();
         public List<AiCustomProvider> AiCustom { get; set; } = new();
+        /// <summary>Свои интеграции (настройки полей — в Integrations, как у встроенных).</summary>
+        public List<NIsland.Services.CustomHubDef> CustomHubs { get; set; } = new();
         public int AiTemperature { get => _aiTemp; set => Set(ref _aiTemp, value); } int _aiTemp = -10;     // < 0 — по умолчанию модели
         public int AiMaxTokens { get => _aiMax; set => Set(ref _aiMax, value); } int _aiMax;                 // 0 — по умолчанию
         public int AiHistory { get => _aiHist; set => Set(ref _aiHist, value); } int _aiHist = 12;
@@ -188,6 +190,49 @@ namespace NIsland.Core
         public int AiTimeout { get => _aiTimeout; set => Set(ref _aiTimeout, value); } int _aiTimeout = 120;
         public string AiPersona { get => _aiPersona; set => Set(ref _aiPersona, value); } string _aiPersona = "default";
         public string AiEffort { get => _aiEffort; set => Set(ref _aiEffort, value); } string _aiEffort = "default";
+        /// <summary>Запасной провайдер: если основной не ответил. «auto» — бесплатные, «» — нет.</summary>
+        public string AiFallback { get => _aiFb; set => Set(ref _aiFb, value); } string _aiFb = "auto";
+        /// <summary>Сам подобрать модель, если выбранной больше нет у провайдера.</summary>
+        public bool AiAutoModel { get => _aiAuto; set => Set(ref _aiAuto, value); } bool _aiAuto = true;
+        /// <summary>Сохранять диалог между запусками и делить его с Telegram-ботом.</summary>
+        public bool AiKeepChat { get => _aiKeep; set => Set(ref _aiKeep, value); } bool _aiKeep = true;
+        public bool AiShareTelegram { get => _aiShareTg; set => Set(ref _aiShareTg, value); } bool _aiShareTg = true;
+        /// <summary>Показывать рассуждения модели (если она их присылает).</summary>
+        public bool AiShowReasoning { get => _aiReason; set => Set(ref _aiReason, value); } bool _aiReason;
+        // 1.8: живой остров
+        /// <summary>Персонаж в чёлке: none | blob | cat | ghost | robot | bunny</summary>
+        public string Mascot { get => _mascot; set => Set(ref _mascot, value); } string _mascot = "blob";
+        /// <summary>Цвет персонажа: art | accent | #RRGGBB</summary>
+        public string MascotColor { get => _mascotColor; set => Set(ref _mascotColor, value); } string _mascotColor = "art";
+        public bool MascotMoods { get => _mascotMoods; set => Set(ref _mascotMoods, value); } bool _mascotMoods = true;
+        /// <summary>Жидкое стекло: чёткий яркий фон и преломление по краям.</summary>
+        public bool LiquidGlass { get => _liquid; set => Set(ref _liquid, value); } bool _liquid = true;
+        public int LiquidRefract { get => _liqRef; set => Set(ref _liqRef, value); } int _liqRef = 60;
+        public int GlassVibrancy { get => _glassVib; set => Set(ref _glassVib, value); } int _glassVib = 140;
+        public bool IslandGlint { get => _glint; set => Set(ref _glint, value); } bool _glint = true;
+        public bool BeatRim { get => _beatRim; set => Set(ref _beatRim, value); } bool _beatRim = true;
+        public bool IslandShimmer { get => _shimmer; set => Set(ref _shimmer, value); } bool _shimmer = true;
+        public string WolMac { get => _wolMac; set => Set(ref _wolMac, value); } string _wolMac = "";
+        /// <summary>Папки проектов для ИИ-агентов (последние), через «|».</summary>
+        public string AgentFolders { get => _agFolders; set => Set(ref _agFolders, value); } string _agFolders = "";
+        public bool AgentSound { get => _agSound; set => Set(ref _agSound, value); } bool _agSound = true;
+        /// <summary>Турбо-режим: что вернуть при выключении («схема|режим|не засыпать»), пусто — выключен.</summary>
+        public string TurboPrev { get => _turbo; set => Set(ref _turbo, value); } string _turbo = "";
+        public string AgentDefault { get => _agDef; set => Set(ref _agDef, value); } string _agDef = "claude";
+        // MCP-сервер для ИИ-агентов
+        public bool McpOn { get => _mcpOn; set => Set(ref _mcpOn, value); } bool _mcpOn;
+        public int McpPort { get => _mcpPort; set => Set(ref _mcpPort, value); } int _mcpPort = 7385;
+        public string McpToken { get => _mcpToken; set => Set(ref _mcpToken, value); } string _mcpToken = "";
+        /// <summary>0 — только чтение, 1 — управление, 2 — ещё и настройка острова.</summary>
+        public int McpLevel { get => _mcpLevel; set => Set(ref _mcpLevel, value); } int _mcpLevel = 1;
+        // Защитник N-Island
+        public bool AvRealtime { get => _avRt; set => Set(ref _avRt, value); } bool _avRt = true;
+        public bool AvWatchStartup { get => _avStart; set => Set(ref _avStart, value); } bool _avStart = true;
+        /// <summary>SHA-256 файлов, которым пользователь доверяет (через запятую).</summary>
+        public string AvAllow { get => _avAllow; set => Set(ref _avAllow, value); } string _avAllow = "";
+        public string AvLastScan { get => _avLast; set => Set(ref _avLast, value); } string _avLast = "";
+        public int AvLastCount { get => _avLastN; set => Set(ref _avLastN, value); } int _avLastN;
+        public int AiFontSize { get => _aiFont; set => Set(ref _aiFont, value); } int _aiFont = 12;
         public string AiActions { get => _aiActions; set => Set(ref _aiActions, value); } string _aiActions =
             "Кратко | Перескажи кратко, по пунктам:\n{clip}\n" +
             "Исправь | Исправь ошибки и улучши текст. Верни только исправленный текст:\n{clip}\n" +
@@ -242,6 +287,23 @@ namespace NIsland.Core
         public bool LyricsCache { get => _lyrCache; set => Set(ref _lyrCache, value); } bool _lyrCache = true;
         public bool LyricsFocus { get => _lyrFocus; set => Set(ref _lyrFocus, value); } bool _lyrFocus;
         public bool LyricsFallback { get => _lyrFb; set => Set(ref _lyrFb, value); } bool _lyrFb = true;
+        // 1.8: стили текста, транслитерация, текст на рабочем столе
+        /// <summary>apple | classic | neon | minimal | bounce</summary>
+        public string LyricsStyle { get => _lyrStyle; set => Set(ref _lyrStyle, value); } string _lyrStyle = "apple";
+        /// <summary>Цвет текущей строки: white | accent | art</summary>
+        public string LyricsColor { get => _lyrColor; set => Set(ref _lyrColor, value); } string _lyrColor = "white";
+        public string LyricsAlign { get => _lyrAlign2; set => Set(ref _lyrAlign2, value); } string _lyrAlign2 = "left";
+        /// <summary>default | serif | mono | rounded | light</summary>
+        public string LyricsFont { get => _lyrFont; set => Set(ref _lyrFont, value); } string _lyrFont = "default";
+        /// <summary>Под строкой — латиницей (кириллица, греческий, корейский).</summary>
+        public bool LyricsRoman { get => _lyrRoman; set => Set(ref _lyrRoman, value); } bool _lyrRoman;
+        public bool DesktopLyrics { get => _deskLyr; set => Set(ref _deskLyr, value); } bool _deskLyr;
+        public int DeskLyricsSize { get => _deskSize; set => Set(ref _deskSize, value); } int _deskSize = 30;
+        public bool DeskLyricsLock { get => _deskLock; set => Set(ref _deskLock, value); } bool _deskLock = true;
+        public bool DeskLyricsNext { get => _deskNext; set => Set(ref _deskNext, value); } bool _deskNext = true;
+        public int DeskLyricsOpacity { get => _deskOp; set => Set(ref _deskOp, value); } int _deskOp = 100;
+        public string DeskLyricsPos { get => _deskPos; set => Set(ref _deskPos, value); } string _deskPos = "";
+        public bool DeskLyricsHideFull { get => _deskHideFull; set => Set(ref _deskHideFull, value); } bool _deskHideFull = true;
         public bool NotchProgress { get => _notchProg; set => Set(ref _notchProg, value); } bool _notchProg = true;
         public int HistoryKeep { get => _histKeep; set => Set(ref _histKeep, value); } int _histKeep = 60;
         public bool PgSound { get => _pgSound; set => Set(ref _pgSound, value); } bool _pgSound = true;
@@ -334,6 +396,26 @@ namespace NIsland.Core
         public bool VizTrack { get => _vizTrack; set => Set(ref _vizTrack, value); } bool _vizTrack = true;
         public int VizQuality { get => _vizQ; set => Set(ref _vizQ, value); } int _vizQ = 2;
         public string VizBounds { get => _vizBounds; set => Set(ref _vizBounds, value); } string _vizBounds = "";
+        // 1.8: тонкая настройка визуализаторов (общая для плеера и окна)
+        public int VizSens { get => _vizSens; set => Set(ref _vizSens, value); } int _vizSens = 100;          // чувствительность, %
+        public int VizSmooth { get => _vizSmooth; set => Set(ref _vizSmooth, value); } int _vizSmooth = 25;   // плавность, 0–90
+        public int VizTrail { get => _vizTrail; set => Set(ref _vizTrail, value); } int _vizTrail = 50;       // след, 50 — как задумано стилем
+        public int VizSpeed { get => _vizSpeed; set => Set(ref _vizSpeed, value); } int _vizSpeed = 100;      // скорость движения, %
+        public int VizDensity { get => _vizDens; set => Set(ref _vizDens, value); } int _vizDens = 100;       // количество полос/частиц, %
+        public int VizGlow { get => _vizGlow; set => Set(ref _vizGlow, value); } int _vizGlow = 30;           // свечение, 0–100
+        public int VizBeatFx { get => _vizBeat; set => Set(ref _vizBeat, value); } int _vizBeat = 100;       // реакция на удары, 0–200
+        public int VizHue { get => _vizHue; set => Set(ref _vizHue, value); } int _vizHue;                   // перелив цветов, 0–100
+        public int VizSat { get => _vizSat; set => Set(ref _vizSat, value); } int _vizSat = 100;             // насыщенность, 0–150
+        public int VizBright { get => _vizBr; set => Set(ref _vizBr, value); } int _vizBr = 100;             // яркость, 50–150
+        public bool VizMirror { get => _vizMirror; set => Set(ref _vizMirror, value); } bool _vizMirror;
+        public string VizBg { get => _vizBg; set => Set(ref _vizBg, value); } string _vizBg = "none";        // none | dark | art | vignette
+        public string VizColorA { get => _vizCa; set => Set(ref _vizCa, value); } string _vizCa = "#FF2D95";
+        public string VizColorB { get => _vizCb; set => Set(ref _vizCb, value); } string _vizCb = "#00E5FF";
+        public int VizFps { get => _vizFps; set => Set(ref _vizFps, value); } int _vizFps = 45;
+        public int VizAutoSec { get => _vizAutoSec; set => Set(ref _vizAutoSec, value); } int _vizAutoSec = 30;
+        /// <summary>Избранные стили (через запятую): автосмена и стрелки в окне ходят только по ним.</summary>
+        public string VizFavorites { get => _vizFav; set => Set(ref _vizFav, value); } string _vizFav = "";
+        public bool VizBeatFlash { get => _vizFlash; set => Set(ref _vizFlash, value); } bool _vizFlash;
         /// <summary>Полоски в свёрнутой чёлке слушают настоящий звук.</summary>
         public bool LiveBars { get => _liveBars; set => Set(ref _liveBars, value); } bool _liveBars = true;
         public bool PgEq { get => _pgEq; set => Set(ref _pgEq, value); } bool _pgEq = true;
@@ -362,6 +444,10 @@ namespace NIsland.Core
         // 1.7: погода
         public bool WeatherRainAlert { get => _wRain; set => Set(ref _wRain, value); } bool _wRain = true;
         public bool WeatherMorning { get => _wMorn; set => Set(ref _wMorn, value); } bool _wMorn;
+        /// <summary>Предупреждать об опасной погоде: гроза, шторм, заморозок, жара, УФ.</summary>
+        public bool WeatherAlerts { get => _wAlerts; set => Set(ref _wAlerts, value); } bool _wAlerts = true;
+        /// <summary>Другие города через запятую — коротко на странице погоды, клик — сделать основным.</summary>
+        public string WeatherCities { get => _wCities; set => Set(ref _wCities, value); } string _wCities = "";
         public string WeatherMorningDay { get => _wMornDay; set => Set(ref _wMornDay, value); } string _wMornDay = "";
 
         // 1.7: интеграция с Windows
@@ -480,12 +566,32 @@ namespace NIsland.Core
         public Dictionary<string, string> EqProfiles { get; set; } = new();
         /// <summary>Выученный сдвиг текста для приложения (Chrome, Spotify…), секунды.</summary>
         public Dictionary<string, double> AppLyricOffsets { get; set; } = new();
+        /// <summary>Списки моделей ИИ-провайдеров (обновляются сами раз в несколько дней).</summary>
+        public Dictionary<string, List<string>> AiModelCache { get; set; } = new();
+        public Dictionary<string, DateTime> AiModelCacheAt { get; set; } = new();
+        /// <summary>Карта сигнала Wi-Fi: комната → RSSI.</summary>
+        public Dictionary<string, int> SignalMap { get; set; } = new();
+        public List<NIsland.Services.AgentEvent> AgentEvents { get; set; } = new();
+        /// <summary>Общий диалог с ИИ: чат острова и Telegram-бот.</summary>
+        public List<NIsland.Services.AiMessage> AiChat { get; set; } = new();
     }
 
     public static class Store
     {
-        public static readonly string Dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NIsland");
+        /// <summary>Папка данных. NISLAND_DATA — своя папка (для проверки сборки, не трогая настоящие настройки).</summary>
+        /// <summary>Имя системного объекта (мьютекс, событие) для этой папки данных: тестовая копия с NISLAND_DATA
+        /// не должна перехватывать сигналы основной. Хэш стабильный — string.GetHashCode в .NET случайный в каждом процессе.</summary>
+        public static string Inst(string name)
+        {
+            var d = Environment.GetEnvironmentVariable("NISLAND_DATA");
+            if (string.IsNullOrEmpty(d)) return name;
+            uint h = 2166136261;
+            foreach (char c in d.ToLowerInvariant()) h = (h ^ c) * 16777619;
+            return name + "." + h.ToString("x8");
+        }
+
+        public static readonly string Dir = Environment.GetEnvironmentVariable("NISLAND_DATA") is { Length: > 0 } custom ? custom
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NIsland");
 
         public static Settings Settings { get; private set; }
         public static AppData Data { get; private set; }

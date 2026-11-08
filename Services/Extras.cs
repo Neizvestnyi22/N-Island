@@ -236,6 +236,11 @@ namespace NIsland.Services
         public List<(DateTime T, double Mm)> Minutes = new();   // осадки по 15 минут на 2 часа вперёд
         public int? Aqi;
         public double? Pm25;
+        // 1.8: ещё подробности
+        public double DewPoint, Visibility = -1, Cloud;
+        public List<double> DayGust = new(), DayPrecip = new();
+        /// <summary>Пыльца, зёрен/м³ (только Европа): берёза, злаки, амброзия, ольха, полынь.</summary>
+        public Dictionary<string, double> Pollen = new();
     }
 
     public static class WeatherService
@@ -280,21 +285,55 @@ namespace NIsland.Services
             langs.AddRange(new[] { I18n.Current, "ru", "uk", "en" });
             string region = "";
             try { region = new RegionInfo(CultureInfo.CurrentCulture.Name).TwoLetterISORegionName; } catch { }
+            // результаты со всех языков вместе: на одном языке «Mykolaiv» находит только сёла «Николаевка», на другом — сам город
+            var all = new List<(double Lat, double Lon, string Name, long Pop, bool Home, int Lang)>();
+            int li = 0;
             foreach (var lang in langs.Distinct())
             {
-                using var g = JsonDocument.Parse(await Http.GetStringAsync(
-                    $"https://geocoding-api.open-meteo.com/v1/search?count=10&language={lang}&name=" + Uri.EscapeDataString(city)));
-                if (!g.RootElement.TryGetProperty("results", out var res) || res.GetArrayLength() == 0) continue;
-                var best = res.EnumerateArray()
-                    .Select(r => (r, pop: r.TryGetProperty("population", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt64() : 0,
-                                  home: r.TryGetProperty("country_code", out var cc) && string.Equals(cc.GetString(), region, StringComparison.OrdinalIgnoreCase)))
-                    .OrderByDescending(x => x.home && x.pop > 0).ThenByDescending(x => x.pop).First().r;
-                var found = (best.GetProperty("latitude").GetDouble(), best.GetProperty("longitude").GetDouble(),
-                             best.TryGetProperty("name", out var n) ? n.GetString() : city);
-                GeoCache[city] = found;
-                return found;
+                li++;
+                try
+                {
+                    using var g = JsonDocument.Parse(await Http.GetStringAsync(
+                        $"https://geocoding-api.open-meteo.com/v1/search?count=10&language={lang}&name=" + Uri.EscapeDataString(city)));
+                    if (!g.RootElement.TryGetProperty("results", out var res)) continue;
+                    foreach (var r in res.EnumerateArray())
+                        all.Add((r.GetProperty("latitude").GetDouble(), r.GetProperty("longitude").GetDouble(), r.TryGetProperty("name", out var n) ? n.GetString() : city,
+                                 r.TryGetProperty("population", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt64() : 0,
+                                 r.TryGetProperty("country_code", out var cc) && string.Equals(cc.GetString(), region, StringComparison.OrdinalIgnoreCase), li));
+                }
+                catch (HttpRequestException) { }
+                // крупный город уже нашёлся на первом языке — остальные не спрашиваем
+                if (all.Any(a => a.Pop >= 100_000)) break;
             }
-            return null;
+            // нашлись только сёла — пробуем другие латинские написания (Mykolaiv → Mykolayiv, Kyiv → Kiev и т. п.)
+            if (!all.Any(a => a.Pop >= 50_000) && city.All(c => c < 128))
+            {
+                var low = city.ToLowerInvariant();
+                var variants = new[] { low.Replace("ai", "ayi"), low.Replace("ayi", "ai"), low.Replace("iv", "yiv"), low.Replace("yi", "i"), low.Replace("kh", "h"), low.Replace("h", "kh"),
+                                       low.Replace("ia", "iya"), low.Replace("ie", "iye"), low.Replace("y", "i"), low.Replace("i", "y") }
+                    .Where(v => v != low).Distinct().Take(6);
+                foreach (var v in variants)
+                {
+                    try
+                    {
+                        using var g = JsonDocument.Parse(await Http.GetStringAsync("https://geocoding-api.open-meteo.com/v1/search?count=10&language=" + I18n.Current + "&name=" + Uri.EscapeDataString(v)));
+                        if (!g.RootElement.TryGetProperty("results", out var res)) continue;
+                        foreach (var r in res.EnumerateArray())
+                            all.Add((r.GetProperty("latitude").GetDouble(), r.GetProperty("longitude").GetDouble(), r.TryGetProperty("name", out var n) ? n.GetString() : city,
+                                     r.TryGetProperty("population", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt64() : 0,
+                                     r.TryGetProperty("country_code", out var cc) && string.Equals(cc.GetString(), region, StringComparison.OrdinalIgnoreCase), 9));
+                    }
+                    catch (HttpRequestException) { }
+                    if (all.Any(a => a.Pop >= 50_000)) break;
+                }
+            }
+            if (all.Count == 0) return null;
+            var best = all.OrderByDescending(x => x.Home && x.Pop > 0).ThenByDescending(x => x.Pop).ThenBy(x => x.Lang).First();
+            // имя — на языке интерфейса, если город нашёлся и на нём
+            var sameName = all.Where(a => Math.Abs(a.Lat - best.Lat) < 0.05 && Math.Abs(a.Lon - best.Lon) < 0.05).OrderBy(a => a.Lang).First().Name;
+            var found = (best.Lat, best.Lon, sameName);
+            GeoCache[city] = found;
+            return found;
         }
 
         public static Task<WeatherNow> Get(bool force = false)
@@ -315,9 +354,9 @@ namespace NIsland.Services
                 var (lat, lon, name) = geo.Value;
                 var url = string.Format(CultureInfo.InvariantCulture,
                     "https://api.open-meteo.com/v1/forecast?latitude={0}&longitude={1}" +
-                    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code,surface_pressure,precipitation,is_day" +
+                    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code,surface_pressure,precipitation,is_day,dew_point_2m,visibility,cloud_cover" +
                     "&hourly=temperature_2m,precipitation_probability,weather_code&forecast_hours=25" +
-                    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max" +
+                    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max,wind_gusts_10m_max,precipitation_sum" +
                     "&minutely_15=precipitation&forecast_minutely_15=9&timezone=auto&forecast_days=7&wind_speed_unit=ms",
                     lat, lon);
                 var aqTask = AirQuality(lat, lon);
@@ -345,7 +384,12 @@ namespace NIsland.Services
                         daily.GetProperty("weather_code")[i].GetInt32()));
                     w.DayRain.Add(Int(daily, "precipitation_probability_max", i));
                     w.DayUv.Add(Num(daily, "uv_index_max", i));
+                    w.DayGust.Add(Num(daily, "wind_gusts_10m_max", i));
+                    w.DayPrecip.Add(Num(daily, "precipitation_sum", i));
                 }
+                w.DewPoint = Num(cur, "dew_point_2m");
+                w.Visibility = cur.TryGetProperty("visibility", out var vis) && vis.ValueKind == JsonValueKind.Number ? vis.GetDouble() / 1000 : -1;
+                w.Cloud = Num(cur, "cloud_cover");
                 w.Gusts = Num(cur, "wind_gusts_10m");
                 w.Pressure = Num(cur, "surface_pressure") * 0.750062;   // гПа → мм рт. ст.
                 w.Precip = Num(cur, "precipitation");
@@ -364,7 +408,7 @@ namespace NIsland.Services
                     for (int i = 0; i < mt.GetArrayLength(); i++)
                         w.Minutes.Add((DateTime.Parse(mt[i].GetString(), CultureInfo.InvariantCulture), Num(mins, "precipitation", i)));
                 }
-                (w.Aqi, w.Pm25) = await aqTask;
+                (w.Aqi, w.Pm25, w.Pollen) = await aqTask;
                 _cache = w;
                 _cacheKey = key;
                 LastError = null;
@@ -388,17 +432,79 @@ namespace NIsland.Services
 
         static int Int(JsonElement o, string k, int i) => (int)Math.Round(Num(o, k, i));
 
-        static async Task<(int?, double?)> AirQuality(double lat, double lon)
+        static readonly (string Key, string Name)[] PollenKinds =
         {
+            ("birch_pollen", "берёза"), ("grass_pollen", "злаки"), ("ragweed_pollen", "амброзия"), ("alder_pollen", "ольха"), ("mugwort_pollen", "полынь"), ("olive_pollen", "олива"),
+        };
+
+        static async Task<(int?, double?, Dictionary<string, double>)> AirQuality(double lat, double lon)
+        {
+            var pollen = new Dictionary<string, double>();
             try
             {
                 using var d = JsonDocument.Parse(await Http.GetStringAsync(string.Format(CultureInfo.InvariantCulture,
-                    "https://air-quality-api.open-meteo.com/v1/air-quality?latitude={0}&longitude={1}&current=european_aqi,pm2_5", lat, lon)));
+                    "https://air-quality-api.open-meteo.com/v1/air-quality?latitude={0}&longitude={1}&current=european_aqi,pm2_5," + string.Join(",", PollenKinds.Select(p => p.Key)), lat, lon)));
                 var c = d.RootElement.GetProperty("current");
+                foreach (var (key, name) in PollenKinds)
+                    if (c.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number && v.GetDouble() > 0) pollen[name] = v.GetDouble();
                 return (c.TryGetProperty("european_aqi", out var a) && a.ValueKind == JsonValueKind.Number ? (int)a.GetDouble() : null,
-                        c.TryGetProperty("pm2_5", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDouble() : null);
+                        c.TryGetProperty("pm2_5", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDouble() : null, pollen);
             }
-            catch { return (null, null); }
+            catch { return (null, null, pollen); }
+        }
+
+        /// <summary>Пыльца словами: самая активная и уровень (null — нет или вне сезона).</summary>
+        public static (string Text, string Color)? PollenText(WeatherNow w)
+        {
+            if (w?.Pollen == null || w.Pollen.Count == 0) return null;
+            var top = w.Pollen.OrderByDescending(p => p.Value).First();
+            if (top.Value < 10) return null;
+            var (lvl, col) = top.Value < 50 ? ("низкий", "#A4D65E") : top.Value < 200 ? ("средний", "#FFD60A") : top.Value < 500 ? ("высокий", "#FF9F0A") : ("очень высокий", "#FF453A");
+            return ($"пыльца: {top.Key} — {lvl}", col);
+        }
+
+        /// <summary>Фаза Луны: значок, название и освещённость (по средней длине лунного месяца — точность ±1 день).</summary>
+        public static (string Icon, string Name, int Lit) Moon(DateTime when)
+        {
+            double days = (when.ToUniversalTime() - new DateTime(2000, 1, 6, 18, 14, 0, DateTimeKind.Utc)).TotalDays;
+            double age = ((days % 29.530588853) + 29.530588853) % 29.530588853, f = age / 29.530588853;
+            int lit = (int)Math.Round((1 - Math.Cos(2 * Math.PI * f)) / 2 * 100);
+            var (icon, name) = f switch
+            {
+                < 0.03 or >= 0.97 => ("🌑", "новолуние"), < 0.22 => ("🌒", "растущий серп"), < 0.28 => ("🌓", "первая четверть"), < 0.47 => ("🌔", "растущая луна"),
+                < 0.53 => ("🌕", "полнолуние"), < 0.72 => ("🌖", "убывающая луна"), < 0.78 => ("🌗", "последняя четверть"), _ => ("🌘", "убывающий серп"),
+            };
+            return (icon, name, lit);
+        }
+
+        /// <summary>«Завтра теплее на 4°» — если разница заметная.</summary>
+        public static string Tomorrow(WeatherNow w)
+        {
+            if (w == null || w.Days.Count < 2) return null;
+            double d = w.Days[1].Max - w.Days[0].Max;
+            string rain = w.DayRain.Count > 1 && w.DayRain[1] >= 60 && (w.DayRain.Count == 0 || w.DayRain[0] < 40) ? ", с осадками" : "";
+            if (Math.Abs(d) < 3) return rain != "" ? "Завтра осадки" : null;
+            return (d > 0 ? $"Завтра теплее на {Math.Round(d)}°" : $"Завтра холоднее на {Math.Round(-d)}°") + rain;
+        }
+
+        // другие города — свой маленький кэш, основной город не трогаем
+        static readonly Dictionary<string, (DateTime At, double Temp, int Code, string Name)> Others = new(StringComparer.OrdinalIgnoreCase);
+
+        public static async Task<(double Temp, int Code, string Name)?> Brief(string city)
+        {
+            if (Others.TryGetValue(city, out var c) && (DateTime.Now - c.At).TotalMinutes < 30) return (c.Temp, c.Code, c.Name);
+            try
+            {
+                var geo = await Geocode(city);
+                if (geo == null) return null;
+                using var d = JsonDocument.Parse(await Http.GetStringAsync(string.Format(CultureInfo.InvariantCulture,
+                    "https://api.open-meteo.com/v1/forecast?latitude={0}&longitude={1}&current=temperature_2m,weather_code&timezone=auto", geo.Value.Lat, geo.Value.Lon)));
+                var cur = d.RootElement.GetProperty("current");
+                var r = (DateTime.Now, Num(cur, "temperature_2m"), (int)Num(cur, "weather_code"), geo.Value.Name);
+                Others[city] = r;
+                return (r.Item2, r.Item3, r.Item4);
+            }
+            catch { return null; }
         }
 
         /// <summary>Качество воздуха по европейскому индексу: словами и цветом.</summary>
@@ -448,7 +554,25 @@ namespace NIsland.Services
             if (uv >= 6) list.Add($"🧴 UV {uv:0} — нужен крем от солнца и очки");
             if (w.Aqi is int a && a > 60) list.Add($"😷 Воздух {AqiText(a).Text} — меньше гуляй, проветривай реже");
             if (Math.Abs(w.Pressure - 760) >= 12 && w.Pressure > 0) list.Add($"🌡 Давление {(w.Pressure > 760 ? "повышенное" : "пониженное")}: {Math.Round(w.Pressure)} мм рт. ст.");
+            if (w.Days.Count > 0 && w.Days[0].Min <= 0 && w.Temp > 0) list.Add($"🧊 Ночью заморозок до {Math.Round(w.Days[0].Min)}° — гололёд утром");
+            if (w.Visibility >= 0 && w.Visibility < 1) list.Add($"🌫 Туман: видимость {w.Visibility * 1000:0} м — осторожно на дороге");
+            if (PollenText(w) is { } pl && pl.Color is "#FF9F0A" or "#FF453A") list.Add("🤧 Высокая " + pl.Text.Replace("пыльца: ", "пыльца ") + " — аллергикам лучше реже выходить");
+            if (Tomorrow(w) is { } tm) list.Add("📅 " + tm);
             return list;
+        }
+
+        /// <summary>Опасная погода в ближайшие часы: гроза, сильный ветер, заморозок, жара, высокий УФ (null — ничего).</summary>
+        public static (string Key, string Title, string Sub)? Danger(WeatherNow w)
+        {
+            if (w == null) return null;
+            var now = DateTime.Now;
+            var soon = w.Hours.Where(h => h.T > now && h.T < now.AddHours(3)).ToList();
+            if (soon.Any(h => h.Code >= 95)) return ("storm", "⛈ Скоро гроза", "В ближайшие 3 часа — гроза. Убери вещи с балкона, выключи из розетки чувствительную технику");
+            if (w.DayGust.Count > 0 && w.DayGust[0] >= 17 && now.Hour < 20) return ("wind", $"💨 Сегодня штормовой ветер до {Math.Round(w.DayGust[0])} м/с", "Держись подальше от деревьев и рекламных щитов");
+            if (now.Hour is >= 17 and < 22 && w.Days.Count > 1 && w.Days[1].Min <= -1 && w.Temp > 0) return ("frost", $"🧊 Ночью заморозок до {Math.Round(w.Days[1].Min)}°", "Утром гололёд — осторожно на дороге и тротуаре");
+            if (now.Hour is >= 8 and < 13 && w.Days.Count > 0 && w.Days[0].Max >= 33) return ("heat", $"🥵 Жара до {Math.Round(w.Days[0].Max)}°", "Пей больше воды, в 12–16 лучше в тени");
+            if (now.Hour is >= 9 and < 12 && w.DayUv.Count > 0 && w.DayUv[0] >= 8) return ("uv", $"☀ Очень высокий УФ: {w.DayUv[0]:0}", "Крем SPF 30+, очки и головной убор");
+            return null;
         }
 
         // ------------------------------------------------------------------
@@ -465,11 +589,21 @@ namespace NIsland.Services
             _watch.Tick += async (_, __) =>
             {
                 var s = Store.Settings;
-                if (!s.WeatherRainAlert && !s.WeatherMorning) return;
+                if (!s.WeatherRainAlert && !s.WeatherMorning && !s.WeatherAlerts) return;
                 tick++;
                 if (_cache == null || (DateTime.Now - _cache.At).TotalMinutes >= 15) { if (tick % 5 != 1 && _cache != null) return; await Get(true); }
                 var w = _cache;
                 if (w == null) return;
+                if (s.WeatherAlerts && Danger(w) is { } dg)
+                {
+                    var key = DateTime.Today.ToString("yyyyMMdd") + dg.Key;
+                    if (!_dangerSaid.Contains(key))
+                    {
+                        _dangerSaid.Add(key);
+                        App.Island?.ShowActivity(new Activity { Kind = "alert", Glyph = dg.Title[..2].Trim(), GlyphFont = "Segoe UI Emoji", Title = dg.Title[2..].Trim(), Sub = dg.Sub, Seconds = 10, Wide = true, Page = "weather" });
+                        Integrations.Publish("alert", dg.Title, w.City + " · " + dg.Sub);
+                    }
+                }
                 if (s.WeatherRainAlert && Nowcast(w) is { } nc && nc.Contains("начнётся"))
                 {
                     var key = DateTime.Today.ToString("yyyyMMdd") + nc[..Math.Min(nc.Length, 12)];
@@ -497,6 +631,7 @@ namespace NIsland.Services
         }
 
         static DateTime _rainAt;
+        static readonly HashSet<string> _dangerSaid = new();
 
         /// <summary>Значок (Segoe UI Emoji) и описание по коду WMO.</summary>
         public static (string Icon, string Text) Describe(int code) => code switch

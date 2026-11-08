@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -299,6 +299,7 @@ namespace NIsland
             ApplyDelays();
             ApplyPreset();
             Bars.Live = S.LiveBars;
+            InitLive();
         }
 
         // ================== сервисы ==================
@@ -727,6 +728,7 @@ namespace NIsland
             // наружу (Telegram, ntfy, Discord, вебхук) — даже в «Не беспокоить»: туда это и нужно
             if (a.Kind != "alert") Integrations.Publish(Integrations.KindOf(a.Kind), a.Title, a.Sub);
             if (!Allowed(a)) return;
+            OnLiveActivity(a);
             if (_hiddenFs && a.Action == null && a.Kind != "pick") return;
             if (_mode == Mode.Activity && _act != null && _act.Kind != a.Kind && Prio(a.Kind) < Prio(_act.Kind) && DateTime.Now < _actEnds)
             {
@@ -961,6 +963,7 @@ namespace NIsland
             else if (m.HasSession && m.IsPlaying && S.Mode != "minimal") w += 36;
             if (ColBadge.Visibility == Visibility.Visible && S.Mode != "minimal") w += NotificationLog.Unread > 0 ? 30 : 18;
             if (_hover && _mode == Mode.Collapsed) w += 14;
+            if (MascotOn) w += 28;
             return w;
         }
 
@@ -986,6 +989,7 @@ namespace NIsland
                     break;
             }
             bool glass = GlassNow;
+            SyncLive();
             _tbgA = glass ? GlassAlpha : Math.Clamp(S.BgOpacity / 100.0, 0.1, 1);
             if (glass) EnsureGlass(false);
             ExpandedView.IsHitTestVisible = _mode == Mode.Expanded;
@@ -1140,6 +1144,7 @@ namespace NIsland
             ((TranslateTransform)Bubble.RenderTransform).X = w / 2 + BubGap + BubW / 2;
             Bubble.IsHitTestVisible = _opB > 0.5;
             UpdateRegion(w, h, r);
+            ApplyLens(w, h);
         }
 
         void AfterSettle()
@@ -1222,7 +1227,9 @@ namespace NIsland
                 double w = Math.Min(Width, Math.Max(_tw, 440) + 2 * (BubW + BubGap + 24)), h = ExpandedH + 64;
                 double x = (Width - w) / 2;
                 var p = PointToScreen(new Point(x, 0));
-                GlassImg.Source = Native.CaptureBehind(_hwnd, (int)p.X, (int)p.Y, Px(w), Px(h), 6);
+                // жидкое стекло — снимок чётче (меньше уменьшение) и ярче, края преломляет линза
+                var shot = Native.CaptureBehind(_hwnd, (int)p.X, (int)p.Y, Px(w), Px(h), S.LiquidGlass ? 3 : 6);
+                GlassImg.Source = S.LiquidGlass ? Vibrant(shot, Math.Clamp(S.GlassVibrancy, 50, 220) / 100.0, 6) : shot;
                 GlassImg.Margin = new Thickness(x, 0, 0, 0);
                 GlassImg.Width = w;
                 GlassImg.Height = h;
@@ -1295,7 +1302,7 @@ namespace NIsland
             ColArtBrush.ImageSource = art ? m.Art : null;
             ColNote.Visibility = !call && lyric ? Visibility.Visible : Visibility.Collapsed;
 
-            bool bars = !call && playing && S.Visualizer && !S.LiteMode && !AlertsHub.ShowInNotch;   // тревога важнее полосок
+            bool bars = !call && playing && S.Visualizer && !S.LiteMode;
             Bars.IsPlaying = playing;
             Bars.Visibility = bars ? Visibility.Visible : Visibility.Collapsed;
             ColRight.Visibility = bars ? Visibility.Collapsed : Visibility.Visible;
@@ -1351,7 +1358,6 @@ namespace NIsland
             if (S.Mode == "minimal" && !c.InCall && !t.Running) text = "";
             if (S.VpnInNotch && Vpn.Active && S.Mode != "minimal") text = "🔒 " + text;
             // идёт воздушная тревога в «моём месте» — красный значок, пока не будет отбоя
-            if (AlertsHub.ShowInNotch) { text = "⚠ Тривога"; color = Color.FromRgb(0xFF, 0x45, 0x3A); }
             ColRight.Text = text;
             if (color is Color col) ColRight.Foreground = new SolidColorBrush(col);
             else ColRight.SetResourceReference(TextBlock.ForegroundProperty, "DimBrush");
@@ -1415,6 +1421,7 @@ namespace NIsland
         void OnClock()
         {
             var now = DateTime.Now;
+            if (now.Second % 2 == 0) UpdateMascot();
             var pomo = PomodoroService.I;
             ColTime.Text = S.Mode == "focus" && pomo.Active ? "🍅 " + Fmt.Time(pomo.Remaining) : ClockText(now);
             TimeText.Text = ClockText(now);
@@ -1658,6 +1665,24 @@ namespace NIsland
         {
             switch (e.PropertyName)
             {
+                case nameof(Settings.Mascot):
+                case nameof(Settings.MascotColor):
+                case nameof(Settings.MascotMoods):
+                    UpdateMascot();
+                    Retarget();
+                    break;
+                case nameof(Settings.LiquidGlass):
+                case nameof(Settings.GlassVibrancy):
+                    if (_blur) EnsureGlass(true);
+                    Apply();
+                    break;
+                case nameof(Settings.LiquidRefract):
+                    Apply();
+                    break;
+                case nameof(Settings.IslandGlint):
+                case nameof(Settings.BeatRim):
+                    SyncLive();
+                    break;
                 case nameof(Settings.PgMedia):
                 case nameof(Settings.PgCalendar):
                 case nameof(Settings.PgTodo):

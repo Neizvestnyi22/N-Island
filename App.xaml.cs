@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
@@ -27,13 +28,26 @@ namespace NIsland
                 Shutdown(Elevated.RunCleanJob(e.Args));
                 return;
             }
+            // MCP через stdio (для агентов, которые не умеют HTTP): мост к запущенному острову
+            if (e.Args.Length >= 1 && e.Args[0] == "--mcp")
+            {
+                Shutdown(McpServer.Bridge());
+                return;
+            }
+            // хук ИИ-агента (Claude Code, Codex): положить событие в очередь и сразу выйти — агент не должен ждать
+            if (e.Args.Length >= 2 && e.Args[0] == "--agent")
+            {
+                Agents.Enqueue(e.Args);
+                Shutdown();
+                return;
+            }
             // самопроверка без интерфейса (поиск текстов и т. п.) — не мешает запущенной копии
             if (e.Args.Length >= 3 && e.Args[0] == "--selftest")
             {
                 Shutdown(SelfTest.Run(e.Args));
                 return;
             }
-            _mutex = new Mutex(true, "NIsland.SingleInstance.v1", out bool created);
+            _mutex = new Mutex(true, Store.Inst("NIsland.SingleInstance.v1"), out bool created);
             // перезапуск (смена языка): старая копия ещё закрывается — ждём её до 8 секунд
             if (!created && Array.IndexOf(e.Args, "--restart") >= 0)
             {
@@ -44,11 +58,11 @@ namespace NIsland
                 // уже запущено — передаём ключи запуска той копии (или просим открыть настройки) и разрешаем ей выйти на передний план
                 AllowSetForegroundWindow(-1);
                 try { System.IO.File.WriteAllLines(SignalFile, e.Args); } catch { }
-                try { EventWaitHandle.OpenExisting("NIsland.ShowSettings.v1").Set(); } catch { }
+                try { EventWaitHandle.OpenExisting(Store.Inst("NIsland.ShowSettings.v1")).Set(); } catch { }
                 Shutdown();
                 return;
             }
-            var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "NIsland.ShowSettings.v1");
+            var showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Store.Inst("NIsland.ShowSettings.v1"));
             new Thread(() =>
             {
                 while (showSignal.WaitOne()) Current?.Dispatcher.BeginInvoke(new Action(OnSignal));
@@ -83,6 +97,35 @@ namespace NIsland
             Safe("eq", Equalizer.Start);
             Safe("windows", WinShell.Start);
             Safe("weather", WeatherService.Start);
+            Safe("desklyrics", DesktopLyricsWindow.Apply);
+            Safe("av", () =>
+            {
+                Antivirus.OnThreat = t => Current?.Dispatcher.BeginInvoke(new Action(() => OnThreat(t)));
+                Antivirus.OnNewAutorun = (name, cmd) => Current?.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    Island?.ShowActivity(new Activity { Kind = "alert", Glyph = "", Tint = Color.FromRgb(0xFF, 0x9F, 0x0A), Title = "Новая программа в автозагрузке: " + name, Sub = cmd, Seconds = 10, Wide = true, OnClick = () => ShowCenter("apps") });
+                    Integrations.Publish("alert", "Новая программа в автозагрузке: " + name, cmd);
+                }));
+                Antivirus.Start();
+            });
+            Safe("mcp", () =>
+            {
+                if (Array.IndexOf(e.Args, "--mcp-on") >= 0) Store.Settings.McpOn = true;
+                McpServer.Apply();
+            });
+            Safe("agents", () =>
+            {
+                Agents.EventArrived += ev => Current?.Dispatcher.BeginInvoke(new Action(() => OnAgentEvent(ev)));
+                Agents.Listen();
+            });
+            Safe("ai", () =>
+            {
+                if (!Store.Settings.AiKeepChat) Store.Data.AiChat?.Clear();
+                // списки моделей обновляются сами раз в несколько дней — через минуту после запуска, чтобы не мешать старту
+                var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+                t.Tick += (_, __) => { t.Stop(); Ai.RefreshModelsInBackground(); };
+                t.Start();
+            });
 
             Island = new IslandWindow();
             Island.Show();
@@ -138,12 +181,71 @@ namespace NIsland
 
         static string SignalFile => System.IO.Path.Combine(Store.Dir, "signal.txt");
 
+        /// <summary>Защита в реальном времени нашла опасный файл: всплывашка с кнопкой «В карантин» и сообщение на телефон.</summary>
+        static void OnThreat(Threat t)
+        {
+            var name = System.IO.Path.GetFileName(t.Path);
+            Sound.Play(SoundEvent.Alert);
+            Island?.ShowActivity(new Activity
+            {
+                Kind = "alert", Glyph = "", Tint = t.Score >= 70 ? Color.FromRgb(0xFF, 0x45, 0x3A) : Color.FromRgb(0xFF, 0x9F, 0x0A),
+                Title = (t.Score >= 70 ? "Опасный файл: " : "Подозрительный файл: ") + name, Sub = t.Reasons.FirstOrDefault() ?? "", Seconds = 20, Wide = true,
+                ActionText = "В карантин",
+                Action = () =>
+                {
+                    var e = Antivirus.Quarantine(t.Path, string.Join("; ", t.Reasons.Take(3)));
+                    Island?.Toast("", e == null ? "Файл в карантине" : "Не удалось", e ?? name);
+                },
+                OnClick = () => ShowCenter("av"),
+            });
+            Integrations.Publish("alert", (t.Score >= 70 ? "Опасный файл: " : "Подозрительный файл: ") + name, string.Join("; ", t.Reasons.Take(2)) + " · " + t.Path);
+        }
+
+        /// <summary>ИИ-агент ждёт подтверждения или закончил: всплывашка (клик — к окну агента), звук, телефон.</summary>
+        static void OnAgentEvent(AgentEvent ev)
+        {
+            var d = Store.Data;
+            d.AgentEvents ??= new();
+            d.AgentEvents.Insert(0, ev);
+            while (d.AgentEvents.Count > 40) d.AgentEvents.RemoveAt(d.AgentEvents.Count - 1);
+            Store.SaveData();
+            var project = string.IsNullOrEmpty(ev.Folder) ? "" : System.IO.Path.GetFileName(ev.Folder.TrimEnd('\\', '/'));
+            var (title, glyph, urgent) = ev.Kind switch
+            {
+                "permission" => ($"{ev.Agent} ждёт подтверждения", "", true),
+                "idle" => ($"{ev.Agent} ждёт ответа", "", false),
+                "done" => ($"{ev.Agent} закончил", "", false),
+                _ => (ev.Agent, "", false),
+            };
+            var sub = (project != "" ? project + " · " : "") + ev.Message;
+            if (urgent && Store.Settings.AgentSound) Sound.Play(SoundEvent.Alert);
+            else if (Store.Settings.AgentSound) Sound.Play(SoundEvent.Notification);
+            Island?.ShowActivity(new Activity
+            {
+                Kind = "agent", Glyph = glyph, Tint = urgent ? Color.FromRgb(0xFF, 0x9F, 0x0A) : Color.FromRgb(0xD9, 0x77, 0x57), Title = title, Sub = sub, Seconds = urgent ? 14 : 8, Wide = true,
+                OnClick = () => FocusAgentWindow(ev, project),
+            });
+            Integrations.Publish("agent", title, sub);
+        }
+
+        /// <summary>К окну терминала, где работает агент (по названию проекта или агента), иначе — раздел агентов.</summary>
+        static void FocusAgentWindow(AgentEvent ev, string project)
+        {
+            var wins = PcControl.ListWindows();
+            var w = wins.FirstOrDefault(x => project != "" && x.Title.Contains(project, StringComparison.OrdinalIgnoreCase) && x.Process is "WindowsTerminal" or "cmd" or "powershell" or "pwsh" or "Code" or "conhost")
+                    ?? wins.FirstOrDefault(x => x.Title.Contains(ev.Agent.Split(' ')[0], StringComparison.OrdinalIgnoreCase))
+                    ?? wins.FirstOrDefault(x => x.Process is "WindowsTerminal");
+            if (w != null) PcControl.Focus(w.Handle);
+            else ShowSettings("agents");
+        }
+
         /// <summary>Повторный запуск exe: выполняем его ключи (--center, --settings, --open, --ai), без ключей — открываем настройки.</summary>
         static void OnSignal()
         {
             string[] args = Array.Empty<string>();
             try { if (System.IO.File.Exists(SignalFile)) { args = System.IO.File.ReadAllLines(SignalFile); System.IO.File.Delete(SignalFile); } } catch { }
             string Arg(string key) { int i = Array.IndexOf(args, key); return i < 0 ? null : i + 1 < args.Length ? args[i + 1] : ""; }
+            if (Arg("--mcp-on") != null) { Store.Settings.McpOn = true; McpServer.Apply(); return; }
             if (Arg("--center") is string c) ShowCenter(c == "" ? null : c);
             else if (Arg("--open") is string page) Island?.Expand(page == "" ? null : page, true);
             else if (Arg("--ai") is string q && q != "") { NIsland.Pages.AiPage.PendingPrompt = q; Island?.Expand("ai", true); }
@@ -207,6 +309,8 @@ namespace NIsland
             menu.Items.Add(new WinForms.ToolStripSeparator());
             menu.Items.Add("Быстрый поиск (Ctrl+Alt+Space)", null, (_, __) => SpotlightWindow.Toggle());
             menu.Items.Add("Визуализатор музыки", null, (_, __) => VisualizerWindow.Open());
+            menu.Items.Add("Текст песни на рабочем столе", null, (_, __) => DesktopLyricsWindow.Toggle());
+            menu.Items.Add("Открепить текст на рабочем столе", null, (_, __) => { Store.Settings.DesktopLyrics = true; DesktopLyricsWindow.Apply(); DesktopLyricsWindow.SetLocked(false); });
             menu.Items.Add("Центр управления ноутбуком", null, (_, __) => ShowCenter());
             menu.Items.Add("Настройки", null, (_, __) => ShowSettings());
             menu.Items.Add(new WinForms.ToolStripSeparator());

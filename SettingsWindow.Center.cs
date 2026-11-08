@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -32,6 +32,8 @@ namespace NIsland
         List<Section> CenterSections() => new()
         {
             new("overview", "Обзор", "", "#0A84FF", Overview),
+            new("av", "Защитник N-Island", "", "#FF453A", AvSec),
+            new("health", "Здоровье ПК", "", "#30D158", HealthSec),
             new("clean", "Глубокая очистка", "", "#30D158", CleanSec),
             new("privacy", "Защита от слежки", "", "#5E5CE6", PrivacySec),
             new("optimize", "Оптимизация", "", "#FF9F0A", OptimizeSec),

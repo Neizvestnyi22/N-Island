@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -30,6 +30,36 @@ namespace NIsland.Pages
 
         public override double ExtraHeight => 30;
 
+        readonly WrapPanel _cities = new() { HorizontalAlignment = HorizontalAlignment.Left };
+
+        /// <summary>Другие города из настроек: коротко температура; клик — сделать город основным.</summary>
+        async void RenderCities()
+        {
+            var list = (S.WeatherCities ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(5).ToList();
+            _cities.Show(list.Count > 0);
+            if (list.Count == 0) { _cities.Children.Clear(); return; }
+            var res = await System.Threading.Tasks.Task.WhenAll(list.Select(async c => (City: c, Info: await WeatherService.Brief(c))));
+            _cities.Children.Clear();
+            foreach (var (city, info) in res)
+            {
+                if (info == null) continue;
+                var c = city;
+                var b = (Border)Chip($"{WeatherService.Describe(info.Value.Code).Icon} {info.Value.Name} {Math.Round(info.Value.Temp)}°", "Сделать основным городом");
+                b.Cursor = System.Windows.Input.Cursors.Hand;
+                b.MouseLeftButtonUp += async (_, e) =>
+                {
+                    e.Handled = true;
+                    // меняем местами: выбранный — основной, прежний основной — в список
+                    var old = WeatherService.City;
+                    S.WeatherCities = string.Join(", ", list.Select(x => x == c ? old : x));
+                    S.WeatherCity = c;
+                    await WeatherService.Get(true);
+                    if (Visible) Render();
+                };
+                _cities.Children.Add(b);
+            }
+        }
+
         public WeatherPage()
         {
             _meta.Foreground = UI.Dim;
@@ -38,7 +68,7 @@ namespace NIsland.Pages
             _advice.MaxHeight = 34;
             _advice.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
             var now = UI.Row(_icon, _temp.M(6, 0, 0, 0), UI.Col(_desc, _meta).M(10, 0, 0, 0));
-            var left = UI.Col(now, _chips.M(0, 4, 0, 0), _advice.M(0, 3, 0, 0));
+            var left = UI.Col(now, _chips.M(0, 4, 0, 0), _advice.M(0, 3, 0, 0), _cities.M(0, 3, 0, 0));
             left.Width = 250;
             left.VerticalAlignment = VerticalAlignment.Top;
 
@@ -106,6 +136,16 @@ namespace NIsland.Pages
                 if (w.Aqi is int a) { var (at, ac) = WeatherService.AqiText(a); _chips.Children.Add(Chip($"🌫 {at}", $"Качество воздуха: индекс {a}" + (w.Pm25 is double pm ? $", PM2.5 {pm:0} мкг/м³" : ""), ac)); }
                 if (w.Sunrise is DateTime sr && w.Sunset is DateTime ss) _chips.Children.Add(Chip($"🌅 {sr:HH:mm} – {ss:HH:mm}", "Восход и закат"));
                 if (w.Pressure > 0) _chips.Children.Add(Chip($"⏲ {Math.Round(w.Pressure)}", "Давление, мм рт. ст."));
+                if (w.Visibility >= 0 && w.Visibility < 10) _chips.Children.Add(Chip($"👁 {(w.Visibility < 1 ? Math.Round(w.Visibility * 1000) + " м" : Math.Round(w.Visibility, 1) + " км")}", "Видимость", w.Visibility < 1 ? "#FF9F0A" : null));
+                _chips.Children.Add(Chip($"☁ {Math.Round(w.Cloud)}%", $"Облачность · точка росы {Math.Round(w.DewPoint)}°"));
+                if (WeatherService.PollenText(w) is { } pl) _chips.Children.Add(Chip("🌼 " + pl.Text.Replace("пыльца: ", ""), "Пыльца: " + string.Join(", ", w.Pollen.Select(p => $"{p.Key} {p.Value:0}")) + " зёрен/м³", pl.Color));
+                var moon = WeatherService.Moon(DateTime.Now);
+                _chips.Children.Add(Chip($"{moon.Icon} {moon.Lit}%", "Луна: " + moon.Name));
+                var radar = Chip("🗺 Радар", "Карта осадков и ветра — открыть в браузере");
+                ((Border)radar).Cursor = System.Windows.Input.Cursors.Hand;
+                var lat = w.Lat.ToString("0.00", CultureInfo.InvariantCulture); var lon = w.Lon.ToString("0.00", CultureInfo.InvariantCulture);
+                ((Border)radar).MouseLeftButtonUp += (_, e) => { SystemService.Run($"https://www.windy.com/?rain,{lat},{lon},8"); e.Handled = true; };
+                _chips.Children.Add(radar);
                 var adv = WeatherService.Advice(w);
                 _advice.Text = string.Join("  ", adv.Take(2));
                 _advice.Tag = "no-translate";
@@ -134,6 +174,7 @@ namespace NIsland.Pages
             }
             else if (_desc.Text == "") _desc.Text = "Загрузка…";
 
+            RenderCities();
             _clocks.Children.Clear();
             var clocks = WeatherService.WorldClocks();
             _clocks.Columns = Math.Max(1, clocks.Count);

@@ -120,6 +120,7 @@ namespace NIsland.Pages
             _fav = Small("", () =>
             {
                 bool on = M.ToggleFavorite();
+                if (on) App.Island?.MascotLove();
                 App.Island.Toast(on ? "" : "", on ? "Добавлено в избранное" : "Убрано из избранного", M.TrackLine);
             }, "В избранное", 12, 26);
 
@@ -163,7 +164,12 @@ namespace NIsland.Pages
                 Small("", () => { M.ResetOffset(); RenderLyricsTools(); }, "Сбросить сдвиг"),
                 _trBtn,
                 Small("", ShowPicker, "Не тот текст? Выбрать другой"),
+                Small("", CopyLyrics, "Скопировать текст песни (правый клик — сохранить .lrc в «Музыка\\Lyrics»)"),
+                Small("", CycleLyricsStyle, "Стиль текста: Apple, классика, неон, минимал, прыжок"),
+                Small("", () => { DesktopLyricsWindow.Toggle(); App.Island.Toast("", S.DesktopLyrics ? "Текст на рабочем столе" : "Текст убран с рабочего стола", S.DesktopLyrics ? "Закрепить и настроить — в настройках «Музыка»" : null); }, "Текст песни на рабочем столе — строка поверх всех окон"),
                 _focusBtn);
+            // правый клик по «копировать» — сохранить файл
+            ((Button)tools.Children[tools.Children.Count - 4]).MouseRightButtonUp += (_, e) => { SaveLyrics(); e.Handled = true; };
             foreach (Button b in tools.Children) { b.Width = 26; b.Height = 24; }
             var lyrHead = UI.Grid("a,*,a").Add(
                 UI.Row(_focusPlay, _focusTitle.M(4, 0, 0, 0)),
@@ -256,6 +262,14 @@ namespace NIsland.Pages
             M.PlaybackChanged += () => { if (Visible) { UpdatePlay(); Karaoke(true); } };
             M.Tick += () => { if (Visible) UpdatePos(); };
             M.LyricsChanged += () => { _linesDirty = true; if (Visible) RefreshLyrics(); };
+            // поменяли вид текста в настройках — перестраиваем строки
+            S.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(Settings.LyricsStyle) or nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsAlign)
+                    or nameof(Settings.LyricsRoman) or nameof(Settings.LyricsFontSize))
+                { _linesDirty = true; if (Visible) Dispatcher.BeginInvoke(new Action(RefreshLyrics)); }
+                if (e.PropertyName is nameof(Settings.LyricsColor) or nameof(Settings.LyricsFont) or nameof(Settings.LyricsKaraoke)) DesktopLyricsWindow.Apply();
+            };
             M.LyricIndexChanged += () => { if (Visible) { Highlight(true); UpdateVizLyric(); } };
             M.OffsetChanged += () => { if (Visible) { Karaoke(true); RenderLyricsTools(); } };
             AudioService.I.Changed += (_, __, ___) => { if (Visible) UpdateVol(); };
@@ -474,6 +488,9 @@ namespace NIsland.Pages
                 _shift.Y = 0;
                 double size = Math.Clamp(S.LyricsFontSize, 10, 24) + (FocusMode ? 5 : 0);
                 bool synced = M.LyricsSynced;
+                var font = DesktopLyricsWindow.Font(S.LyricsFont);
+                var align = FocusMode || S.LyricsAlign == "center" ? TextAlignment.Center : TextAlignment.Left;
+                var weight = S.LyricsFont == "light" ? FontWeights.Light : S.LyricsStyle == "classic" ? FontWeights.Normal : FontWeights.SemiBold;
                 _linesHost.OpacityMask = synced ? FadeMask : null;
                 if (M.Lyrics != null)
                 {
@@ -483,9 +500,9 @@ namespace NIsland.Pages
                         bool gap = synced && l.Text == "♪";
                         var tb = new TextBlock
                         {
-                            FontSize = gap ? size - 3 : size, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
+                            FontSize = gap ? size - 3 : size, FontWeight = weight, TextWrapping = TextWrapping.Wrap, FontFamily = font,
                             Foreground = synced ? new SolidColorBrush(Dim) : UI.Hex("#D0FFFFFF"),
-                            TextAlignment = FocusMode ? TextAlignment.Center : TextAlignment.Left,
+                            TextAlignment = align,
                             Tag = "no-translate",   // строчки песни — не интерфейс, переводчик интерфейса их не трогает
                         };
                         List<(Run, SolidColorBrush, LyricWord)> runs = null;
@@ -505,17 +522,23 @@ namespace NIsland.Pages
                         _wordRuns.Add(runs);
                         FrameworkElement row = tb;
                         var tr = M.Translation != null && i < M.Translation.Count ? M.Translation[i] : null;
-                        if (!string.IsNullOrEmpty(tr))
+                        var roman = S.LyricsRoman && !gap ? LyricsTools.Romanize(l.Text) : null;
+                        if (!string.IsNullOrEmpty(tr) || roman != null)
                         {
-                            row = UI.Col(tb, new TextBlock
-                            {
-                                Text = tr, FontSize = Math.Max(10, size - 3.5), Foreground = UI.Hex("#80FFFFFF"), TextWrapping = TextWrapping.Wrap,
-                                TextAlignment = FocusMode ? TextAlignment.Center : TextAlignment.Left, Margin = new Thickness(0, 1, 0, 0),
-                            });
+                            var col = UI.Col(tb);
+                            if (roman != null)
+                                col.Children.Add(new TextBlock { Text = roman, FontSize = Math.Max(10, size - 4), FontStyle = FontStyles.Italic, Foreground = UI.Hex("#70FFFFFF"), TextWrapping = TextWrapping.Wrap, TextAlignment = align, Tag = "no-translate" });
+                            if (!string.IsNullOrEmpty(tr))
+                                col.Children.Add(new TextBlock
+                                {
+                                    Text = tr, FontSize = Math.Max(10, size - 3.5), Foreground = UI.Hex("#80FFFFFF"), TextWrapping = TextWrapping.Wrap,
+                                    TextAlignment = align, Margin = new Thickness(0, 1, 0, 0), Tag = "no-translate",
+                                });
+                            row = col;
                         }
                         row.Margin = new Thickness(0, 3, 0, 3);
                         row.RenderTransform = new ScaleTransform(1, 1);
-                        row.RenderTransformOrigin = FocusMode ? new Point(0.5, 0.5) : new Point(0, 0.5);
+                        row.RenderTransformOrigin = align == TextAlignment.Center ? new Point(0.5, 0.5) : new Point(0, 0.5);
                         if (synced && M.CanSeek)
                         {
                             var t = l.Time - TimeSpan.FromSeconds(M.LyricsOffset);
@@ -576,7 +599,7 @@ namespace NIsland.Pages
                     double len = Math.Max(0.08, (w.End - w.Start).TotalSeconds);
                     p = Math.Clamp((pos - w.Start).TotalSeconds / Math.Min(len, 0.9), 0, 1);
                 }
-                var c = Mix(Dim, Colors.White, p);
+                var c = Mix(Dim, Hi, p);
                 if (br.Color != c) br.Color = c;
             }
         }
@@ -592,12 +615,35 @@ namespace NIsland.Pages
                 if (_wordRuns[i] is { } runs) foreach (var (_, br, _) in runs) br.Color = c;
                 else _lineBlocks[i].Foreground = new SolidColorBrush(c);
             }
-            // текущая строка чуть крупнее остальных
+            // текущая строка чуть крупнее остальных; дальше — по стилю
+            var style = S.LyricsStyle ?? "apple";
             if (_activeRow != idx)
             {
-                if (_activeRow >= 0 && _activeRow < _lineRows.Count) Scale(_lineRows[_activeRow], 1, animate);
-                if (idx >= 0 && idx < _lineRows.Count && M.Lyrics[idx].Text != "♪") Scale(_lineRows[idx], FocusMode ? 1.03 : 1.045, animate);
+                if (_activeRow >= 0 && _activeRow < _lineRows.Count) { Scale(_lineRows[_activeRow], 1, animate); _lineBlocks[_activeRow].Effect = null; }
+                if (idx >= 0 && idx < _lineRows.Count && M.Lyrics[idx].Text != "♪")
+                {
+                    double to = style switch { "classic" or "minimal" => 1.0, "bounce" => FocusMode ? 1.08 : 1.1, _ => FocusMode ? 1.03 : 1.045 };
+                    if (style == "bounce" && animate) Bounce(_lineRows[idx], to); else Scale(_lineRows[idx], to, animate);
+                    if (style == "neon") _lineBlocks[idx].Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Hi, BlurRadius = 16, ShadowDepth = 0, Opacity = 0.95 };
+                }
                 _activeRow = idx;
+            }
+            // Apple — дальние строки бледнеют; минимал — видны только текущая и соседние
+            for (int i = 0; i < _lineRows.Count; i++)
+            {
+                int d = idx < 0 ? i : Math.Abs(i - idx);
+                double op = style switch
+                {
+                    "apple" => Math.Max(0.28, 1 - d * 0.16),
+                    "minimal" => d == 0 ? 1 : d == 1 ? 0.45 : 0,
+                    "neon" => Math.Max(0.35, 1 - d * 0.12),
+                    _ => 1,
+                };
+                if (Math.Abs(_lineRows[i].Opacity - op) > 0.01)
+                {
+                    if (animate) _lineRows[i].BeginAnimation(OpacityProperty, new DoubleAnimation(op, TimeSpan.FromMilliseconds(380)));
+                    else { _lineRows[i].BeginAnimation(OpacityProperty, null); _lineRows[i].Opacity = op; }
+                }
             }
             Karaoke(false);
             if (idx < 0 || idx >= _lineRows.Count || DateTime.Now < _manualScrollUntil) return;
@@ -615,6 +661,49 @@ namespace NIsland.Pages
             }
         }
 
+        /// <summary>Строка «подпрыгивает»: с упругим перелётом.</summary>
+        static void Bounce(FrameworkElement row, double to)
+        {
+            if (row.RenderTransform is not ScaleTransform st) return;
+            var a = new DoubleAnimation(0.9, to, TimeSpan.FromMilliseconds(520)) { EasingFunction = new ElasticEase { Oscillations = 1, Springiness = 4, EasingMode = EasingMode.EaseOut } };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+        }
+
+        /// <summary>Цвет текущей строки: белый, акцент или из обложки.</summary>
+        static Color Hi => DesktopLyricsWindow.Highlight();
+
+        static readonly string[] LyricStyles = { "apple", "classic", "neon", "minimal", "bounce" };
+        static readonly string[] LyricStyleNames = { "Apple — плавно", "Классика", "Неон", "Минимал", "Прыжок" };
+
+        void CycleLyricsStyle()
+        {
+            int i = Array.IndexOf(LyricStyles, S.LyricsStyle);
+            S.LyricsStyle = LyricStyles[(i + 1) % LyricStyles.Length];
+            _linesDirty = true;
+            RefreshLyrics();
+            App.Island.Toast("", "Стиль текста", LyricStyleNames[Array.IndexOf(LyricStyles, S.LyricsStyle)]);
+        }
+
+        void CopyLyrics()
+        {
+            if (M.Lyrics == null || M.Lyrics.Count == 0) { App.Island.Toast("", "Текста нет", null); return; }
+            ClipboardService.I.CopyBack(M.TrackLine + Environment.NewLine + Environment.NewLine + LyricsTools.PlainText(M.Lyrics));
+            App.Island.Toast("", "Текст песни скопирован", M.TrackLine);
+        }
+
+        void SaveLyrics()
+        {
+            if (M.Lyrics == null || M.Lyrics.Count == 0) { App.Island.Toast("", "Текста нет", null); return; }
+            try
+            {
+                var path = LyricsTools.SaveLrc(M.Lyrics, M.Title, M.Artist, M.LyricsSynced);
+                App.Island.Toast("", "Текст сохранён", System.IO.Path.GetFileName(path));
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"")?.Dispose();
+            }
+            catch (Exception e) { App.Island.Toast("", "Не удалось сохранить", e.Message); }
+        }
+
         static void Scale(FrameworkElement row, double to, bool animate)
         {
             if (row.RenderTransform is not ScaleTransform st) return;
@@ -630,11 +719,11 @@ namespace NIsland.Pages
             if (idx < 0 || idx >= _lineBlocks.Count) return;
             var tb = _lineBlocks[idx];
             if (_wordRuns[idx] != null) { OnWordTick(); if (!_wordTimer.IsEnabled && Visible) _wordTimer.Start(); return; }
-            if (!S.LyricsKaraoke || !M.LyricsSynced) { tb.Foreground = Brushes.White; return; }
+            if (!S.LyricsKaraoke || !M.LyricsSynced) { tb.Foreground = new SolidColorBrush(Hi); return; }
             if (idx != _karaokeLine || resync || _k1 == null)
             {
                 _karaokeLine = idx;
-                _k1 = new GradientStop(Colors.White, 0);
+                _k1 = new GradientStop(Hi, 0);
                 _k2 = new GradientStop(Color.FromArgb(0xA0, 0xFF, 0xFF, 0xFF), 0);
                 tb.Foreground = new LinearGradientBrush(new GradientStopCollection { _k1, _k2 }, new Point(0, 0), new Point(1, 0));
             }

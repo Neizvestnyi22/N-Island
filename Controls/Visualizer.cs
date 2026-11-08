@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -11,11 +12,11 @@ namespace NIsland.Controls
     /// Визуализатор музыки под то, что сейчас звучит. Рисует сам в свой битмап (пиксели, сложение света, «эхо» прошлого кадра),
     /// поэтому дерево WPF не нагружается. Стили и палитры переключаются на лету; звук слушается, только пока визуализатор виден.
     /// </summary>
-    public class Visualizer : FrameworkElement
+    public partial class Visualizer : FrameworkElement
     {
-        public record StyleInfo(string Key, string Name, string Desc);
+        public record StyleInfo(string Key, string Name, string Desc, string Group = "Классика");
 
-        public static readonly StyleInfo[] Styles =
+        public static readonly StyleInfo[] Styles = new StyleInfo[]
         {
             new("bars", "Полосы", "Спектр столбиками с падающими пиками"),
             new("barswave", "Полосы и волна", "Классика старых плееров: спектр с отражением и волна сверху"),
@@ -30,17 +31,24 @@ namespace NIsland.Controls
             new("spectrogram", "Спектрограмма", "Бегущая карта частот: видно, как меняется музыка"),
             new("neon", "Неоновые волны", "Бас, середина и верха — отдельными светящимися волнами"),
             new("blob", "Капля", "Жидкая капля меняет форму под музыку"),
-        };
+        }.Concat(MoreStyles).ToArray();
 
         public static readonly (string Key, string Name)[] Palettes =
         {
             ("art", "Цвет обложки"), ("accent", "Акцент"), ("rainbow", "Радуга"), ("fire", "Огонь"), ("ocean", "Океан"), ("neon", "Неон"), ("mono", "Белый"),
+            ("sunset", "Закат"), ("aurora", "Сияние"), ("vapor", "Ретровейв"), ("matrix", "Матрица"), ("ice", "Лёд"), ("lava", "Лава"), ("candy", "Конфеты"),
+            ("gold", "Золото"), ("amber", "Янтарный ЭЛТ"), ("cga", "CGA"), ("pastel", "Пастель"), ("forest", "Лес"), ("custom", "Свои цвета"),
         };
 
+        /// <summary>Следующий стиль. Если есть избранные — ходим только по ним.</summary>
         public static string Next(string current, int dir)
         {
-            int i = Array.FindIndex(Styles, s => s.Key == current);
-            return Styles[((i < 0 ? 0 : i) + dir + Styles.Length) % Styles.Length].Key;
+            var fav = (St.VizFavorites ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                             .Where(k => Array.Exists(Styles, s => s.Key == k)).ToArray();
+            var keys = fav.Length >= 2 ? fav : Styles.Select(s => s.Key).ToArray();
+            int i = Array.IndexOf(keys, current);
+            if (i < 0) i = dir > 0 ? -1 : 0;
+            return keys[((i + dir) % keys.Length + keys.Length) % keys.Length];
         }
 
         public static string NameOf(string key) => Array.Find(Styles, s => s.Key == key)?.Name ?? key;
@@ -59,7 +67,10 @@ namespace NIsland.Controls
         /// <summary>Сколько пикселей рисовать (дальше WPF плавно растягивает): маленькое окно — мало, большое — больше.</summary>
         public int MaxPixels { get => _maxPx; set { if (_maxPx != value) { _maxPx = value; _bmp = null; } } }
         int _maxPx = 360 * 200;
-        public double Fps { get; set; } = 45;
+        double _fps;
+        /// <summary>Кадров в секунду: своё значение или из настроек.</summary>
+        public double Fps { get => _fps > 0 ? _fps : Math.Clamp(St.VizFps, 20, 60); set => _fps = value; }
+        static NIsland.Core.Settings St => NIsland.Core.Store.Settings;
 
         WriteableBitmap _bmp;
         int _w, _h;
@@ -136,20 +147,22 @@ namespace NIsland.Controls
             if (_lastT > 0 && now - _lastT < 1 / Fps - 0.002) return;
             double dt = _lastT == 0 ? 1 / Fps : Math.Min(0.1, now - _lastT);
             _lastT = now;
-            _t += dt;
+            double speed = Math.Clamp(St.VizSpeed, 10, 400) / 100.0;
+            _t += dt * speed;
 
             var cap = AudioCapture.I;
             cap.Read(_bands, _peaks, _wave);
-            _level = cap.Level;
+            Tune();
+            _level = (float)Math.Min(1, cap.Level * Sens);
             int beats = cap.Beats;
-            _beat = beats != _lastBeats && cap.Running;
+            _beat = beats != _lastBeats && cap.Running && St.VizBeatFx > 0;
             _lastBeats = beats;
             _sinceBeat = _beat ? 0 : _sinceBeat + dt;
             BuildLut();
 
-            try { Draw(dt); }
+            try { Draw(dt * speed); }
             catch (Exception ex) { NIsland.Core.Log.Info("visualizer: " + ex.Message); }
-            _bmp.WritePixels(new Int32Rect(0, 0, _w, _h), _px, _w * 4, 0);
+            _bmp.WritePixels(new Int32Rect(0, 0, _w, _h), Post(), _w * 4, 0);
         }
 
         void Draw(double dt)
@@ -168,7 +181,7 @@ namespace NIsland.Controls
                 case "spectrogram": Spectrogram(); break;
                 case "neon": Neon(); break;
                 case "blob": Blob(); break;
-                default: Bars(); break;
+                default: if (!Draw2(dt)) Bars(); break;
             }
         }
 
@@ -176,6 +189,7 @@ namespace NIsland.Controls
         {
             if (_px != null) Array.Clear(_px);
             _parts.Clear();
+            ResetState2();
         }
 
         // ------------------------------------------------------------------
@@ -185,14 +199,31 @@ namespace NIsland.Controls
         void BuildLut()
         {
             var accent = (Application.Current?.Resources["AccentBrush"] as SolidColorBrush)?.Color ?? Colors.DodgerBlue;
-            string key = _palette + "|" + _base + "|" + accent;
+            int hue = St.VizHue > 0 ? (int)(_t * St.VizHue * 0.9) % 360 / 2 * 2 : 0;   // перелив: тон медленно идёт по кругу
+            string key = _palette + "|" + _base + "|" + accent + "|" + hue + "|" + St.VizSat + "|" + St.VizBright + "|" + St.VizColorA + St.VizColorB;
             if (key == _lutKey) return;
             _lutKey = key;
+            var ca = NIsland.Core.ColorUtil.Parse(St.VizColorA, Color.FromRgb(255, 45, 149));
+            var cb = NIsland.Core.ColorUtil.Parse(St.VizColorB, Color.FromRgb(0, 229, 255));
+            double sat = Math.Clamp(St.VizSat, 0, 150) / 100.0, bri = Math.Clamp(St.VizBright, 40, 160) / 100.0;
             for (int i = 0; i < 256; i++)
             {
                 double t = i / 255.0;
                 Color c = _palette switch
                 {
+                    "sunset" => Grad(t, (0, 45, 10, 90), (0.35, 200, 30, 110), (0.65, 255, 110, 60), (1, 255, 220, 120)),
+                    "aurora" => Grad(t, (0, 5, 40, 60), (0.35, 0, 200, 140), (0.7, 90, 240, 200), (1, 200, 120, 255)),
+                    "vapor" => Grad(t, (0, 60, 0, 120), (0.4, 255, 40, 180), (0.7, 255, 150, 220), (1, 0, 240, 255)),
+                    "matrix" => Grad(t, (0, 0, 30, 5), (0.5, 0, 180, 40), (0.85, 80, 255, 120), (1, 220, 255, 220)),
+                    "ice" => Grad(t, (0, 20, 40, 90), (0.5, 90, 170, 255), (1, 240, 250, 255)),
+                    "lava" => Grad(t, (0, 30, 0, 0), (0.3, 150, 0, 20), (0.6, 255, 60, 0), (0.85, 255, 170, 0), (1, 255, 255, 160)),
+                    "candy" => Grad(t, (0, 255, 90, 160), (0.33, 255, 200, 80), (0.66, 120, 220, 255), (1, 200, 140, 255)),
+                    "gold" => Grad(t, (0, 60, 35, 0), (0.5, 210, 150, 30), (0.8, 255, 215, 90), (1, 255, 250, 210)),
+                    "amber" => Grad(t, (0, 40, 15, 0), (0.6, 255, 150, 0), (1, 255, 225, 150)),
+                    "cga" => t < 0.33 ? Color.FromRgb(85, 255, 255) : t < 0.66 ? Color.FromRgb(255, 85, 255) : Color.FromRgb(255, 255, 255),
+                    "pastel" => Hsv(200 + t * 160, 0.35, 1),
+                    "forest" => Grad(t, (0, 10, 40, 10), (0.5, 60, 160, 60), (0.8, 180, 220, 80), (1, 240, 255, 200)),
+                    "custom" => Grad(t, (0, ca.R / 3, ca.G / 3, ca.B / 3), (0.45, ca.R, ca.G, ca.B), (0.85, cb.R, cb.G, cb.B), (1, Math.Min(255, cb.R + 90), Math.Min(255, cb.G + 90), Math.Min(255, cb.B + 90))),
                     "rainbow" => Hsv(t * 300, 0.85, 1),
                     "fire" => Grad(t, (0, 40, 0, 0), (0.35, 210, 25, 0), (0.65, 255, 140, 0), (0.85, 255, 220, 60), (1, 255, 255, 225)),
                     "ocean" => Grad(t, (0, 0, 25, 70), (0.4, 0, 95, 210), (0.75, 0, 205, 235), (1, 215, 255, 255)),
@@ -201,6 +232,11 @@ namespace NIsland.Controls
                     "accent" => Around(accent, t),
                     _ => Around(_base, t),
                 };
+                if (hue != 0 || sat != 1 || bri != 1)
+                {
+                    RgbToHsv(c, out double h, out double s, out double v);
+                    c = Hsv(h + hue, Math.Clamp(s * sat, 0, 1), Math.Clamp(v * bri, 0, 1));
+                }
                 _lut[i] = (uint)(c.R << 16 | c.G << 8 | c.B);
             }
         }
@@ -253,8 +289,19 @@ namespace NIsland.Controls
         //  Растр: пиксели в формате BGRA с предумноженной прозрачностью
         // ------------------------------------------------------------------
 
+        /// <summary>Длина следа из настроек: 50 — как задумал стиль, меньше — короче, больше — длиннее.</summary>
+        static int TrailKeep(int keep)
+        {
+            int tr = Math.Clamp(St.VizTrail, 0, 100);
+            if (tr == 50) return keep;
+            if (keep <= 0) return tr > 50 ? (tr - 50) * 4 : 0;
+            double k = tr < 50 ? keep * (0.35 + 0.65 * tr / 50.0) : keep + (252 - keep) * (tr - 50) / 50.0 * 0.85;
+            return (int)Math.Clamp(k, 0, 252);
+        }
+
         void Fade(int keep)
         {
+            keep = TrailKeep(keep);
             if (keep <= 0) { Array.Clear(_px); return; }
             var px = _px;
             for (int i = 0; i < px.Length; i++)
@@ -269,6 +316,7 @@ namespace NIsland.Controls
         /// <summary>«Эхо»: прошлый кадр чуть увеличенным/повёрнутым и притушенным — отсюда спирали и тоннели.</summary>
         void Feedback(double zoom, double rot, int keep, double cx = 0.5, double cy = 0.5)
         {
+            keep = TrailKeep(keep);
             Array.Copy(_px, _tmp, _px.Length);
             double ox = _w * cx, oy = _h * cy, cos = Math.Cos(-rot) / zoom, sin = Math.Sin(-rot) / zoom;
             var px = _px; var src = _tmp;

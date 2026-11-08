@@ -66,7 +66,7 @@ namespace NIsland.Pages
     // =====================================================================
     public class AiPage : PageBase
     {
-        static readonly List<AiMessage> History = new();
+        static List<AiMessage> History => Ai.Chat;
         readonly StackPanel _chat = new();
         readonly ScrollViewer _scroll;
         readonly TextBox _input = UI.Box("Спроси что угодно… (Enter — отправить, Shift+Enter — новая строка)");
@@ -104,6 +104,8 @@ namespace NIsland.Pages
 
             Content = UI.Grid(null, "*,a,a").M(8, 0, 8, 0).Add(_scroll, bar.At(1, 0).M(0, 3, 0, 3), input.At(2, 0));
             _flush.Tick += (_, __) => Flush();
+            // сообщения из Telegram-бота появляются и здесь
+            Ai.ChatChanged += () => Dispatcher.BeginInvoke(new Action(() => { if (_cts == null) Rebuild(); }));
         }
 
         /// <summary>Вопрос, который нужно отправить при открытии (ключ запуска --ai).</summary>
@@ -154,7 +156,7 @@ namespace NIsland.Pages
         void NewChat()
         {
             _cts?.Cancel();
-            History.Clear();
+            Ai.ClearChat();
             Rebuild();
         }
 
@@ -170,14 +172,16 @@ namespace NIsland.Pages
                 ((TextBlock)_chat.Children[0]).TextWrapping = TextWrapping.Wrap;
                 return;
             }
-            foreach (var m in History) AddBubble(m.Role, m.Text);
+            List<AiMessage> copy;
+            lock (History) copy = History.ToList();
+            foreach (var m in copy.Skip(Math.Max(0, copy.Count - 60))) AddBubble(m.Role, m.Text, m.Source);
             _scroll.ScrollToEnd();
         }
 
-        TextBox AddBubble(string role, string text)
+        TextBox AddBubble(string role, string text, string source = null)
         {
             bool me = role == "user";
-            var t = Txt.Selectable(text, 12);
+            var t = Txt.Selectable(text, Math.Clamp(S.AiFontSize, 10, 18));
             var b = new Border
             {
                 CornerRadius = me ? new CornerRadius(14, 14, 4, 14) : new CornerRadius(14, 14, 14, 4),
@@ -190,7 +194,8 @@ namespace NIsland.Pages
             if (me)
             {
                 b.Margin = new Thickness(50, 2, 0, 2);
-                _chat.Children.Add(b);
+                if (source == "tg") b.ToolTip = "Из Telegram";
+                _chat.Children.Add(source == "tg" ? UI.Col(UI.Text("📱 Telegram", 9.5, false, UI.Dim).HA(HorizontalAlignment.Right), b) : b);
             }
             else
             {
@@ -201,7 +206,13 @@ namespace NIsland.Pages
                     Background = new LinearGradientBrush(Color.FromRgb(0xBF, 0x5A, 0xF2), Color.FromRgb(0x0A, 0x84, 0xFF), 45),
                     Child = UI.Icon("", 10, Brushes.White),
                 };
-                _chat.Children.Add(UI.Grid("a,*").M(0, 2, 30, 2).Add(avatar, b.At(0, 1)));
+                var copyBtn = UI.IconBtn("", () => { try { ClipboardService.I.CopyBack(t.Text); App.Island.Toast("", "Скопировано", null); } catch { } }, 10, 22, "Копировать ответ");
+                copyBtn.Opacity = 0.0;
+                var row = UI.Grid("a,*,a").M(0, 2, 6, 2).Add(avatar, b.At(0, 1), copyBtn.At(0, 2).M(2, 0, 0, 0));
+                copyBtn.VerticalAlignment = VerticalAlignment.Bottom;
+                row.MouseEnter += (_, __) => copyBtn.Opacity = 0.9;
+                row.MouseLeave += (_, __) => copyBtn.Opacity = 0.0;
+                _chat.Children.Add(row);
             }
             return t;
         }
@@ -222,7 +233,7 @@ namespace NIsland.Pages
             if (!Ai.Ready(p, out var why)) { App.Island.Toast("", "ИИ не настроен", why); return; }
             _input.Text = "";
             if (History.Count == 0) _chat.Children.Clear();
-            History.Add(new AiMessage("user", text));
+            Ai.AddToChat(new AiMessage("user", text), notify: false);
             AddBubble("user", text.Length > 600 ? text[..600] + "…" : text);
             _live = AddBubble("assistant", "…");
             _scroll.ScrollToEnd();
@@ -234,7 +245,10 @@ namespace NIsland.Pages
             bool failed = false;
             try
             {
-                answer = await Ai.Ask(History, d => { lock (_pending) _pending.Append(d); }, _cts.Token);
+                List<AiMessage> hist;
+                lock (History) hist = History.ToList();
+                answer = await Ai.Ask(hist, d => { lock (_pending) { if (d == "") { _pending.Clear(); _restart = true; } else _pending.Append(d); } }, _cts.Token);
+                answer = Ai.StripThink(answer);
                 if (string.IsNullOrWhiteSpace(answer)) answer = "(пустой ответ)";
             }
             catch (OperationCanceledException) { answer = (_live.Text == "…" ? "" : _live.Text) + " ⏹"; }
@@ -243,19 +257,29 @@ namespace NIsland.Pages
             Flush();
             _live.Text = answer;
             // ошибку в историю не кладём: иначе модель получит её как свой ответ, а вопрос можно задать заново
-            if (failed) History.RemoveAt(History.Count - 1);
-            else History.Add(new AiMessage("assistant", answer));
-            while (History.Count > 100) History.RemoveRange(0, 2);
+            if (failed) { lock (History) if (History.Count > 0 && History[^1].Role == "user") History.RemoveAt(History.Count - 1); }
+            else Ai.AddToChat(new AiMessage("assistant", answer), notify: false);
+            if (!failed && Ai.LastAnswered != null && Ai.LastAnswered != p.Name)
+            {
+                // основной провайдер не ответил — говорим прямо, кто ответил вместо него
+                _live.ToolTip = I18n.T("Ответил: ") + Ai.LastAnswered;
+                App.Island.Toast("", "Ответил запасной ИИ", Ai.LastAnswered);
+            }
             _cts = null;
             _send.Content = "";
             _scroll.ScrollToEnd();
         }
 
+        bool _restart;
+
         void Flush()
         {
             string add;
-            lock (_pending) { add = _pending.ToString(); _pending.Clear(); }
-            if (add.Length == 0 || _live == null) return;
+            bool restart;
+            lock (_pending) { add = _pending.ToString(); _pending.Clear(); restart = _restart; _restart = false; }
+            if (_live == null) return;
+            if (restart) _live.Text = "…";   // основной провайдер не ответил — отвечает запасной
+            if (add.Length == 0) return;
             _live.Text = (_live.Text == "…" ? "" : _live.Text) + add;
             _scroll.ScrollToEnd();
         }

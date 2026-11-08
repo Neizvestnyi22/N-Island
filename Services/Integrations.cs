@@ -107,17 +107,18 @@ namespace NIsland.Services
         public static readonly List<Integration> All = new()
         {
             new TelegramHub(), new NtfyHub(), new DiscordHub(), new WebhookHub(), new HomeAssistantHub(), new GitHubHub(), new TodoistHub(),
-            new CalendarHub(), new RssHub(), new ListenBrainzHub(), new LastFmHub(), new RatesHub(), new AlertsHub(), new NovaPoshtaHub(), new UptimeHub(),
-            new MailHub(), new MonobankHub(), new SlackHub(), new GotifyHub(), new TogglHub(), new WakaTimeHub(),
+            new CalendarHub(), new RssHub(), new ListenBrainzHub(), new LastFmHub(), new RatesHub(), new NovaPoshtaHub(), new UptimeHub(),
+            new MailHub(), new SlackHub(), new GotifyHub(), new TogglHub(), new WakaTimeHub(),
             new PushoverHub(), new PushbulletHub(), new MatrixHub(), new NotionHub(), new TrelloHub(), new LinearHub(), new JiraHub(), new GitLabHub(),
             new TwitchHub(), new SteamHub(), new MastodonHub(), new BlueskyHub(), new HackerNewsHub(), new HueHub(), new StocksHub(),
+            new FreeGamesHub(), new GameDealsHub(), new QuakesHub(), new SpaceWeatherHub(), new ApodHub(), new ReleasesHub(), new OnThisDayHub(),
         };
 
         public static readonly (string Key, string Name)[] EventKinds =
         {
             ("timer", "Таймер и помодоро"), ("reminder", "Напоминания и календарь"), ("call", "Звонки"), ("notify", "Уведомления приложений"),
             ("track", "Сейчас играет"), ("vpn", "VPN"), ("battery", "Батарея и устройства"), ("alert", "Важное от сервисов"),
-            ("net", "Интернет пропал или появился"), ("parcel", "Посылки"), ("mail", "Новые письма"), ("money", "Деньги (Монобанк)"),
+            ("net", "Интернет пропал или появился"), ("parcel", "Посылки"), ("mail", "Новые письма"), ("agent", "ИИ-агенты на ПК"),
         };
 
         public static event Action Changed;
@@ -183,6 +184,9 @@ namespace NIsland.Services
         public static void Start()
         {
             if (_timer != null) return;
+            CustomHubs.Load();
+            // тревога и Монобанк убраны в 1.8 — их настройки (и ключ Монобанка) больше не храним
+            if (Store.Settings.Integrations is { } cfg && (cfg.Remove("alerts") | cfg.Remove("monobank"))) Store.SaveSettings();
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             _timer.Tick += (_, __) => Tick();
             _timer.Start();

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -29,10 +29,12 @@ namespace NIsland
             var groups = new (string Title, string[] Keys)[]
             {
                 ("Телефон и уведомления", new[] { "telegram", "ntfy", "pushover", "pushbullet", "gotify", "discord", "slack", "matrix", "webhook" }),
-                ("Украина", new[] { "alerts", "novaposhta", "monobank", "rates" }),
-                ("Почта, работа и задачи", new[] { "mail", "ics", "todoist", "notion", "trello", "linear", "jira", "github", "gitlab", "toggl", "wakatime" }),
+                ("Украина", new[] { "novaposhta", "rates" }),
+                ("Почта, работа и задачи", new[] { "mail", "ics", "todoist", "notion", "trello", "linear", "jira", "github", "gitlab", "releases", "toggl", "wakatime" }),
                 ("Дом и сайты", new[] { "ha", "hue", "uptime" }),
-                ("Новости, соцсети, игры, рынки", new[] { "rss", "hn", "mastodon", "bluesky", "twitch", "steam", "stocks" }),
+                ("Новости, соцсети, рынки", new[] { "rss", "hn", "mastodon", "bluesky", "stocks", "onthisday" }),
+                ("Игры", new[] { "games", "deals", "steam", "twitch" }),
+                ("Наука и природа", new[] { "quakes", "kp", "apod" }),
                 ("Музыка", new[] { "listenbrainz", "lastfm" }),
             };
             var panel = new StackPanel();
@@ -49,6 +51,31 @@ namespace NIsland
                 panel.Children.Add(header);
                 foreach (var k in keys)
                     if (Integrations.Get(k) is { } it) { var c = HubCard(it); panel.Children.Add(c); cards.Add((c, header, it)); }
+            }
+            // свои интеграции: шаблоны + карточки
+            var myHeader = UI.Text("Свои интеграции", 12, true, UI.Dim).M(4, 10, 0, 6);
+            panel.Children.Add(myHeader);
+            var newName = UI.Box(I18n.T("Название (необязательно)"), 220);
+            var tpl = new WrapPanel();
+            foreach (var t in CustomHubs.Templates)
+            {
+                var tt = t;
+                var b = UI.Pill(t.Name, () =>
+                {
+                    var hub = CustomHubs.Create(tt, newName.Text);
+                    _openHub.Add(hub.Key);
+                    Open("hub");
+                }, t.Kind != "list" || t.Values.Length == 0, I18n.T(t.Note));
+                b.Margin = new Thickness(0, 0, 6, 6);
+                tpl.Children.Add(b);
+            }
+            panel.Children.Add(Group(null, Wide("Добавить свою", "Любой сервис с JSON API, число с порогами (курс, температура), изменение страницы сайта или проверка «сайт работает?». Выбери шаблон — появится карточка с полями ниже",
+                UI.Col(newName, tpl.M(0, 8, 0, 0)))));
+            foreach (var it in Integrations.All.OfType<CustomHub>().ToList())
+            {
+                var c = HubCard(it);
+                panel.Children.Add(c);
+                cards.Add((c, myHeader, it));
             }
             find.TextChanged += (_, __) =>
             {
@@ -110,6 +137,14 @@ namespace NIsland
                 UpdStatus();
             };
 
+            if (it is CustomHub ch)
+            {
+                var nm = UI.Box("", 260);
+                nm.Text = ch.Def.Name;
+                nm.LostFocus += (_, __) => CustomHubs.Rename(ch, nm.Text);
+                body.Children.Add(UI.Grid("*,a").M(0, 0, 0, 8).Add(UI.Col(UI.Text("Название", 12, true).M(0, 0, 0, 3), nm),
+                    UI.Pill("Удалить интеграцию", () => { CustomHubs.Remove(ch); Open("hub"); }).At(0, 1).VA(VerticalAlignment.Bottom)));
+            }
             if (it.Help != null) body.Children.Add(new TextBlock { Text = it.Help, FontSize = 12, Foreground = UI.Hex("#9FD0FF"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) });
             foreach (var f in it.Fields) body.Children.Add(FieldRow(it, f));
 

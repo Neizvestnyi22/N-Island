@@ -246,7 +246,7 @@ namespace NIsland
                         UI.Pill("Пароль", async () =>
                         {
                             var p = await Tweaks.WifiPassword(n);
-                            pass.Text = p ?? I18n.T("без пароля / недоступен");
+                            pass.Text = p != null ? p + "  · " + I18n.T(WifiTools2.Strength(p)) : I18n.T("без пароля / недоступен");
                             if (p != null) ClipboardService.I.CopyBack(p);
                         }, false, "Показать и скопировать пароль").At(0, 2),
                         UI.Pill("Забыть", async () =>
@@ -260,6 +260,7 @@ namespace NIsland
                 if (t.Result.Count == 0) saved.Children.Add(Loading("Сохранённых сетей нет"));
             }));
             page.Children.Add(Group("Сохранённые сети", saved));
+            AddWifiExtras(page);
             page.Children.Add(Note("Сканирование эфира и устройств только читает данные и ничего не меняет. Wi-Fi-страница острова показывает сигнал вживую — " +
                                    "походи с ноутбуком по квартире, и график покажет, где связь лучше."));
             return page;

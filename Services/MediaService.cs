@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -349,7 +349,7 @@ namespace NIsland.Services
                 {
                     TimerService.I.SetSleepAfterTrack(false);
                     Pause();
-                    App.Island?.Toast("", "Таймер сна", "Трек закончился — музыка на паузе");
+                    App.Island?.Toast("", "Таймер сна", "Трек закончился — музыка на паузе");
                 }
             }
 

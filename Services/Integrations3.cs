@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -189,95 +189,6 @@ namespace NIsland.Services
             }
 
             public void Dispose() { try { _ssl.Dispose(); _tcp.Dispose(); } catch { } }
-        }
-    }
-
-    // =====================================================================
-    //  Монобанк: баланс карт и банок, траты и поступления
-    // =====================================================================
-
-    public class MonobankHub : Integration
-    {
-        public override string Key => "monobank";
-        public override string Name => "Монобанк";
-        public override string Glyph => "";
-        public override string Color => "#FF2D55";
-        public override string Desc => "Баланс карт и банок в острове, всплывашка о каждой трате и поступлении. Токен только для чтения — переводить деньги через него нельзя";
-        public override string Help => "Открой api.monobank.ua, войди через приложение Монобанка и скопируй токен. Банк разрешает запрос раз в минуту — остров спрашивает раз в 5 минут";
-        public override string HelpUrl => "https://api.monobank.ua/";
-        public override HubField[] Fields => new[]
-        {
-            new HubField("token", "Токен", "", "secret"),
-            new HubField("notify", "Сообщать о тратах и поступлениях", "", "bool", Required: false, Default: "1"),
-            new HubField("min", "Не сообщать о суммах меньше, ₴", "0", Required: false, Default: "0"),
-        };
-        public override string[] DefaultSend => Array.Empty<string>();
-        public override int PollSeconds => 300;
-
-        void Auth(HttpRequestMessage r) => r.Headers.TryAddWithoutValidation("X-Token", V("token"));
-
-        static string Cur(int code) => code switch { 980 => "₴", 840 => "$", 978 => "€", 985 => "zł", 826 => "£", _ => code.ToString() };
-        static string Sum(long minor, int code) => (minor / 100.0).ToString("N2", CultureInfo.GetCultureInfo("uk-UA")) + " " + Cur(code);
-
-        public override async Task<string> Test()
-        {
-            await Poll();
-            return "Работает ✓ " + Status;
-        }
-
-        public override async Task Poll()
-        {
-            using var doc = await Integrations.GetJson("https://api.monobank.ua/personal/client-info", Auth);
-            var root = doc.RootElement;
-            var rows = new List<HubRow>();
-            string mainAcc = null;
-            foreach (var a in root.GetProperty("accounts").EnumerateArray())
-            {
-                int code = a.GetProperty("currencyCode").GetInt32();
-                long bal = a.GetProperty("balance").GetInt64(), limit = a.TryGetProperty("creditLimit", out var cl) ? cl.GetInt64() : 0;
-                var pan = a.TryGetProperty("maskedPan", out var mp) && mp.GetArrayLength() > 0 ? mp[0].GetString() : "";
-                var type = Integrations.S(a, "type");
-                if (bal == 0 && limit == 0 && pan == "") continue;
-                mainAcc ??= code == 980 && type is "black" or "white" or "platinum" or "iron" or "yellow" ? Integrations.S(a, "id") : null;
-                rows.Add(new HubRow { Title = Sum(bal - limit, code), Sub = "Картка " + (pan.Length >= 4 ? "•" + pan[^4..] : "") + " · " + type + (limit > 0 ? " · кредитний ліміт " + Sum(limit, code) : "") });
-            }
-            if (root.TryGetProperty("jars", out var jars))
-                foreach (var j in jars.EnumerateArray())
-                {
-                    int code = j.GetProperty("currencyCode").GetInt32();
-                    long bal = j.GetProperty("balance").GetInt64(), goal = j.TryGetProperty("goal", out var g) && g.ValueKind == JsonValueKind.Number ? g.GetInt64() : 0;
-                    rows.Add(new HubRow { Title = "🫙 " + Integrations.S(j, "title") + " · " + Sum(bal, code), Sub = goal > 0 ? $"ціль {Sum(goal, code)} · {100.0 * bal / goal:0}%" : "банка" });
-                }
-
-            // новые операции по главной карте (банк отдаёт выписку не чаще раза в минуту — у нас раз в 5)
-            if (mainAcc != null && Flag("notify"))
-            {
-                long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                long.TryParse(St("since"), out var since);
-                if (since == 0 || now - since > 86400 * 7) since = now - 600;
-                try
-                {
-                    using var st = await Integrations.GetJson($"https://api.monobank.ua/personal/statement/{mainAcc}/{since}/{now}", Auth);
-                    var seen = (St("ids") ?? "").Split(',').ToHashSet();
-                    double.TryParse(V("min"), NumberStyles.Float, CultureInfo.InvariantCulture, out var min);
-                    var fresh = st.RootElement.EnumerateArray().Where(t => !seen.Contains(Integrations.S(t, "id"))).OrderBy(t => t.GetProperty("time").GetInt64()).ToList();
-                    if (St("since") != null)
-                        foreach (var t in fresh.TakeLast(5))
-                        {
-                            long amount = t.GetProperty("amount").GetInt64();
-                            if (Math.Abs(amount) / 100.0 < min) continue;
-                            var title = (amount > 0 ? "+" : "−") + Sum(Math.Abs(amount), 980) + " · " + Integrations.S(t, "description");
-                            var sub = "залишок " + Sum(t.GetProperty("balance").GetInt64(), 980);
-                            Notify(title, sub);
-                            Integrations.Publish("money", title, sub);
-                        }
-                    SetSt("ids", string.Join(",", st.RootElement.EnumerateArray().Select(t => Integrations.S(t, "id")).Take(60)));
-                    SetSt("since", (now - 120).ToString());
-                }
-                catch (HttpRequestException e) when ((int?)e.StatusCode == 429) { }   // слишком часто — попробуем в следующий раз
-            }
-            Rows = rows;
-            Status = rows.Count > 0 ? rows[0].Title : "Обновлено " + DateTime.Now.ToString("HH:mm");
         }
     }
 

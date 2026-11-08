@@ -73,6 +73,8 @@ namespace NIsland
             {
                 new("general", "Основные", "", "#8E8E93", General),
                 new("ai", "ИИ", "", "#BF5AF2", AiSec),
+                new("agents", "ИИ-агенты", "", "#D97757", AgentsSec),
+                new("mcp", "MCP для агентов", "", "#7D5BED", McpSec),
                 new("modes", "Режимы и стиль", "", "#5E5CE6", ModesSec),
                 new("appearance", "Внешний вид", "", "#636366", Appearance),
                 new("custom", "Кастомизация", "", "#FF375F", CustomSec),
@@ -487,7 +489,18 @@ namespace NIsland
                 Group(null,
                     Row("Стекло", "Матовое размытие под чёлкой", Toggle(nameof(Settings.Glass))),
                     Row("Живое стекло", "Обновлять размытый фон каждые 2–3 секунды", Toggle(nameof(Settings.LiveGlass))),
-                    Row("Затемнение стекла", "Чем больше — тем темнее и читабельнее", Stepper(nameof(Settings.GlassTint), 0, 100, 5, v => v + "%"))),
+                    Row("Затемнение стекла", "Чем больше — тем темнее и читабельнее", Stepper(nameof(Settings.GlassTint), 0, 100, 5, v => v + "%")),
+                    Row("Жидкое стекло", "Фон под стеклом чётче и ярче, а края его преломляют, как линза", Toggle(nameof(Settings.LiquidGlass))),
+                    Row("Преломление по краям", null, Stepper(nameof(Settings.LiquidRefract), 0, 100, 10, v => v == 0 ? "нет" : v.ToString())),
+                    Row("Яркость цветов под стеклом", null, Stepper(nameof(Settings.GlassVibrancy), 50, 220, 10, v => v + "%"))),
+                Group("Живой остров",
+                    Row("Персонаж", "Живёт в свёрнутой чёлке: танцует под музыку, спит ночью и в «Не беспокоить», удивляется уведомлениям, грустит при низком заряде",
+                        Seg(nameof(Settings.Mascot), new (object, string)[] { ("none", "Нет") }.Concat(NIsland.Controls.Mascot.Skins.Select(x => ((object)x.Key, x.Name))).ToArray())),
+                    Row("Цвет персонажа", null, Seg(nameof(Settings.MascotColor), ("art", "Обложка"), ("accent", "Акцент"), ("#FFFFFF", "Белый"), ("#FFD60A", "Жёлтый"), ("#FF6B9B", "Розовый"))),
+                    Row("Настроение", "Реагирует на музыку, звонки, тревоги, батарею, ИИ и время суток. Выключи — будет просто улыбаться", Toggle(nameof(Settings.MascotMoods))),
+                    Row("Блик за курсором", "Свет на стекле следует за мышью", Toggle(nameof(Settings.IslandGlint))),
+                    Row("Ободок в такт музыке", "Край острова светится сильнее на громких местах", Toggle(nameof(Settings.BeatRim))),
+                    Row("Отблеск на событиях", "По острову пробегает свет, когда приходит уведомление", Toggle(nameof(Settings.IslandShimmer)))),
                 Group("Чёлка",
                     Row("Открывать чёлку", null, Seg(nameof(Settings.OpenMode), ("hover", "Наведением"), ("click", "Кликом"))),
                     Row("Кнопки сбоку", "Пузырёк рядом с чёлкой: скрыть, закрепить, не беспокоить, режимы", Toggle(nameof(Settings.SideBubble))),
@@ -552,6 +565,22 @@ namespace NIsland
                 Row("Размер текста песни", null, Stepper(nameof(Settings.LyricsFontSize), 10, 24, 1, v => v + " pt")),
                 Row("Полоска прогресса в чёлке", "Тонкая линия внизу свёрнутой чёлки показывает, сколько песни прошло", Toggle(nameof(Settings.NotchProgress))),
                 Row("История прослушиваний", "Сколько последних треков помнить", Stepper(nameof(Settings.HistoryKeep), 20, 300, 20, v => v + " шт."))),
+            Group("Как выглядит текст",
+                Row("Стиль", "Apple — дальние строки бледнеют; классика — ровный список; неон — строка светится; минимал — только текущая и соседние; прыжок — строка упруго подпрыгивает",
+                    Seg(nameof(Settings.LyricsStyle), ("apple", "Apple"), ("classic", "Классика"), ("neon", "Неон"), ("minimal", "Минимал"), ("bounce", "Прыжок"))),
+                Row("Цвет текущей строки", null, Seg(nameof(Settings.LyricsColor), ("white", "Белый"), ("accent", "Акцент"), ("art", "Обложка"))),
+                Row("Шрифт", null, Seg(nameof(Settings.LyricsFont), ("default", "Обычный"), ("light", "Тонкий"), ("serif", "С засечками"), ("mono", "Моно"), ("script", "Рукописный"))),
+                Row("Выравнивание", null, Seg(nameof(Settings.LyricsAlign), ("left", "Слева"), ("center", "По центру"))),
+                Row("Латиницей", "Под строкой — то же латинскими буквами: для песен на кириллице, греческом и корейском", Toggle(nameof(Settings.LyricsRoman))),
+                Row("Скопировать или сохранить", "Кнопки в заголовке текста: копировать (правый клик — сохранить .lrc в «Музыка\\Lyrics»)", null)),
+            Group("Текст на рабочем столе",
+                Row("Показывать", "Текущая строка крупно поверх всех окон, с караоке-заливкой", ToggleAct(nameof(Settings.DesktopLyrics), v => { S.DesktopLyrics = v; DesktopLyricsWindow.Apply(); })),
+                Row("Закрепить", "Строка пропускает клики насквозь. Сними, чтобы перетащить её в другое место", ToggleAct(nameof(Settings.DeskLyricsLock), v => DesktopLyricsWindow.SetLocked(v))),
+                Row("Размер", null, Stepper(nameof(Settings.DeskLyricsSize), 16, 72, 2, v => v + " pt", DesktopLyricsWindow.Apply)),
+                Row("Следующая строка", "Под текущей — следующая, бледнее", ToggleAct(nameof(Settings.DeskLyricsNext), v => { S.DeskLyricsNext = v; DesktopLyricsWindow.Apply(); })),
+                Row("Непрозрачность", null, Stepper(nameof(Settings.DeskLyricsOpacity), 20, 100, 10, v => v + "%", DesktopLyricsWindow.Apply)),
+                Row("Прятать в играх и фильмах", "Когда окно открыто на весь экран", Toggle(nameof(Settings.DeskLyricsHideFull))),
+                Row("Положение", "Вернуть строку вниз по центру экрана", UI.Pill("Сбросить", () => { S.DeskLyricsPos = ""; S.DesktopLyrics = false; DesktopLyricsWindow.Apply(); S.DesktopLyrics = true; DesktopLyricsWindow.Apply(); }))),
             Group("Текст песни",
                 Row("Караоке", "Текущая строчка заливается цветом в такт песне", Toggle(nameof(Settings.LyricsKaraoke))),
                 Row("Режим фокуса", "Текст крупно на всю чёлку вместо колонки", Toggle(nameof(Settings.LyricsFocus))),
@@ -742,6 +771,8 @@ namespace NIsland
                 Row("Погода в чёлке", "Температура справа в свёрнутой чёлке", Toggle(nameof(Settings.WeatherInNotch))),
                 Row("Предупреждать о дожде", "За 15–45 минут до дождя или снега — всплывашка «возьми зонт» (по прогнозу осадков на каждые 15 минут)", Toggle(nameof(Settings.WeatherRainAlert))),
                 Row("Утренняя сводка", "Первый раз после 7 утра: погода на день и совет, что надеть", Toggle(nameof(Settings.WeatherMorning))),
+                Row("Опасная погода", "Гроза в ближайшие 3 часа, штормовой ветер, ночной заморозок, жара, очень высокий УФ — всплывашка и сообщение на телефон", Toggle(nameof(Settings.WeatherAlerts))),
+                Row("Другие города", "Через запятую: на странице погоды — их температура; клик — сделать основным", Input(nameof(Settings.WeatherCities), 260)),
                 Row("Вид страницы погоды", null, Seg(nameof(Settings.WeatherView), ("hours", "По часам"), ("days", "7 дней")))),
             Group("Мировые часы",
                 Row("Города", "Формат: Europe/Moscow|Москва;Asia/Tokyo|Токио", Input(nameof(Settings.WorldClocks), 300))),
@@ -765,153 +796,6 @@ namespace NIsland
         // ------------------------------------------------------------------
         //  ИИ — провайдеры, ключи, модели, параметры, свои провайдеры
         // ------------------------------------------------------------------
-
-        UIElement AiSec()
-        {
-            var cur = Ai.Current;
-
-            // список провайдеров
-            var list = new StackPanel();
-            foreach (var p in Ai.All)
-            {
-                var prov = p;
-                bool on = p.Key == cur.Key;
-                string state = !p.NeedsKey ? "без ключа" : Ai.HasKey(p) ? "ключ добавлен ✓" : "нужен ключ";
-                var row = new Border
-                {
-                    CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(0, 0, 0, 3), Cursor = Cursors.Hand,
-                    Background = on ? UI.Hex("#2E0A84FF") : UI.Hex("#14FFFFFF"),
-                    BorderBrush = on ? UI.Hex("#0A84FF") : Brushes.Transparent, BorderThickness = new Thickness(1.5),
-                    Child = UI.Grid("*,a").Add(
-                        UI.Col(UI.Text(p.Name + (p.Custom ? "  · свой" : ""), 13, true), UI.Text($"{p.Kind switch { "anthropic" => "Anthropic SDK", _ => "OpenAI-совместимый" }} · {Ai.Model(p)}", 11, false, UI.Dim)),
-                        UI.Text(state, 11.5, false, p.NeedsKey && !Ai.HasKey(p) ? UI.Hex("#FF9F0A") : UI.Dim).At(0, 1)),
-                };
-                row.MouseLeftButtonUp += (_, __) => { S.AiProvider = prov.Key; Open("ai"); };
-                list.Children.Add(row);
-            }
-
-            // подключение выбранного
-            var keyBox = new PasswordBox
-            {
-                Width = 300, Foreground = Brushes.White, CaretBrush = Brushes.White, Background = UI.Hex("#1FFFFFFF"), BorderThickness = new Thickness(0),
-                Padding = new Thickness(8, 5, 8, 5), FontSize = 12.5,
-            };
-            var keyState = UI.Text(Ai.HasKey(cur) ? "Ключ сохранён (зашифрован Windows). Введи новый, чтобы заменить." : "Ключ хранится только на этом ПК, в зашифрованном виде.", 11, false, UI.Dim);
-            keyBox.LostFocus += (_, __) =>
-            {
-                if (keyBox.Password.Length == 0) return;
-                Ai.SetKey(cur, keyBox.Password);
-                keyBox.Clear();
-                keyState.Text = "Ключ сохранён ✓";
-            };
-            var keyRow = UI.Col(UI.Row(keyBox,
-                    UI.Pill("Удалить", () => { Ai.SetKey(cur, null); keyState.Text = "Ключ удалён"; }).M(6, 0, 0, 0),
-                    cur.KeyUrl != null ? UI.Pill("Получить ключ", () => SystemService.Run(cur.KeyUrl)).M(6, 0, 0, 0) : null),
-                keyState.M(0, 4, 0, 0));
-
-            var models = new WrapPanel();
-            var modelBox = Field(Ai.Model(cur), 300, v => Ai.SetModel(cur, v), cur.DefaultModel);
-            var modelRow = UI.Col(UI.Row(modelBox, UI.Pill("Загрузить список", async () =>
-            {
-                models.Children.Clear();
-                models.Children.Add(UI.Text("Загружаю…", 11.5, false, UI.Dim));
-                try
-                {
-                    var ids = await Ai.ListModels(cur);
-                    models.Children.Clear();
-                    foreach (var id in ids.Take(80))
-                    {
-                        var mid = id;
-                        var chip = UI.Pill(id, () => { Ai.SetModel(cur, mid); modelBox.Text = mid; });
-                        chip.Padding = new Thickness(8, 2, 8, 2); chip.FontSize = 10.5; chip.Margin = new Thickness(0, 3, 4, 0);
-                        models.Children.Add(chip);
-                    }
-                    if (ids.Count == 0) models.Children.Add(UI.Text("Сервер не вернул моделей", 11.5, false, UI.Dim));
-                }
-                catch (Exception e) { models.Children.Clear(); models.Children.Add(UI.Text("Не удалось: " + e.Message, 11.5, false, UI.Hex("#FF9F0A"))); }
-            }).M(6, 0, 0, 0)), models.M(0, 4, 0, 0));
-
-            var test = UI.Text("", 11.5, false, UI.Dim);
-            test.TextWrapping = TextWrapping.Wrap;
-            var testBtn = UI.Pill("Проверить", async () =>
-            {
-                test.Text = "Отправляю тестовый запрос…";
-                try
-                {
-                    var ans = await Ai.Ask(new[] { new AiMessage("user", "Ответь одним коротким предложением: ты на связи?") }, null, default, cur);
-                    test.Text = "Работает ✓ Ответ: " + ans.Trim();
-                }
-                catch (Exception e) { test.Text = "Ошибка: " + e.Message; }
-            }, true);
-
-            var conn = new List<UIElement>
-            {
-                Row(cur.Name, cur.Note, null),
-            };
-            if (cur.NeedsKey || cur.Custom) conn.Add(Wide("API-ключ", null, keyRow));
-            conn.Add(Wide("Модель", cur.Kind == "anthropic" ? "По умолчанию claude-opus-5-5. Можно выбрать claude-sonnet-5-5 или claude-haiku-5-5 — быстрее и дешевле." : null, modelRow));
-            conn.Add(Wide("Адрес сервера", cur.Kind == "anthropic" ? "Пусто — официальный api.anthropic.com. Можно указать свой прокси." : "Базовый адрес API (…/v1)",
-                Field(Ai.Url(cur), 420, v => Ai.SetUrl(cur, v), cur.BaseUrl)));
-            conn.Add(Wide("Проверка", null, UI.Col(testBtn.HA(HorizontalAlignment.Left), test.M(0, 6, 0, 0))));
-            if (cur.Custom) conn.Add(Row("Удалить этого провайдера", null, UI.Pill("Удалить", () => { Ai.RemoveCustom(cur.Key); Open("ai"); })));
-
-            // свой провайдер
-            var nName = Field("", 260, null, "Название, например «Мой сервер»");
-            var nUrl = Field("", 420, null, "https://api.example.com/v1");
-            var nModel = Field("", 260, null, "имя модели");
-            var nHeaders = new TextBox { AcceptsReturn = true, Height = 54, Template = Ago.PlainBox(), Foreground = Brushes.White, CaretBrush = Brushes.White, FontSize = 12 };
-            string kind = "openai";
-            var kindSeg = new StackPanel { Orientation = Orientation.Horizontal };
-            foreach (var (k, label) in new[] { ("openai", "OpenAI-совместимый"), ("anthropic", "Anthropic (Claude)") })
-            {
-                var kk = k;
-                var rb = new RadioButton { Style = UI.St("Segment"), Content = label, GroupName = "newkind", IsChecked = k == "openai" };
-                rb.Checked += (_, __) => kind = kk;
-                kindSeg.Children.Add(rb);
-            }
-            var needKey = new CheckBox { Style = UI.St("Switch"), IsChecked = true };
-            var add = UI.Pill("Добавить провайдера", () =>
-            {
-                if (string.IsNullOrWhiteSpace(nName.Text)) { nName.Focus(); return; }
-                var c = Ai.AddCustom(new AiCustomProvider
-                {
-                    Name = nName.Text.Trim(), Kind = kind, BaseUrl = nUrl.Text.Trim(), Model = string.IsNullOrWhiteSpace(nModel.Text) ? "model" : nModel.Text.Trim(),
-                    Headers = nHeaders.Text, NeedsKey = needKey.IsChecked == true,
-                });
-                S.AiProvider = "c:" + c.Id;
-                Open("ai");
-            }, true);
-
-            return Panel(
-                UI.Text("Нейросеть", 12, true, UI.Dim).M(4, 0, 0, 6),
-                list.M(0, 0, 0, 14),
-                Group("Подключение", conn.ToArray()),
-                Group("Параметры ответа",
-                    Row("Температура", "Выше — креативнее, ниже — точнее. «Авто» — как решит модель (для Claude не используется)",
-                        Stepper(nameof(Settings.AiTemperature), -10, 200, 10, v => v < 0 ? "авто" : (v / 100.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))),
-                    Row("Максимум токенов ответа", "0 — по умолчанию", Stepper(nameof(Settings.AiMaxTokens), 0, 64000, 512, v => v == 0 ? "авто" : v.ToString())),
-                    Row("Усилие (Claude)", "Насколько глубоко думать: low — быстро, max — тщательно",
-                        Seg(nameof(Settings.AiEffort), ("default", "Авто"), ("low", "Low"), ("medium", "Med"), ("high", "High"), ("xhigh", "XHigh"), ("max", "Max"))),
-                    Row("Память диалога", "Сколько последних сообщений отправлять", Stepper(nameof(Settings.AiHistory), 2, 100, 2, v => v + " сообщ.")),
-                    Row("Потоковый ответ", "Текст появляется по мере генерации", Toggle(nameof(Settings.AiStream))),
-                    Row("Тайм-аут", null, Stepper(nameof(Settings.AiTimeout), 10, 900, 10, v => v + " с"))),
-                Group("Характер",
-                    Row("Роль", null, Seg(nameof(Settings.AiPersona), Ai.Personas.Select(x => ((object)x.Key, x.Name)).ToArray())),
-                    Wide("Свои инструкции", "Добавляются к системному промпту. Например: «Обращайся на ты», «Отвечай с эмодзи».",
-                        InputMulti(nameof(Settings.AiSystem), 70)),
-                    Wide("Быстрые действия", "Кнопки под чатом. Формат: «Название | текст запроса», {clip} — текст из буфера обмена. Каждое с новой строки.",
-                        InputMulti(nameof(Settings.AiActions), 110))),
-                Group("Свой провайдер",
-                    Wide("Название", null, nName),
-                    Wide("Протокол", null, kindSeg),
-                    Wide("Адрес API", "Для OpenAI-совместимых — адрес до /v1 (к нему добавится /chat/completions)", nUrl),
-                    Wide("Модель", null, nModel),
-                    Wide("Доп. заголовки", "Необязательно. По строке: «Имя: значение»", nHeaders),
-                    Row("Нужен API-ключ", null, needKey),
-                    Wide("", null, add.HA(HorizontalAlignment.Left))),
-                Note("Ctrl+Alt+A — открыть чат. Claude подключается через официальный SDK Anthropic. Для claude-opus-5-5 включена серверная резервная модель: " +
-                     "если фильтр безопасности отклонит запрос, ответ продолжит подходящая модель в том же вызове."));
-        }
 
         // ------------------------------------------------------------------
         //  Кастомизация

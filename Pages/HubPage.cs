@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -146,7 +146,7 @@ namespace NIsland.Pages
 
         static string ShortName(Integration it) => it.Key switch
         {
-            "ics" => "Календарь", "ntfy" => "ntfy", "webhook" => "Вебхук", "rates" => "Курсы", "alerts" => "Тривога", "uptime" => "Сайты", "rss" => "Новости",
+            "ics" => "Календарь", "ntfy" => "ntfy", "webhook" => "Вебхук", "rates" => "Курсы", "uptime" => "Сайты", "rss" => "Новости",
             _ => it.Name,
         };
     }
