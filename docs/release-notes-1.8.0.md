@@ -1,4 +1,4 @@
-## N-Island 1.8.0 — living island, MCP for AI agents, built-in Defender, Telegram PC remote 2.0
+﻿## N-Island 1.8.0 — living island, MCP for AI agents, built-in Defender, Telegram PC remote 2.0
 
 *made in TG [@Ne1zvestny1i](https://t.me/Ne1zvestny1i) & Claude*
 
@@ -15,6 +15,10 @@ A little character lives in the collapsed island (blob, cat, ghost, robot, bunny
 ### 🎤 Lyrics · Тексты песен
 Five styles (Apple, classic, neon, minimal, bounce), font, colour, alignment, a romanized line under Cyrillic/Greek/Korean lyrics, copy and save as .lrc, and **desktop lyrics** — the current line on top of all windows with a karaoke fill (click-through when locked, hidden in games and movies). More stable search: a failing source is skipped for a while, 429 is retried, a strong NetEase/Kugou match no longer waits for LRCLIB.
 5 стилей, строка латиницей, .lrc и текст на рабочем столе.
+
+### 🎧 Player · Плеер
+Lyrics are visible again when the island is less than 100 % opaque (the lines used to vanish), and the current line is no longer cut off. **Lyrics translation into 13 languages now works:** right-click the translate button to pick a language; Google, a second Google endpoint, MyMemory and the island's AI are tried in turn, the header shows “→UK”, and a clear message appears when translation is not possible. At most 9 page dots, a distinct mixer icon, a shorter lyrics source label.
+Текст песни снова виден при прозрачном острове, перевод текста на 13 языков работает.
 
 ### 📱 Telegram PC remote 2.0 · Пульт ПК в Telegram 2.0
 Button menus for music, equalizer, sound outputs, per-app volume, screen (brightness, screenshots, monitor off, theme, wallpaper), windows, keyboard and mouse, presentations, files (browse, search, download, zip, Recycle Bin, print), camera, “where is my laptop”, power, network, VPN, modes, to-dos, timer and reminders. **Chat with the island's AI from the bot** — one shared conversation with the island chat, the answer streams in as it is written. Uses recent Bot API features: reactions, copy buttons, expandable quotes, bot description. Dangerous permissions can only be changed on the PC.

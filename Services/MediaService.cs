@@ -621,23 +621,44 @@ namespace NIsland.Services
         /// <summary>Перевод строк песни одним запросом.</summary>
         public async Task LoadTranslation()
         {
-            bool had = Translation != null;
+            bool had = Translation != null || TranslationLoading || TranslationNote != null;
             Translation = null;
+            TranslationNote = null;
             var lines = Lyrics;
-            if (!Store.Settings.LyricsTranslate || lines == null || lines.Count == 0) { if (had) LyricsChanged?.Invoke(); return; }
-            string key = TrackKey;
+            if (!Store.Settings.LyricsTranslate || lines == null || lines.Count == 0) { TranslationLoading = false; if (had) LyricsChanged?.Invoke(); return; }
+            string key = TrackKey, to = Store.Settings.LyricsTranslateTo;
+            int gen = ++_trGen;
+            TranslationLoading = true;
+            LyricsChanged?.Invoke();
             try
             {
-                var text = string.Join("\n", lines.Select(l => l.Text == "♪" ? "." : l.Text));
-                var (res, from) = await TranslateService.Raw(text, Store.Settings.LyricsTranslateTo);
-                if (key != TrackKey || lines != Lyrics) return;
-                if (string.Equals(from, Store.Settings.LyricsTranslateTo, StringComparison.OrdinalIgnoreCase)) return; // уже на нужном языке
-                var parts = res.Split('\n');
-                Translation = lines.Select((l, i) => i < parts.Length && l.Text != "♪" ? parts[i].Trim() : "").ToList();
-                LyricsChanged?.Invoke();
+                var (res, via) = await LyricsTranslate.Run(key, lines.Select(l => l.Text).ToList(), to);
+                if (gen != _trGen || key != TrackKey || lines != Lyrics) return;
+                Translation = res;
+                if (via != "cache") TranslationVia = via;
             }
-            catch (Exception e) { Log.Info("lyrics translate: " + e.Message); }
+            catch (LyricsTranslate.SameLanguageException)
+            {
+                if (gen != _trGen) return;
+                TranslationNote = I18n.T("Текст уже на этом языке") + " (" + LyricsTranslate.Name(to) + ")";
+            }
+            catch (Exception e)
+            {
+                if (gen != _trGen) return;
+                TranslationNote = e.Message;
+            }
+            finally
+            {
+                if (gen == _trGen) { TranslationLoading = false; LyricsChanged?.Invoke(); }
+            }
         }
+        int _trGen;
+        /// <summary>Перевод строк ещё идёт.</summary>
+        public bool TranslationLoading { get; private set; }
+        /// <summary>Почему перевода нет (сервисы недоступны, текст уже на этом языке) — показывается в плеере.</summary>
+        public string TranslationNote { get; private set; }
+        /// <summary>Кто перевёл: Google, MyMemory, ИИ…</summary>
+        public string TranslationVia { get; private set; }
 
         // ---------- история и избранное ----------
         void AddHistory()

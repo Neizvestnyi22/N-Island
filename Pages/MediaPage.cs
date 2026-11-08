@@ -138,7 +138,7 @@ namespace NIsland.Pages
                 Small("", () => SystemService.Run("https://www.google.com/search?q=" + Uri.EscapeDataString(M.TrackLine)), "Найти трек в интернете", 12, 26),
                 Small("", () => ShowHistory(false), "История и избранное", 12, 26),
                 Small("", () => { if (S.PgEq) App.Island.Expand("eq"); else App.ShowSettings("eq"); }, "Эквалайзер", 12, 26),
-                Small("", () => App.Island.Expand("sound"), "Микшер и устройство вывода", 12, 26));
+                Small("", () => App.Island.Expand("sound"), "Микшер и устройство вывода", 12, 26));
             extras.VerticalAlignment = VerticalAlignment.Top;
 
             var top = UI.Grid("a,*,a").Add(_art, UI.Col(_title, _artist).At(0, 1).M(14, 0, 4, 0), extras.At(0, 2));
@@ -151,11 +151,14 @@ namespace NIsland.Pages
             _main.Add(top, prog.At(1, 0), ctrl.At(2, 0));
 
             // ----- панель текста -----
-            _lines.RenderTransform = _shift;
+            // прокрутка строк — отступом, а не RenderTransform: при прозрачности острова < 100 % WPF рисует его в общий слой,
+            // и сдвинутый трансформацией блок внутри обрезки пропадал целиком. Анимации по-прежнему идут по _shift.Y.
+            _shift.Changed += (_, __) => _lines.Margin = new Thickness(0, _shift.Y, 0, 0);
             _lyricsStatus.Foreground = UI.Dim;
             _lyricsStatus.TextWrapping = TextWrapping.Wrap;
             _lyrInfo.Foreground = UI.Faint;
-            _trBtn = Small("", () => { S.LyricsTranslate = !S.LyricsTranslate; RenderLyricsTools(); }, "Перевод текста песни");
+            _trBtn = Small("", () => { S.LyricsTranslate = !S.LyricsTranslate; _trClicked = S.LyricsTranslate; RenderLyricsTools(); }, "Перевод текста песни · правый клик — выбрать язык");
+            _trBtn.MouseRightButtonUp += (_, e) => { ShowLangPick(); e.Handled = true; };
             _focusBtn = Small("", () => { S.LyricsFocus = !S.LyricsFocus; ApplyLayout(); Relayout(); }, "Только текст (крупно)");
             _focusPlay = Small("", M.TogglePlay, "Пауза / воспроизведение", 12, 26);
             var tools = UI.Row(
@@ -176,6 +179,8 @@ namespace NIsland.Pages
                 _lyrInfo.At(0, 1).M(4, 0, 4, 0),
                 tools.At(0, 2));
             _linesHost.Children.Add(_lines);
+            _linesHost.SizeChanged += (_, e) => FitFade(e.NewSize.Height);
+
             _lyricsBody.Add(_linesHost.M(0, 0, 6, 0), _lyricsStatus.M(0, 6, 6, 0), _picker);
             _wordTimer.Tick += (_, __) => OnWordTick();
             _lyricsBody.MouseWheel += (_, e) =>
@@ -191,6 +196,10 @@ namespace NIsland.Pages
             _lyricsPane.RowDefinitions.Add(new RowDefinition());
             _lyricsPane.Add(lyrHead.M(14, 0, 2, 2), _lyricsBody.At(1, 0).M(16, 0, 0, 0), divider);
             Grid.SetRowSpan(divider, 2);
+            // выбор языка — поверх всей панели текста (вместе с шапкой), иначе 13 языков не влезают
+            _lyricsPane.Children.Add(_langPick.M(12, 0, 4, 2));
+            Grid.SetRowSpan(_langPick, 2);
+            Panel.SetZIndex(_langPick, 5);
 
             // ----- выбор другого текста -----
             _pickQuery.FontSize = 11.5;
@@ -460,8 +469,26 @@ namespace NIsland.Pages
         {
             double off = M.LyricsOffset;
             var src = M.LyricsLoading ? "ищу…" : M.Lyrics == null ? "" : (M.LyricsSynced ? "синхр." : "без синхр.") + (M.LyricsSource != null ? " · " + M.LyricsSource : "");
-            _lyrInfo.Text = src + (Math.Abs(off) > 0.01 ? $" · сдвиг {(off > 0 ? "+" : "")}{off:0.0} с" : "")
-                            + (!M.HasTrackOffset && Math.Abs(M.AppOffset) > 0.01 ? " (" + I18n.T("для ") + M.AppName + ")" : "");
+            var shift = Math.Abs(off) > 0.01 ? $"{(off > 0 ? "+" : "")}{off:0.0} с" : "";
+            var full = src + (shift != "" ? " · сдвиг " + shift : "") + (!M.HasTrackOffset && Math.Abs(M.AppOffset) > 0.01 ? " (" + I18n.T("для ") + M.AppName + ")" : "");
+            // в шапке мало места рядом с кнопками: коротко — источник и сдвиг, полностью — в подсказке
+            // в шапке ~50 px: только самое нужное (сдвиг и перевод), источник и подробности — в подсказке
+            _lyrInfo.Text = M.LyricsLoading ? "…" : shift;
+            if (S.LyricsTranslate && M.Lyrics != null)
+            {
+                var code = S.LyricsTranslateTo.Split('-')[0].ToUpperInvariant();
+                var tr = M.TranslationLoading ? "→" + code + "…" : M.TranslationNote != null ? "⚠" + code : M.Translation != null ? "→" + code : "";
+                if (tr != "") _lyrInfo.Text = string.IsNullOrEmpty(_lyrInfo.Text) ? tr : tr + " " + _lyrInfo.Text;
+                if (M.TranslationNote != null) full += (full == "" ? "" : "\n") + M.TranslationNote;
+                else if (M.Translation != null && M.TranslationVia != null) full += (full == "" ? "" : "\n") + I18n.T("Перевод: ") + LyricsTranslate.Name(S.LyricsTranslateTo) + " · " + M.TranslationVia;
+            }
+            _lyrInfo.ToolTip = full == "" ? null : full;
+            // после нажатия — сказать, чем кончилось, если перевода не будет
+            if (_trClicked && !M.TranslationLoading && (M.TranslationNote != null || M.Translation != null))
+            {
+                _trClicked = false;
+                if (M.TranslationNote != null) App.Island.Toast("", "Перевод текста", M.TranslationNote);
+            }
             _trBtn.Foreground = S.LyricsTranslate ? UI.Res("AccentBrush") : Brushes.White;
         }
 
@@ -491,7 +518,7 @@ namespace NIsland.Pages
                 var font = DesktopLyricsWindow.Font(S.LyricsFont);
                 var align = FocusMode || S.LyricsAlign == "center" ? TextAlignment.Center : TextAlignment.Left;
                 var weight = S.LyricsFont == "light" ? FontWeights.Light : S.LyricsStyle == "classic" ? FontWeights.Normal : FontWeights.SemiBold;
-                _linesHost.OpacityMask = synced ? FadeMask : null;
+                _linesHost.OpacityMask = synced ? _fade : null;
                 if (M.Lyrics != null)
                 {
                     for (int i = 0; i < M.Lyrics.Count; i++)
@@ -536,7 +563,7 @@ namespace NIsland.Pages
                                 });
                             row = col;
                         }
-                        row.Margin = new Thickness(0, 3, 0, 3);
+                        row.Margin = new Thickness(0, 3, Math.Ceiling(size * 0.9), 3);   // запас: текущая строка увеличивается на 4–10 %
                         row.RenderTransform = new ScaleTransform(1, 1);
                         row.RenderTransformOrigin = align == TextAlignment.Center ? new Point(0.5, 0.5) : new Point(0, 0.5);
                         if (synced && M.CanSeek)
@@ -568,15 +595,24 @@ namespace NIsland.Pages
         static readonly Color Past = Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF);
 
         /// <summary>Строки плавно растворяются у верхнего и нижнего края — как в Apple Music.</summary>
-        static readonly LinearGradientBrush FadeMask = MakeFade();
+        // Маска в абсолютных координатах видимой панели: относительная считается от границ ВСЕХ строк
+        // (с учётом сдвига прокрутки — тысячи пикселей), и видимая часть попадала в прозрачный край градиента.
+        readonly LinearGradientBrush _fade = MakeFade();
+        void FitFade(double h)
+        {
+            if (h <= 0) return;
+            _fade.EndPoint = new Point(0, h);
+            // затухание сверху — постоянные ~28 px, а не доля высоты
+            _fade.GradientStops[1].Offset = Math.Clamp(28 / h, 0.02, 0.2);
+            _fade.GradientStops[2].Offset = Math.Clamp(1 - 40 / h, 0.6, 0.97);
+        }
         static LinearGradientBrush MakeFade()
         {
-            var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            var b = new LinearGradientBrush { MappingMode = BrushMappingMode.Absolute, StartPoint = new Point(0, 0), EndPoint = new Point(0, 200) };
             b.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0, 0, 0), 0));
             b.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0, 0, 0), 0.12));
             b.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0, 0, 0), 0.8));
             b.GradientStops.Add(new GradientStop(Color.FromArgb(0x10, 0, 0, 0), 1));
-            b.Freeze();
             return b;
         }
 
@@ -748,6 +784,39 @@ namespace NIsland.Pages
         }
 
         void HidePicker() => _picker.Visibility = Visibility.Collapsed;
+
+        // ---------- язык перевода ----------
+        readonly Border _langPick = new() { Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Top, CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 8, 6, 8) };
+        bool _trClicked;
+
+        void ShowLangPick()
+        {
+            _langPick.Background = UI.Hex("#F2161616");
+            var wrap = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            foreach (var (code, name) in LyricsTranslate.Langs)
+            {
+                var c = code;
+                // название языка — на своём языке, переводчик интерфейса его не трогает
+                var b = UI.Pill(new TextBlock { Text = name, FontSize = 11.5, Tag = "no-translate" }, () =>
+                {
+                    _langPick.Visibility = Visibility.Collapsed;
+                    _trClicked = true;
+                    if (S.LyricsTranslateTo == c && S.LyricsTranslate) _ = M.LoadTranslation();   // тот же язык — просто повторить
+                    S.LyricsTranslateTo = c;
+                    S.LyricsTranslate = true;
+                    RenderLyricsTools();
+                }, S.LyricsTranslate && S.LyricsTranslateTo == c);
+                // компактные чипы: 13 языков должны влезть в панель текста высотой ~130 px
+                b.Height = 24; b.MinHeight = 0; b.Padding = new Thickness(9, 0, 9, 0);
+                b.Margin = new Thickness(0, 0, 5, 5);
+                wrap.Children.Add(b);
+            }
+            var off = S.LyricsTranslate ? Small("", () => { _langPick.Visibility = Visibility.Collapsed; S.LyricsTranslate = false; RenderLyricsTools(); }, "Выключить перевод") : null;
+            var col = UI.Col(UI.Grid("*,a,a").Add(UI.Text(I18n.T("Перевести текст на…"), 12.5, true).VA(VerticalAlignment.Center), (UIElement)off?.At(0, 1) ?? new Border(),
+                                               Small("", () => _langPick.Visibility = Visibility.Collapsed, "Закрыть").At(0, 2)), wrap);
+            _langPick.Child = col;
+            _langPick.Visibility = Visibility.Visible;
+        }
 
         async void LoadCandidates(string query)
         {

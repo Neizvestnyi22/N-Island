@@ -591,7 +591,7 @@ namespace NIsland
                     Stepper(nameof(Settings.LyricsLeadMs), 0, 1000, 50, v => v == 0 ? "нет" : (v / 1000.0).ToString("0.##") + " с", () => MediaService.I.Resync())),
                 Row("Сдвиг для приложения", "Подвинул текст пару раз в Chrome — новые песни из Chrome сразу идут с этой поправкой", Toggle(nameof(Settings.LyricsAppOffset))),
                 Row("Ловить начало трека по звуку", "Для приложений, которые не сообщают время (Firefox и др.): отсчёт начинается, когда после тишины пошёл звук", Toggle(nameof(Settings.LyricsAutoAlign))),
-                Row("Перевод строчек", "Под каждой строкой — перевод (Google Переводчик)", Toggle(nameof(Settings.LyricsTranslate))),
+                Row("Перевод строчек", "Под каждой строкой — перевод (Google, MyMemory или ИИ острова). Язык — правый клик по кнопке перевода в плеере", Toggle(nameof(Settings.LyricsTranslate))),
                 Row("Язык перевода", null, Seg(nameof(Settings.LyricsTranslateTo), ("ru", "RU"), ("uk", "UA"), ("en", "EN"), ("de", "DE"), ("es", "ES"), ("tr", "TR"))),
                 Row("Хранить тексты на диске", "Знакомые песни открываются мгновенно и без интернета", Toggle(nameof(Settings.LyricsCache))),
                 Row("Запасные источники текстов", "Если LRCLIB недоступна или не знает песню — искать синхронный текст в NetEase Cloud Music и Kugou " +

@@ -868,7 +868,11 @@ namespace NIsland
         void RenderDots(bool icons)
         {
             Dots.Children.Clear();
-            for (int i = 0; i < _pages.Count; i++)
+            // страниц бывает 20+: точками показываем окно из 9 вокруг текущей, крайние меньше (как в iOS); иконки при наведении — все
+            const int Win = 9;
+            bool window = !(icons && S.PageIcons) && _pages.Count > Win;
+            int from = window ? Math.Clamp(_idx - Win / 2, 0, _pages.Count - Win) : 0, to = window ? from + Win : _pages.Count;
+            for (int i = from; i < to; i++)
             {
                 var p = _pages[i];
                 bool active = i == _idx;
@@ -890,14 +894,17 @@ namespace NIsland
                 }
                 else
                 {
+                    bool edge = window && !active && ((i == from && from > 0) || (i == to - 1 && to < _pages.Count));
+                    double d = edge ? 4 : 6;
                     el = new Border
                     {
-                        Width = active ? 14 : 6,
-                        Height = 6,
-                        CornerRadius = new CornerRadius(3),
+                        Width = active ? 14 : d,
+                        Height = d,
+                        CornerRadius = new CornerRadius(d / 2),
                         Background = active ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
-                        Margin = new Thickness(3, 5, 3, 5),
+                        Margin = new Thickness(3, 5 + (6 - d) / 2, 3, 5 + (6 - d) / 2),
                         Cursor = Cursors.Hand,
+                        ToolTip = p.Title,
                     };
                     // активная точка плавно растягивается
                     if (active && !icons)
