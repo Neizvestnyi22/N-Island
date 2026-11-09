@@ -176,7 +176,7 @@ namespace NIsland.Services
         public static string SystemPrompt(string channel = null)
         {
             var sb = new StringBuilder("Ты — помощник в приложении N-Island (Dynamic Island для Windows). Отвечай на языке пользователя, по делу, без длинных вступлений. " +
-                                       (channel == "tg" ? "Сейчас пользователь пишет из Telegram с телефона: можно использовать **жирный**, `код` и списки. "
+                                       (channel == "tg" ? "Сейчас пользователь пишет из Telegram с телефона. Ответ показывается с полной разметкой Markdown: заголовки, **жирный**, списки, таблицы, `код` и блоки кода, цитаты, формулы $...$ — используй их, когда это помогает, но не перегружай короткие ответы. "
                                                         : "Ответ показывается в небольшой панели. ") +
                                        $"Сегодня {DateTime.Now:dd.MM.yyyy}, {DateTime.Now:HH:mm}, {DateTime.Now.ToString("dddd", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}.");
             var persona = Personas.FirstOrDefault(x => x.Key == S.AiPersona);
@@ -229,8 +229,12 @@ namespace NIsland.Services
             System.Threading.Interlocked.Increment(ref _busy);
             BusyChanged?.Invoke();
             try { return await AskInner(history, onDelta, ct, p, channel); }
+            catch (Exception e) when (!ct.IsCancellationRequested) { Failed?.Invoke(e.Message); throw; }
             finally { System.Threading.Interlocked.Decrement(ref _busy); BusyChanged?.Invoke(); }
         }
+
+        /// <summary>Запрос не удался (не отмена) — персонаж острова озадачен.</summary>
+        public static event Action<string> Failed;
 
         static async Task<string> AskInner(IReadOnlyList<AiMessage> history, Action<string> onDelta, CancellationToken ct, AiProvider p, string channel)
         {
@@ -433,6 +437,15 @@ namespace NIsland.Services
             }
             if (sb.Length == 0 && reasoning.Length > 0) { onDelta?.Invoke(reasoning.ToString()); return reasoning.ToString(); }
             return StripThink(sb.ToString());
+        }
+
+        /// <summary>Для недописанного ответа: открытый &lt;think&gt; без закрытия — модель ещё рассуждает, показывать нечего.</summary>
+        public static string StripThinkPartial(string s)
+        {
+            if (string.IsNullOrEmpty(s) || S.AiShowReasoning) return s;
+            var t = s.TrimStart();
+            if (t.StartsWith("<think>", StringComparison.Ordinal) && !t.Contains("</think>", StringComparison.Ordinal)) return "";
+            return StripThink(s);
         }
 
         /// <summary>Некоторые модели (DeepSeek R1, Qwen) пишут рассуждения в &lt;think&gt; прямо в ответе.</summary>

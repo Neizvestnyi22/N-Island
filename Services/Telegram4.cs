@@ -65,7 +65,7 @@ namespace NIsland.Services
 
         /// <summary>Команды, которые держат «живое» сообщение или кнопки Telegram — в других мессенджерах не работают.</summary>
         static readonly HashSet<string> TelegramOnly = new() { "live", "dash", "watch", "stream", "pin", "keyboard", "nokeyboard", "start", "kbd",
-            "in", "at", "jobs" };   // расписание выполнялось бы позже уже с разрешениями Telegram, а не этого мессенджера
+            "in", "at", "jobs", "widget", "widgets", "pet" };   // расписание выполнялось бы позже уже с разрешениями Telegram, а не этого мессенджера
 
         /// <summary>Выполнить строку команды так, будто она пришла в Telegram, но ответ вернуть вызывающему.</summary>
         public static async Task<RemoteCtx> RunRemote(string text, string source, Func<string, bool> flags,
@@ -95,7 +95,7 @@ namespace NIsland.Services
                 else
                 {
                     var r = await hub.Command(cmd, arg);
-                    if (r?.Html != null) ctx.Add(Tr(r.Value.Html));
+                    if (r?.Html != null) ctx.Add(Legacy(Tr(r.Value.Html)));
                 }
             }
             catch (Exception e)

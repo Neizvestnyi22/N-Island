@@ -423,7 +423,17 @@ namespace NIsland.Controls
                 double x0 = wide ? m * _w / 2.0 : 0, y0 = wide ? 0 : m * _h / 2.0, mw = wide ? _w / 2.0 : _w, mh = wide ? _h : _h / 2.0;
                 double pad = Math.Min(mw, mh) * 0.06;
                 uint face = art ? 0xEBDDB0u : Mul(Pal(0.2), 140), ink = art ? 0x1A1A1Au : Pal(0.95);
-                Block((int)(x0 + pad), (int)(y0 + pad), (int)(x0 + mw - pad), (int)(y0 + mh - pad), face, 255);
+                // 2.2: подсветка шкалы живёт от громкости — в тишине тусклая, на пиках тёплая и яркая
+                double glow = 0.3 + 0.7 * Math.Min(1, _needle[m] * 1.1);
+                Block((int)(x0 + pad), (int)(y0 + pad), (int)(x0 + mw - pad), (int)(y0 + mh - pad), face, (int)(255 * glow));
+                int leds = 12;
+                for (int k = 0; k < leds; k++)
+                {
+                    double t = (k + 0.5) / leds;
+                    bool on = t <= _needle[m];
+                    double lx = x0 + pad * 2 + t * (mw - pad * 4);
+                    Dot(lx, y0 + mh - pad * 1.1, pad * 0.32, t > 0.75 ? 0xFF3030u : t > 0.55 ? 0xFFC020u : 0x30E060u, on ? 255 : 25, false);
+                }
                 double px = x0 + mw / 2, py = y0 + mh - pad * 2.2, R = Math.Min(mw * 0.42, (mh - pad * 3) * 0.95);
                 for (int k = 0; k <= 40; k++)
                 {
@@ -767,7 +777,7 @@ namespace NIsland.Controls
                     double v = row[Math.Min(i0, cols - 1)] * (1 - k) + row[Math.Min(i0 + 1, cols - 1)] * k;
                     double y = baseY - v * _h * 0.22 * env - env * _h * 0.01;
                     for (int yy = (int)y + 1; yy <= (int)baseY + 1; yy++) Put(x, yy, 0x000000, 255);   // закрываем хребты позади
-                    if (x > 0) Line(px, py, x, y, line, 235);
+                    if (x > 0) Line(px, py, x, y, line, (int)(70 + 185 * Math.Min(1, v * 2.5 + env * 0.15)));   // 2.2: хребты горят там, где звучит
                     px = x; py = y;
                 }
             }

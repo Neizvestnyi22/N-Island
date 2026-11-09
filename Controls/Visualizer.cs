@@ -31,7 +31,7 @@ namespace NIsland.Controls
             new("spectrogram", "Спектрограмма", "Бегущая карта частот: видно, как меняется музыка"),
             new("neon", "Неоновые волны", "Бас, середина и верха — отдельными светящимися волнами"),
             new("blob", "Капля", "Жидкая капля меняет форму под музыку"),
-        }.Concat(MoreStyles).Concat(NewStyles).ToArray();
+        }.Concat(MoreStyles).Concat(NewStyles).Concat(Styles4).ToArray();
 
         public static readonly (string Key, string Name)[] Palettes =
         {
@@ -181,7 +181,7 @@ namespace NIsland.Controls
                 case "spectrogram": Spectrogram(); break;
                 case "neon": Neon(); break;
                 case "blob": Blob(); break;
-                default: if (!Draw2(dt) && !Draw3(dt)) Bars(); break;
+                default: if (!Draw2(dt) && !Draw3(dt) && !Draw4(dt)) Bars(); break;
             }
         }
 
@@ -191,6 +191,7 @@ namespace NIsland.Controls
             _parts.Clear();
             ResetState2();
             ResetState3();
+            ResetState4();
         }
 
         // ------------------------------------------------------------------

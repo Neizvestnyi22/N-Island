@@ -47,6 +47,7 @@ namespace NIsland.Services
             new HubField("boot", "Сообщать, что ПК включился", "сообщение при запуске N-Island", "bool", Required: false, Default: "1"),
             new HubField("unlock", "Сообщать о входе, блокировке и пробуждении", "видно, если ноутбуком пользуется кто-то другой", "bool", Required: false, Default: "0"),
             new HubField("aitext", "Обычный текст — вопрос ИИ", "иначе текст показывается в острове; ИИ — /ai вопрос", "bool", Required: false, Default: "0"),
+            new HubField("rich", "Новое оформление сообщений", "Rich Messages из Bot API 10: заголовки, таблицы, ответы ИИ с разметкой. Если Telegram их не примет — обычный текст", "bool", Required: false, Default: "1"),
             new HubField("kbd", "Кнопки внизу чата", "Пульт, Статус, Музыка, Экран, Окна, Блок", "bool", Required: false, Default: "1"),
             new HubField("quiet", "Тихие часы", "например 23-8 — сообщения в это время приходят без звука", Required: false),
         };
@@ -117,7 +118,10 @@ namespace NIsland.Services
         static string T(string s) => I18n.T(s);
         /// <summary>Перевод интерфейсных строк построчно: чужой текст (песни, заметки) не совпадает со словарём и остаётся как есть.</summary>
         static string Tr(string html) => I18n.Active ? string.Join("\n", html.Split('\n').Select(I18n.T)) : html;
-        static string Cut(string s, int n) => s == null ? "" : s.Length > n ? s[..n] + "…" : s;
+        static string Cut(string s, int n) => s == null ? "" : s.Length > n ? s[..SafeLen(s, n)] + "…" : s;
+
+        /// <summary>Длина обрезки, не разрывающая эмодзи пополам: половинка суррогатной пары — невалидный UTF-16, Telegram такое отвергает.</summary>
+        internal static int SafeLen(string s, int n) => n > 0 && n < s.Length && char.IsHighSurrogate(s[n - 1]) ? n - 1 : n;
 
         static List<string> Split(string s, int max)
         {
@@ -125,7 +129,7 @@ namespace NIsland.Services
             while (s.Length > max)
             {
                 int cut = s.LastIndexOf('\n', max);
-                if (cut < max / 2) cut = max;
+                if (cut < max / 2) cut = SafeLen(s, max);
                 res.Add(s[..cut]);
                 s = s[cut..].TrimStart('\n');
             }
@@ -139,6 +143,9 @@ namespace NIsland.Services
             if (string.IsNullOrWhiteSpace(html)) html = "✓";
             if (translate) html = Tr(html);
             silent |= QuietNow();
+            // Bot API 10.1: rich-сообщение целиком (до 32 768 символов) с заголовками и таблицами
+            if (RichOn && html.Length < 30000 && await SendRich(new { html = ToRichHtml(html) }, keys, silent, replyTo) is long rid) return rid;
+            html = Legacy(html);
             long id = 0;
             var parts = Split(html, 4000);
             for (int i = 0; i < parts.Count; i++)
@@ -164,6 +171,13 @@ namespace NIsland.Services
         async Task Edit(long msgId, string html, object keys)
         {
             html = Tr(html);
+            if (RichOn && html.Length < 30000)
+            {
+                try { await Call("editMessageText", new { chat_id = V("chat"), message_id = msgId, rich_message = new { html = ToRichHtml(html) }, reply_markup = keys }); return; }
+                catch (TgError e) when (e.Message.Contains("not modified")) { return; }
+                catch (TgError) { }   // сообщение было обычным или фото — правим текстом
+            }
+            html = Legacy(html);
             if (html.Length > 4000) html = html[..4000];
             try { await Call("editMessageText", new { chat_id = V("chat"), message_id = msgId, text = html, parse_mode = "HTML", link_preview_options = NoPreview, reply_markup = keys }); }
             catch (TgError e) when (e.Message.Contains("not modified")) { }
@@ -173,9 +187,9 @@ namespace NIsland.Services
         /// <summary>Отправить файл (фото, документ). Возвращает номер сообщения — нужен «живому экрану», чтобы менять картинку.</summary>
         async Task<long> Upload(string method, string field, HttpContent file, string fileName, string caption = null, object keys = null)
         {
-            if (Remote is { } rc) { rc.AddFile(fileName, await file.ReadAsByteArrayAsync(), caption != null ? Tr(caption) : null); file.Dispose(); return 7; }
+            if (Remote is { } rc) { rc.AddFile(fileName, await file.ReadAsByteArrayAsync(), caption != null ? Legacy(Tr(caption)) : null); file.Dispose(); return 7; }
             using var form = new MultipartFormDataContent { { new StringContent(V("chat")), "chat_id" } };
-            if (caption != null) { form.Add(new StringContent(Tr(caption)), "caption"); form.Add(new StringContent("HTML"), "parse_mode"); }
+            if (caption != null) { form.Add(new StringContent(Legacy(Tr(caption))), "caption"); form.Add(new StringContent("HTML"), "parse_mode"); }
             if (keys != null) form.Add(new StringContent(JsonSerializer.Serialize(keys, JsonOpts)), "reply_markup");
             if (QuietNow()) form.Add(new StringContent("true"), "disable_notification");
             form.Add(file, field, fileName);
@@ -217,7 +231,7 @@ namespace NIsland.Services
         /// <summary>Длинный вывод — в сворачиваемую цитату (Bot API 7.4+).</summary>
         static string Fold(string html) => html.Length > 700 ? "<blockquote expandable>" + html + "</blockquote>" : html;
 
-        static object B(string text, string data) => new { text = T(text), callback_data = data };
+        static object B(string text, string data) => ButtonStyle(data) is { } st ? new { text = T(text), callback_data = data, style = st } : new { text = T(text), callback_data = data };
         static object Url(string text, string url) => new { text = T(text), url };
         static object K(params object[][] rows) => new { inline_keyboard = rows.Where(r => r != null && r.Length > 0).ToArray() };
         static object[] Row(params object[] b) => b.Where(x => x != null).ToArray();
@@ -296,7 +310,7 @@ namespace NIsland.Services
 
         static readonly (string Cmd, string Desc)[] Commands =
         {
-            ("menu", "Пульт ПК кнопками"), ("status", "Состояние ПК"), ("music", "Музыка и кнопки"), ("vol", "Громкость: /vol 40"),
+            ("menu", "Пульт ПК кнопками"), ("widget", "Живой пульт-виджет в чате"), ("widgets", "Все виджеты (45)"), ("pet", "Персонаж острова в чате"), ("status", "Состояние ПК"), ("music", "Музыка и кнопки"), ("vol", "Громкость: /vol 40"),
             ("screenshot", "Снимок экрана"), ("windows", "Открытые окна"), ("keys", "Клавиши и мышь"), ("type", "Напечатать текст на ПК"),
             ("files", "Файлы на ПК"), ("search", "Найти файл: /search отчёт"), ("top", "Что грузит ПК"), ("power", "Питание: сон, выключение"),
             ("lock", "Заблокировать ПК"), ("sysinfo", "О компьютере"), ("ip", "IP, Wi-Fi и VPN"), ("weather", "Погода"),
@@ -375,7 +389,7 @@ namespace NIsland.Services
                     try
                     {
                         long.TryParse(St("offset"), out var offset);
-                        var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query" } }, ct);
+                        var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query", "widget_query" } }, ct);
                         foreach (var u in res.EnumerateArray())
                         {
                             offset = Math.Max(offset, u.GetProperty("update_id").GetInt64() + 1);
@@ -454,6 +468,7 @@ namespace NIsland.Services
 
         async Task Handle(JsonElement u)
         {
+            if (u.TryGetProperty("widget_query", out var wq)) { await HandleWidgetQuery(wq); return; }
             if (u.TryGetProperty("callback_query", out var cq))
             {
                 if (!cq.TryGetProperty("message", out var cm) || cm.GetProperty("chat").GetProperty("id").ToString() != V("chat")) return;
@@ -816,6 +831,9 @@ namespace NIsland.Services
                     await Action("typing");
                     return (await Shell(cmd == "ps", arg), null);
                 default:
+                    if (cmd is "widget" or "widgets" or "pet") return await WidgetsCommand(cmd, arg);
+                    if (await Command4(cmd, arg) is { } r4) return r4;
+                    if (Commands4.Any(c => c.Cmd == cmd) || cmd is "batreport" or "clipimg") return null;   // ответ уже отправлен файлом
                     if (await Command3(cmd, arg) is { } r3) return r3;
                     if (await Command2(cmd, arg) is { } r2) return r2;
                     if (Commands2.Any(c => c.Cmd == cmd) || cmd is "cover" or "dash" or "stream" or "scenario" or "clips" or "played" or "defender" or "translate" or "c" or "wol" or "speedtest" or "bt" or "bluetooth" or "airplane" or "autorun")
@@ -848,6 +866,12 @@ namespace NIsland.Services
                    "Утилиты: /conv 100 usd uah · /wiki · /clock Tokyo · /days 31.12 · /moon · /sun · /tomorrow · /password · /uuid · /hash · /b64 · /roll · /coin · /sw · /pomo · /sleeptimer 30 · /water\n" +
                    "Дела: /notes · /todos · /done 2 · /deltodo 2 · /notif · /clipclear\n" +
                    "Окна и звук: /close · /maximize · /minimize · /minall · /appvol · /volup · /voldown · /like · /desklyrics · /viz · /mascot · /icons · /restartapp\n\n" +
+                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 45 виджетов · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>🖥 Программы и Windows</b>\n" +
+                   "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
+                   "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +
+                   "/events · /crashes · /bsod · /hotfix · /firewall · /wdstatus · /users · /shares · /drivers · /usbdev · /audiodev · /outdev · /batreport · /clipimg · /sysreport\n" +
+                   "Wi-Fi: /wifihealth · /wifiq · /channels · /reconnect · /forget сеть · /router\n\n" +
                    "/settings — что присылать на телефон\n🔐 — выключено, включается только на ПК";
         }
 
@@ -1222,8 +1246,8 @@ namespace NIsland.Services
                             case "prev": m.Prev(); return "⏮";
                             case "next": m.Next(); return "⏭";
                             case "play": bool was = m.IsPlaying; m.TogglePlay(); return was ? "⏸ Пауза" : "▶ Играет";
-                            case "back": m.SeekBy(-10); return "⏪ −10 с";
-                            case "fwd": m.SeekBy(10); return "⏩ +10 с";
+                            case "back": m.SeekStep(-1); return $"⏪ −{MediaService.Step} с";
+                            case "fwd": m.SeekStep(1); return $"⏩ +{MediaService.Step} с";
                             case "fav": return m.ToggleFavorite() ? "💖 В избранном" : "Убрано из избранного";
                         }
                         return "";
@@ -1514,6 +1538,8 @@ namespace NIsland.Services
                     return "";
                 }
             }
+            if (head is "ap" or "x4") return await Callback4(head, rest, msgId) ?? "";
+            if (head == "wg") return await WidgetsCallback(rest) ?? "";
             return await Do2(head, rest, msgId) ?? "";
         }
 

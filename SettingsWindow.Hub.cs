@@ -174,6 +174,13 @@ namespace NIsland
                 if (it.Key is "telegram" or "ntfy" or "discord" or "webhook")
                     body.Children.Add(new TextBlock { Text = "«Уведомления приложений» отправляют наружу текст чужих уведомлений — включай, только если тебе это нужно.", FontSize = 11, Foreground = UI.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) });
             }
+            // 2.2: виджеты Bot API 10.4 — сколько живут и всплывашки от персонажа
+            if (it.Key == "telegram")
+            {
+                body.Children.Add(UI.Text("Виджеты в чате (/widgets)", 12, true, UI.Dim).M(0, 6, 0, 4));
+                body.Children.Add(Row("Обновлять живые виджеты", "Плеер, нагрузка, сеть и другие обновляются сами столько минут после отправки или нажатия", Stepper(nameof(Settings.WidgetLiveMin), 1, 60, 1, v => v + " мин")));
+                body.Children.Add(Row("Всплывашка от персонажа", "Показать на острове, когда персонажа тыкают из Telegram", SettingsWindow.Toggle(nameof(Settings.TgWidgetToasts))));
+            }
 
             var result = new TextBlock { FontSize = 12, Foreground = UI.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
             var test = UI.Pill(UI.IconLabel("", "Проверить", 11), null, true);

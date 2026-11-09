@@ -609,6 +609,7 @@ namespace NIsland
 
         public void Expand(string page = null, bool activate = false)
         {
+            Grow(false);
             if (_pages.Count == 0 || _hiddenFs) return;
             if (Modes.Hidden) Unhide();
             if (page != null)
@@ -1701,6 +1702,9 @@ namespace NIsland
                 case nameof(Settings.BeatRim):
                     SyncLive();
                     break;
+                case nameof(Settings.IslandShadow):
+                    ApplyShadow();
+                    break;
                 case nameof(Settings.PgMedia):
                 case nameof(Settings.PgCalendar):
                 case nameof(Settings.PgTodo):
@@ -1810,6 +1814,7 @@ namespace NIsland
                 case nameof(Settings.Glass):
                 case nameof(Settings.LiteMode):
                     if (!S.Glass || S.LiteMode) DropGlass();
+                    ApplyShadow();
                     break;
                 case nameof(Settings.ClipWatch):
                 case nameof(Settings.ClipSave):

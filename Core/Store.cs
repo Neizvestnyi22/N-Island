@@ -208,6 +208,8 @@ namespace NIsland.Core
         /// <summary>Аксессуар: auto, none, cap, crown, bow, party, headphones, glasses, santa, flower.</summary>
         public string MascotHat { get => _mascotHat; set => Set(ref _mascotHat, value); } string _mascotHat = "auto";
         /// <summary>Размер персонажа, % (100 — 22 px).</summary>
+        public int GlintSize { get => _glintSize; set => Set(ref _glintSize, Math.Clamp(value, 40, 250)); } int _glintSize = 100;           // размер блика, %
+        public int GlintStrength { get => _glintStr; set => Set(ref _glintStr, Math.Clamp(value, 10, 150)); } int _glintStr = 100;        // яркость блика, %
         public int MascotSize { get => _mascotSize; set => Set(ref _mascotSize, value); } int _mascotSize = 100;
         /// <summary>Скорость анимаций, %.</summary>
         public int MascotSpeed { get => _mascotSpeed; set => Set(ref _mascotSpeed, value); } int _mascotSpeed = 100;
@@ -223,6 +225,27 @@ namespace NIsland.Core
         public bool MascotNight { get => _mascotNight; set => Set(ref _mascotNight, value); } bool _mascotNight = true;
         /// <summary>Клик по персонажу — реакция вместо открытия острова.</summary>
         public bool MascotPoke { get => _mascotPoke; set => Set(ref _mascotPoke, value); } bool _mascotPoke = true;
+        /// <summary>Щекотка колесом, поглаживание курсором, двойной клик.</summary>
+        public bool MascotPlay { get => _mascotPlay; set => Set(ref _mascotPlay, value); } bool _mascotPlay = true;
+        // 2.2: остров, плеер, виджеты Telegram, Wi-Fi
+        /// <summary>Цвет блика за курсором: white | accent | art.</summary>
+        public string GlintColor { get => _glintColor; set => Set(ref _glintColor, value); } string _glintColor = "white";
+        /// <summary>Свёрнутый остров чуть подрастает под курсором.</summary>
+        public bool IslandHoverGrow { get => _hoverGrow; set => Set(ref _hoverGrow, value); } bool _hoverGrow = true;
+        /// <summary>Мягкая тень под островом.</summary>
+        public bool IslandShadow { get => _islShadow; set => Set(ref _islShadow, value); } bool _islShadow;
+        /// <summary>Шаг перемотки, секунды (кнопки плеера, бот, виджет, MCP).</summary>
+        public int PlayerSeekStep { get => _seekStep; set => Set(ref _seekStep, value); } int _seekStep = 10;
+        /// <summary>Сколько раз уже слушал этот трек — рядом с исполнителем.</summary>
+        public bool PlayerPlayCount { get => _playCount; set => Set(ref _playCount, value); } bool _playCount = true;
+        /// <summary>Кнопка «повтор фрагмента A–B» в плеере.</summary>
+        public bool PlayerAbButton { get => _abBtn; set => Set(ref _abBtn, value); } bool _abBtn = true;
+        /// <summary>Сколько минут виджеты в Telegram обновляются сами после отправки или нажатия.</summary>
+        public int WidgetLiveMin { get => _wLive; set => Set(ref _wLive, value); } int _wLive = 5;
+        /// <summary>Всплывашка на острове, когда в Telegram нажимают в виджете персонажа.</summary>
+        public bool TgWidgetToasts { get => _wToast; set => Set(ref _wToast, value); } bool _wToast = true;
+        /// <summary>Предупредить, если сигнал Wi-Fi ниже N % (0 — не следить).</summary>
+        public int WifiSignalAlert { get => _wifiAlert; set => Set(ref _wifiAlert, value); } int _wifiAlert;
         /// <summary>Жидкое стекло: чёткий яркий фон и преломление по краям.</summary>
         public bool LiquidGlass { get => _liquid; set => Set(ref _liquid, value); } bool _liquid = true;
         public int LiquidRefract { get => _liqRef; set => Set(ref _liqRef, value); } int _liqRef = 60;

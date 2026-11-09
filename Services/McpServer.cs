@@ -305,7 +305,7 @@ namespace NIsland.Services
         }
 
         public static string LevelName(int l) => l switch { 0 => "Только чтение", 1 => "Управление", _ => "Настройка острова" };
-        static string Cut(string s, int n) => s.Length > n ? s[..n] + "…" : s;
+        static string Cut(string s, int n) => s.Length > n ? s[..TelegramHub.SafeLen(s, n)] + "…" : s;
 
         // ------------------------------------------------------------------
         //  Инструменты
@@ -451,7 +451,7 @@ namespace NIsland.Services
                     await Ui(() =>
                     {
                         var m = MediaService.I;
-                        switch (act) { case "play": m.Play(); break; case "pause": m.Pause(); break; case "next": m.Next(); break; case "prev": m.Prev(); break; case "forward": m.SeekBy(10); break; case "back": m.SeekBy(-10); break; default: m.TogglePlay(); break; }
+                        switch (act) { case "play": m.Play(); break; case "pause": m.Pause(); break; case "next": m.Next(); break; case "prev": m.Prev(); break; case "forward": m.SeekStep(1); break; case "back": m.SeekStep(-1); break; default: m.TogglePlay(); break; }
                     });
                     return "Готово: " + act;
                 }),

@@ -376,7 +376,7 @@ namespace NIsland.Services
             Changed?.Invoke();
             if (newTrack && title != "")
             {
-                if (realChange) TrackChanged?.Invoke();
+                if (realChange) { LoopA = LoopB = null; TrackChanged?.Invoke(); }
                 AddHistory();
                 _ = LoadLyrics();
             }
@@ -498,6 +498,7 @@ namespace NIsland.Services
         void OnTick()
         {
             if (IsPlaying) Tick?.Invoke();
+            CheckLoop();
             UpdateLyricIndex();
             _tickCount++;
             // раз в секунду сверяем позицию с приложением — текст не «уплывает» от музыки
@@ -738,6 +739,45 @@ namespace NIsland.Services
         {
             if (!CanSeek) return;
             Seek(Position + TimeSpan.FromSeconds(seconds));
+        }
+
+        /// <summary>2.2: шаг перемотки из настроек (5–60 с).</summary>
+        public static int Step => Math.Clamp(Store.Settings.PlayerSeekStep, 5, 60);
+        public void SeekStep(int dir) => SeekBy(dir * Step);
+
+        // ---- повтор фрагмента A–B ----
+        public TimeSpan? LoopA { get; private set; }
+        public TimeSpan? LoopB { get; private set; }
+
+        /// <summary>1-е нажатие — начало фрагмента, 2-е — конец (и сразу повтор), 3-е — выключить. Возвращает "A", "AB" или null.</summary>
+        public string CycleLoop()
+        {
+            if (!CanSeek) { LoopA = LoopB = null; return null; }
+            if (LoopA == null) { LoopA = Position; return "A"; }
+            if (LoopB == null)
+            {
+                if (Position <= LoopA.Value + TimeSpan.FromSeconds(1)) { LoopA = null; return null; }
+                LoopB = Position;
+                Seek(LoopA.Value);
+                return "AB";
+            }
+            LoopA = LoopB = null;
+            return null;
+        }
+
+        void CheckLoop()
+        {
+            if (LoopA is TimeSpan a && LoopB is TimeSpan b && IsPlaying && Position >= b) Seek(a);
+        }
+
+        /// <summary>Сколько раз этот трек есть в истории прослушиваний.</summary>
+        public int PlayCount
+        {
+            get
+            {
+                try { var t = Title; var ar = Artist; return Store.Data.Played.Count(p => p.Title == t && p.Artist == ar); }
+                catch { return 0; }
+            }
         }
 
         public async void ToggleShuffle()

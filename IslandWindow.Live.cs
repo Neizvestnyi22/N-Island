@@ -22,7 +22,7 @@ namespace NIsland
         Border _glint, _shine;
         RadialGradientBrush _lensMask;
         bool _liveHooked;
-        double _mouseX = -1, _glintX, _liveT, _rimLevel;
+        double _mouseX = -1, _mouseY = -1, _glintX, _glintY = -1, _liveT, _rimLevel;
 
         bool MascotOn => S.Mascot != "none" && S.Mode != "minimal" && !Modes.Hidden;
 
@@ -68,8 +68,22 @@ namespace NIsland
             };
             Stage.Children.Add(_shine);
 
-            Island.MouseMove += (_, e) => _mouseX = e.GetPosition(Island).X;
-            Island.MouseLeave += (_, __) => _mouseX = -1;
+            Island.MouseMove += (_, e) =>
+            {
+                var pt = e.GetPosition(Island); _mouseX = pt.X; _mouseY = pt.Y;
+                if (OverMascot(e)) { if (S.MascotPlay) _mascot.Stroke(e.GetPosition(_mascot).X); } else _mascot?.StrokeEnd();
+            };
+            Island.MouseLeave += (_, __) => { _mouseX = -1; _mouseY = -1; _mascot?.StrokeEnd(); Grow(false); };
+            Island.MouseEnter += (_, __) => Grow(true);
+            ApplyShadow();
+            // колесо над персонажем — щекотка (остров при этом не листает страницы и не меняет громкость)
+            Island.PreviewMouseWheel += (_, e) =>
+            {
+                if (_mode == Mode.Expanded || !S.MascotPlay || !OverMascot(e)) return;
+                _mascot.Tickle();
+                e.Handled = true;
+            };
+            Ai.Failed += _ => Dispatcher.BeginInvoke(new Action(() => React("confused", 2.4)));
             Island.MouseEnter += (_, __) => { SyncLive(); if (MascotOn && S.MascotMoods) _mascot.Flash("happy", 1.2, jump: false); };
             MediaService.I.Changed += () => Dispatcher.BeginInvoke(new Action(() => { SyncLive(); UpdateMascot(); }));
             Ai.BusyChanged += () => Dispatcher.BeginInvoke(new Action(UpdateMascot));
@@ -91,7 +105,8 @@ namespace NIsland
             AudioService.I.Changed += (vol, muted, _) => Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (muted && !_wasMuted) React("yawn", 1.8);
-                else if (!muted && vol > 0.9 && _lastVol <= 0.9 && _lastVol >= 0) React("surprised", 1.5);
+                // на полную: под музыку — качает головой, без музыки — поражён
+                else if (!muted && vol > 0.9 && _lastVol <= 0.9 && _lastVol >= 0) React(MediaService.I.IsPlaying ? "headbang" : "amazed", 2);
                 _wasMuted = muted;
                 _lastVol = vol;
             }));
@@ -102,7 +117,10 @@ namespace NIsland
             // разблокировали ПК — машет; проснулся после сна — зевает, потом машет
             Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) =>
             {
-                if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock) Dispatcher.BeginInvoke(new Action(() => React("wave", 2.4)));
+                if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock) _lockedAt = DateTime.Now;
+                // разблокировали: после долгого отсутствия — воздушный поцелуй, иначе машет
+                if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock)
+                    Dispatcher.BeginInvoke(new Action(() => React(_lockedAt != DateTime.MinValue && (DateTime.Now - _lockedAt).TotalMinutes > 30 ? "kiss" : "wave", 2.4)));
             };
             Microsoft.Win32.SystemEvents.PowerModeChanged += (_, e) =>
             {
@@ -115,8 +133,19 @@ namespace NIsland
             MediaService.I.TrackChanged += () => Dispatcher.BeginInvoke(new Action(() =>
             {
                 var now = DateTime.Now;
-                React((now - _trackAt).TotalSeconds < 8 ? "surprised" : "listen", 1.5);
+                // пролистал три трека подряд за полминуты — озадачен: «да что ж тебе всё не то?»
+                _skips = (now - _trackAt).TotalSeconds < 10 ? _skips + 1 : 0;
+                React(_skips >= 3 ? "confused" : (now - _trackAt).TotalSeconds < 8 ? "surprised" : "listen", _skips >= 3 ? 2.2 : 1.5);
+                if (_skips >= 3) _skips = 0;
                 _trackAt = now;
+            }));
+            // избранное и много копирований подряд
+            ClipboardService.I.Copied += _ => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var now = DateTime.Now;
+                _copies = (now - _copyAt).TotalSeconds < 12 ? _copies + 1 : 1;
+                _copyAt = now;
+                if (_copies == 5) React("excited", 2);
             }));
             MediaService.I.PlaybackChanged += () => Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -128,12 +157,30 @@ namespace NIsland
         }
 
         bool _wasMuted, _wasPlaying;
+        int _skips, _copies;
+        DateTime _copyAt, _lockedAt = DateTime.MinValue, _boredAt, _sickAt, _scaredAt;
+
+        bool OverMascot(System.Windows.Input.MouseEventArgs e)
+        {
+            if (_mascot == null || !MascotOn || _mascot.Visibility != Visibility.Visible || _mascot.ActualWidth < 4) return false;
+            var p = e.GetPosition(_mascot);
+            const double pad = 4;
+            return p.X >= -pad && p.Y >= -pad && p.X <= _mascot.ActualWidth + pad && p.Y <= _mascot.ActualHeight + pad;
+        }
         double _lastVol = -1;
         int _lastBattery = -1, _lastHourCheer = -1;
         DateTime _hoverSince = DateTime.MinValue, _dizzyAt, _heatAt, _trackAt;
 
         /// <summary>Реакция персонажа по запросу других частей приложения (Telegram, MCP, агенты). Можно звать из любого потока.</summary>
         public void MascotReact(string mood, double seconds = 2) => Dispatcher.BeginInvoke(new Action(() => React(mood, seconds)));
+
+        /// <summary>Тык из Telegram-виджета: та же реакция, что от клика по персонажу.</summary>
+        public void MascotPoke() => Dispatcher.BeginInvoke(new Action(() => { if (_mascot != null && MascotOn) _mascot.Poke(); }));
+
+        /// <summary>Текущее настроение персонажа (с учётом короткой эмоции) — для виджета в Telegram.</summary>
+        public string MascotMood => Dispatcher.Invoke(() => _mascot?.Current ?? "happy");
+
+        public string MascotTintHex => Dispatcher.Invoke(() => _mascot == null ? null : $"#{_mascot.Tint.R:X2}{_mascot.Tint.G:X2}{_mascot.Tint.B:X2}");
 
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -166,11 +213,23 @@ namespace NIsland
             {
                 int b = sys.BatteryPercent;
                 if (_lastBattery > 20 && b <= 20 && !sys.Charging) React("sad", 3);                 // заряд упал ниже 20 %
+                // 5 % и меньше без зарядки — пугается (не чаще раза в 3 минуты)
+                if (b <= 5 && !sys.Charging && (now - _scaredAt).TotalMinutes > 3) { _scaredAt = now; React("scared", 3); }
                 if (_lastBattery >= 0 && _lastBattery < 100 && b >= 100 && sys.Charging) React("party", 3);   // зарядился полностью
                 _lastBattery = b;
             }
             if (S.MascotReactPc && sys.RamPercent() > 90 && (now - _dizzyAt).TotalMinutes > 5) { _dizzyAt = now; React("dizzy", 2.5); }
             if (S.MascotReactPc && mood == "idle" && WeatherService.Cached is { } w && w.Temp >= 28 && (now - _heatAt).TotalMinutes > 5) { _heatAt = now; React("hot", 3); }
+            // память почти кончилась или системный диск забит — «болеет» (раз в 20 минут)
+            if (S.MascotReactPc && (now - _sickAt).TotalMinutes > 20 && (sys.RamPercent() > 95 || SysDriveLow()))
+            {
+                _sickAt = now; React("sick", 3);
+            }
+            // долго ничего не происходит (3–10 мин без ввода, без музыки) — скучает
+            if (mood == "idle" && (now - _boredAt).TotalMinutes > 4 && IdleMinutes() is > 3 and < 10 && !MediaService.I.IsPlaying)
+            {
+                _boredAt = now; React("bored", 3);
+            }
             // начало часа — радуется; поздний вечер — зевает; пятница вечер — праздник
             if (now.Minute == 0 && now.Hour != _lastHourCheer)
             {
@@ -180,6 +239,21 @@ namespace NIsland
             // курсор долго держат над островом — подмигивает или влюбляется
             if (_hover) { if (_hoverSince == DateTime.MinValue) _hoverSince = now; else if ((now - _hoverSince).TotalSeconds > 4) { _hoverSince = now.AddSeconds(6); React(now.Second % 2 == 0 ? "wink" : "love", 2); } }
             else _hoverSince = DateTime.MinValue;
+        }
+
+        static DateTime _driveAt;
+        static bool _driveLow;
+        static bool SysDriveLow()
+        {
+            if ((DateTime.Now - _driveAt).TotalMinutes < 10) return _driveLow;
+            _driveAt = DateTime.Now;
+            try
+            {
+                var d = new System.IO.DriveInfo(System.IO.Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\");
+                _driveLow = d.IsReady && d.TotalSize > 0 && d.AvailableFreeSpace < d.TotalSize / 20;
+            }
+            catch { _driveLow = false; }
+            return _driveLow;
         }
 
         static readonly System.Text.RegularExpressions.Regex LoveWords = new(@"\b(love|lover|кохаю|кохання|люблю|любовь|любви|любимая|любимый|сердце|серце|heart|amor|liebe)\b",
@@ -263,7 +337,7 @@ namespace NIsland
             _wasCharging = charging;
             _seenBattery = true;
             bool aiBusy = Ai.Busy > 0;
-            if (_wasAiBusy && !aiBusy) _mascot.Flash("happy", 1.6);                        // ИИ ответил
+            if (_wasAiBusy && !aiBusy) _mascot.Flash(DateTime.Now.Second % 3 == 0 ? "proud" : "happy", 1.6);   // ИИ ответил
             _wasAiBusy = aiBusy;
             // мороз за окном — иногда ёжится
             if (pc && mood == "idle" && WeatherService.Cached is { } w && w.Temp <= 0 && (DateTime.Now - _coldAt).TotalMinutes > 3)
@@ -321,7 +395,8 @@ namespace NIsland
             var p = e.GetPosition(_mascot);
             const double pad = 4;   // персонаж маленький — даём попасть
             if (p.X < -pad || p.Y < -pad || p.X > _mascot.ActualWidth + pad || p.Y > _mascot.ActualHeight + pad) return false;
-            _mascot.Poke();
+            if (e.ClickCount >= 2 && S.MascotPlay) _mascot.DoublePoke();
+            else _mascot.Poke();
             return true;
         }
 
@@ -367,6 +442,25 @@ namespace NIsland
         }
 
         IDisposable _liveClock;
+        Color _glintCol = Colors.White;
+
+        // ---- 2.2: свёрнутый остров чуть подрастает под курсором; мягкая тень ----
+        readonly ScaleTransform _grow = new(1, 1);
+
+        void Grow(bool on)
+        {
+            if (Island.RenderTransform != _grow) { Island.RenderTransformOrigin = new Point(0.5, 0); Island.RenderTransform = _grow; }
+            double to = on && S.IslandHoverGrow && _mode == Mode.Collapsed && !Modes.Hidden && !S.LiteMode ? 1.045 : 1;
+            if (Math.Abs(_grow.ScaleX - to) < 0.001 && !on) return;
+            var a = new DoubleAnimation(to, TimeSpan.FromMilliseconds(on ? 220 : 160)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            _grow.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            _grow.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+        }
+
+        void ApplyShadow()
+        {
+            Island.Effect = S.IslandShadow && !S.LiteMode ? new DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Direction = 270, Opacity = 0.45, Color = Colors.Black, RenderingBias = RenderingBias.Performance } : null;
+        }
 
         void OnLiveFrame(double dt)
         {
@@ -377,13 +471,36 @@ namespace NIsland
 
             if (S.IslandGlint)
             {
-                double target = _mouseX >= 0 ? _mouseX : w / 2 + Math.Sin(_liveT * 0.35) * w * 0.35;
-                _glintX += (target - _glintX) * Math.Min(1, dt * 7);
-                _glint.Width = Math.Max(90, h * 2.4);
-                _glint.Height = h * 1.3;
+                // 2.2: блик ходит за курсором по ВСЕЙ панели — и по горизонтали, и по вертикали (раньше был прибит к верхнему краю
+                // и в раскрытом острове закрывал только верхнюю половину); размер — от короткой стороны, мягкий край
+                double tx = _mouseX >= 0 ? _mouseX : w / 2 + Math.Sin(_liveT * 0.35) * w * 0.35;
+                double ty = _mouseY >= 0 ? _mouseY : h / 2 + Math.Cos(_liveT * 0.27) * h * 0.25;
+                if (_glintY < 0) _glintY = ty;
+                double k = Math.Min(1, dt * 9);
+                _glintX += (tx - _glintX) * k;
+                _glintY += (ty - _glintY) * k;
+                double size = Math.Clamp(Math.Min(w, h) * (_mode == Mode.Expanded ? 1.1 : 2.6), 90, 360) * S.GlintSize / 100.0;
+                _glint.Width = size * 1.35;
+                _glint.Height = size;
                 ((TranslateTransform)_glint.RenderTransform).X = _glintX - _glint.Width / 2;
-                ((TranslateTransform)_glint.RenderTransform).Y = -h * 0.45;
-                double op = _mouseX >= 0 ? 0.9 : _mode == Mode.Expanded ? 0.35 : 0.5;
+                ((TranslateTransform)_glint.RenderTransform).Y = _glintY - _glint.Height / 2;
+                double op = (_mouseX >= 0 ? 0.95 : _mode == Mode.Expanded ? 0.3 : 0.5) * S.GlintStrength / 100.0;
+                // цвет блика: белый, акцент или цвет обложки — кисть пересобирается только при смене цвета
+                var gc = S.GlintColor switch
+                {
+                    "accent" => (UI.Res("AccentBrush") as SolidColorBrush)?.Color ?? Colors.White,
+                    "art" => MediaService.I.HasSession && MediaService.I.Art != null ? Soft(MediaService.I.ArtColor) : (UI.Res("AccentBrush") as SolidColorBrush)?.Color ?? Colors.White,
+                    _ => Colors.White,
+                };
+                if (gc != _glintCol)
+                {
+                    _glintCol = gc;
+                    var gb2 = new RadialGradientBrush();
+                    gb2.GradientStops.Add(new GradientStop(Color.FromArgb(gc == Colors.White ? (byte)0x60 : (byte)0x80, gc.R, gc.G, gc.B), 0));
+                    gb2.GradientStops.Add(new GradientStop(Color.FromArgb(0, gc.R, gc.G, gc.B), 1));
+                    gb2.Freeze();
+                    _glint.Background = gb2;
+                }
                 _glint.Opacity += (op - _glint.Opacity) * Math.Min(1, dt * 5);
             }
             else _glint.Opacity = 0;

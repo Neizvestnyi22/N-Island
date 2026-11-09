@@ -430,7 +430,10 @@ namespace NIsland.Services
 
         /// <summary>Свой диалог бота, если общий с островом выключен.</summary>
         static readonly List<AiMessage> AiHistory = new();
-        static bool _noDraft;
+        static bool _noDraft, _noRichDraft;
+
+        /// <summary>Незакрытый ``` в недописанном ответе ломает разбор черновика — закрываем.</summary>
+        static string CloseFences(string md) => System.Text.RegularExpressions.Regex.Matches(md, "```").Count % 2 == 1 ? md + "\n```" : md;
         static string _lastAi, _lastQuestion;
 
         async Task<(string, object)?> AskAi(string q, bool retry = false)
@@ -466,9 +469,15 @@ namespace NIsland.Services
                 try
                 {
                     string text;
-                    lock (sb) text = sb.ToString();
+                    lock (sb) text = Ai.StripThinkPartial(sb.ToString());   // пока модель «думает» в <think>, показывать нечего
                     if (text.Length == 0 || text == pushed) return;
                     var preview = Cut(text, 3900);
+                    // Bot API 10.1: черновик сразу с разметкой (заголовки, списки, код появляются по мере ответа)
+                    if (RichOn && !_noRichDraft)
+                    {
+                        try { await Call("sendRichMessageDraft", new { chat_id = V("chat"), draft_id = draftId, rich_message = new { markdown = CloseFences(Cut(text, 30000)) } }); pushed = text; return; }
+                        catch (TgError) { _noRichDraft = true; }
+                    }
                     if (!_noDraft)
                     {
                         try { await Call("sendMessageDraft", new { chat_id = V("chat"), draft_id = draftId, text = preview }); pushed = text; return; }
@@ -517,6 +526,16 @@ namespace NIsland.Services
             var html = $"🤖 <i>{H(who)} · {H(Ai.Model(p))}</i>\n\n" + Md(ans);
             var keys = K(Row(B("🆕 Новый диалог", "ainew"), B("💻 В буфер ПК", "aicp"), Copy("📱 Копировать", ans)),
                          Row(B("🔁 Другой ответ", "airetry"), B("🧠 Нейросеть", "nav:ai")));
+            // Bot API 10.1: ответ модели как есть, в Rich Markdown — таблицы, формулы, списки и код без потерь, до 32 768 символов
+            if (RichOn && ans.Length < 30000)
+            {
+                var md = $"🤖 _{MdEsc(who)} · {MdEsc(Ai.Model(p))}_\n\n" + CloseFences(ans);
+                if (await SendRich(new { markdown = md }, keys, false, replyTo) is long)
+                {
+                    if (liveId != 0) try { await Call("deleteMessage", new { chat_id = V("chat"), message_id = liveId }); } catch { }
+                    return null;
+                }
+            }
             if (liveId != 0 && html.Length <= 4000) await Edit(liveId, html, keys);
             else
             {
@@ -526,7 +545,10 @@ namespace NIsland.Services
             return null;
         }
 
-        /// <summary>Markdown ответа модели → HTML Telegram (код, жирный, заголовки).</summary>
+        /// <summary>
+        /// Markdown ответа модели → HTML Telegram (для старых клиентов и других мессенджеров):
+        /// код с языком, жирный, курсив, зачёркнутый, ссылки, заголовки, списки, цитаты, таблицы (моноширинно).
+        /// </summary>
         static string Md(string s)
         {
             var parts = (s ?? "").Split("```");
@@ -537,15 +559,32 @@ namespace NIsland.Services
                 {
                     var code = parts[i];
                     int nl = code.IndexOf('\n');
-                    if (nl >= 0 && nl < 20 && !code[..nl].Contains(' ')) code = code[(nl + 1)..];   // ```python
-                    sb.Append("<pre>").Append(H(code.TrimEnd())).Append("</pre>");
+                    string lang = null;
+                    if (nl >= 0 && nl < 20 && !code[..nl].Contains(' ')) { lang = code[..nl].Trim(); code = code[(nl + 1)..]; }   // ```python
+                    sb.Append(string.IsNullOrEmpty(lang) ? "<pre>" : $"<pre><code class=\"language-{H(lang)}\">")
+                      .Append(H(code.TrimEnd())).Append(string.IsNullOrEmpty(lang) ? "</pre>" : "</code></pre>");
                     continue;
                 }
-                var t = H(parts[i]);
+                // таблицы Markdown — моноширинным блоком, чтобы колонки не разъехались
+                var text = Regex.Replace(parts[i], @"(?m)((?:^[ \t]*\|.*\|[ \t]*\r?\n?){2,})", m =>
+                    "\u0001" + Convert.ToBase64String(Encoding.UTF8.GetBytes(Regex.Replace(m.Value, @"(?m)^\s*\|?[\s:\-|]+\|?\s*$\r?\n?", ""))) + "\u0001");
+                var t = H(text);
                 t = Regex.Replace(t, @"`([^`\n]+)`", "<code>$1</code>");
+                t = Regex.Replace(t, @"\[([^\]\n]+)\]\((https?://[^\s)]+)\)", "<a href=\"$2\">$1</a>");
                 t = Regex.Replace(t, @"\*\*([^*\n]+)\*\*", "<b>$1</b>");
+                t = Regex.Replace(t, @"__([^_\n]+)__", "<b>$1</b>");
+                t = Regex.Replace(t, @"~~([^~\n]+)~~", "<s>$1</s>");
+                t = Regex.Replace(t, @"\|\|([^|\n]+)\|\|", "<tg-spoiler>$1</tg-spoiler>");
                 t = Regex.Replace(t, @"(?m)^#{1,6}\s*(.+)$", "<b>$1</b>");
-                t = Regex.Replace(t, @"(?m)^(\s*)[-*]\s+", "$1• ");
+                t = Regex.Replace(t, @"(?m)^(\s*)[-*+]\s+\[x\]\s+", "$1☑️ ");
+                t = Regex.Replace(t, @"(?m)^(\s*)[-*+]\s+\[ \]\s+", "$1⬜ ");
+                t = Regex.Replace(t, @"(?m)^(\s*)[-*+]\s+", "$1• ");
+                t = Regex.Replace(t, @"(?<![\w*])\*(?![\s*])([^*\n]+?)(?<!\s)\*(?![\w*])", "<i>$1</i>");
+                t = Regex.Replace(t, @"(?<![\w_])_(?![\s_])([^_\n]+?)(?<!\s)_(?![\w_])", "<i>$1</i>");
+                t = Regex.Replace(t, @"(?m)^---+\s*$", "──────────");
+                // > цитаты (после H() это «&gt;»)
+                t = Regex.Replace(t, @"(?m)((?:^&gt;\s?.*(?:\n|$))+)", m => "<blockquote>" + Regex.Replace(m.Value.TrimEnd('\n'), @"(?m)^&gt;\s?", "") + "</blockquote>\n");
+                t = Regex.Replace(t, "\u0001([A-Za-z0-9+/=]+)\u0001", m => "<pre>" + H(Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value)).TrimEnd()) + "</pre>\n");
                 sb.Append(t);
             }
             return sb.ToString();

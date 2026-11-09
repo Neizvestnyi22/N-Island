@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -484,7 +484,8 @@ namespace NIsland.Controls
             {
                 double v = Group(i / (double)rings, (i + 1) / (double)rings);
                 double R = Min * (0.08 + i * 0.058);
-                Circle(cx, cy, R, Pal(0.1 + i / (double)rings * 0.8), (int)(35 + 110 * v));
+                Circle(cx, cy, R * (1 + v * 0.06), Pal(0.1 + i / (double)rings * 0.8), (int)(15 + 200 * v));
+                if (v > 0.5) Circle(cx, cy, R * (1 + v * 0.06) + 1, Pal(0.1 + i / (double)rings * 0.8), (int)(120 * (v - 0.5) * 2));
                 for (int p = 0; p < 3; p++)
                 {
                     _orb[i * 3 + p] += dt * (0.3 + v * 4) * (i % 2 == 0 ? 1 : -1);
@@ -492,7 +493,15 @@ namespace NIsland.Controls
                     Dot(cx + Math.Cos(a) * R, cy + Math.Sin(a) * R, (2.5 + v * 5) * Min / 200, Pal(0.3 + i / (double)rings * 0.7), (int)(150 + 105 * v), true);
                 }
             }
-            Dot(cx, cy, Min * (0.035 + Bass * 0.05 + Kick * 0.02), Pal(1), 230, true);
+            Dot(cx, cy, Min * (0.035 + Bass * 0.08 + Kick * 0.04), Pal(1), (int)(120 + 135 * Bass), true);
+            if (_beat) _burst.Add((Min * 0.04, 200));
+            for (int i = _burst.Count - 1; i >= 0; i--)
+            {
+                var (r, a) = _burst[i];
+                Circle(cx, cy, r, Pal(0.95), (int)a);
+                r += Min * 0.02; a *= 0.9;
+                if (a < 6 || r > Min) _burst.RemoveAt(i); else _burst[i] = (r, a);
+            }
         }
 
         // ---------- 17. Потоки линий ----------

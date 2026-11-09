@@ -66,7 +66,7 @@ namespace NIsland.Services
             while (s.Length > max)
             {
                 int cut = s.LastIndexOf('\n', max);
-                if (cut < max / 2) cut = max;
+                if (cut < max / 2) cut = TelegramHub.SafeLen(s, max);
                 yield return s[..cut];
                 s = s[cut..].TrimStart('\n');
             }
@@ -149,7 +149,7 @@ namespace NIsland.Services
             Status = "Отправлено " + DateTime.Now.ToString("HH:mm");
         }
 
-        static string Cut(string s, int n) => s.Length > n ? s[..n] + "…" : s;
+        static string Cut(string s, int n) => s.Length > n ? s[..TelegramHub.SafeLen(s, n)] + "…" : s;
 
         async Task SendText(string md)
         {

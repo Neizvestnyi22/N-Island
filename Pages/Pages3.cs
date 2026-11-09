@@ -219,11 +219,18 @@ namespace NIsland.Pages
             return t;
         }
 
+        /// <summary>Быстрые действия написаны по-русски: «на русский» — значит на язык интерфейса ({lang} в своих действиях).</summary>
+        static string LangPrompt(string prompt)
+        {
+            var lang = I18n.Current switch { "uk" => "украинский", "en" => "английский", _ => "русский" };
+            return prompt.Replace("{lang}", lang).Replace("на русский (если текст уже на русском", $"на {lang} (если текст уже на {lang.Replace("ий", "ом")}");
+        }
+
         void RunAction(AiAction a)
         {
             var clip = Txt.ClipText();
             if (a.Prompt.Contains("{clip}") && string.IsNullOrWhiteSpace(clip)) { App.Island.Toast("", "Буфер пуст", "Скопируй текст и нажми ещё раз"); return; }
-            Send(a.Prompt.Replace("{clip}", clip));
+            Send(LangPrompt(a.Prompt).Replace("{clip}", clip));
         }
 
         async void Send(string text)
@@ -249,6 +256,7 @@ namespace NIsland.Pages
             {
                 List<AiMessage> hist;
                 lock (History) hist = History.ToList();
+                lock (_pending) _rawAns.Clear();
                 answer = await Ai.Ask(hist, d => { lock (_pending) { if (d == "") { _pending.Clear(); _restart = true; } else _pending.Append(d); } }, _cts.Token);
                 answer = Ai.StripThink(answer);
                 if (string.IsNullOrWhiteSpace(answer)) answer = "(пустой ответ)";
@@ -274,15 +282,20 @@ namespace NIsland.Pages
 
         bool _restart;
 
+        readonly System.Text.StringBuilder _rawAns = new();
+
         void Flush()
         {
             string add;
             bool restart;
             lock (_pending) { add = _pending.ToString(); _pending.Clear(); restart = _restart; _restart = false; }
             if (_live == null) return;
-            if (restart) _live.Text = "…";   // основной провайдер не ответил — отвечает запасной
+            if (restart) { _live.Text = "…"; _rawAns.Clear(); }   // основной провайдер не ответил — отвечает запасной
             if (add.Length == 0) return;
-            _live.Text = (_live.Text == "…" ? "" : _live.Text) + add;
+            // 2.2: «размышления» модели в <think> не показываем, пока они не закончились
+            _rawAns.Append(add);
+            var shown = Ai.StripThinkPartial(_rawAns.ToString());
+            _live.Text = shown.Length == 0 ? "🤔 …" : shown;
             _scroll.ScrollToEnd();
         }
     }

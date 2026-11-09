@@ -29,7 +29,7 @@ namespace NIsland.Pages
         readonly TextBlock _pos = UI.Text("0:00", 12);
         readonly TextBlock _rem = UI.Text("-0:00", 12);
         readonly Slider _seek = UI.Slider();
-        readonly Button _play, _prev, _next, _lyricsBtn, _volBtn, _source, _shuffle, _repeat, _back10, _fwd10, _rate, _fav, _vizBtn, _sleep;
+        readonly Button _play, _prev, _next, _lyricsBtn, _volBtn, _source, _shuffle, _repeat, _back10, _fwd10, _rate, _fav, _vizBtn, _sleep, _ab;
 
         // визуализатор в колонке справа
         readonly Grid _vizPane = new();
@@ -112,8 +112,15 @@ namespace NIsland.Pages
             _vol.Width = 74;
             _shuffle = UI.IconBtn("", M.ToggleShuffle, 13, 30, "Перемешать");
             _repeat = UI.IconBtn("", M.CycleRepeat, 13, 30, "Повтор: выкл → трек → весь список");
-            _back10 = Label("−10", () => M.SeekBy(-10), "Назад на 10 секунд");
-            _fwd10 = Label("+10", () => M.SeekBy(10), "Вперёд на 10 секунд");
+            _back10 = Label("−10", () => M.SeekStep(-1), "Перемотать назад (шаг — в настройках «Музыка»)");
+            _fwd10 = Label("+10", () => M.SeekStep(1), "Перемотать вперёд (шаг — в настройках «Музыка»)");
+            _ab = Label("A–B", () =>
+            {
+                var r = M.CycleLoop();
+                App.Island.Toast("\uE8EE", r == "A" ? "Начало фрагмента отмечено" : r == "AB" ? "Фрагмент повторяется" : "Повтор фрагмента выключен",
+                    r == "A" ? "Нажми ещё раз в конце фрагмента" : null);
+                Refresh();
+            }, "Повтор фрагмента: 1-е нажатие — начало, 2-е — конец, 3-е — выключить");
             _rate = UI.Pill("1×", M.CycleRate, false, "Скорость воспроизведения");
             _rate.Padding = new Thickness(8, 2, 8, 2);
             _rate.FontSize = 10.5;
@@ -129,6 +136,7 @@ namespace NIsland.Pages
             var extras = UI.Row(
                 _rate.M(0, 0, 2, 0),
                 _sleep,
+                _ab,
                 _fav,
                 Small("", () =>
                 {
@@ -398,7 +406,8 @@ namespace NIsland.Pages
             _empty.Show(!has);
             if (!has) { _glow.Opacity = 0; return; }
             _title.Text = string.IsNullOrEmpty(M.Title) ? "Без названия" : M.Title;
-            _artist.Text = string.Join(" — ", new[] { M.Artist, S.PlayerShowAlbum ? M.Album : null }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            _artist.Text = string.Join(" — ", new[] { M.Artist, S.PlayerShowAlbum ? M.Album : null }.Where(s => !string.IsNullOrWhiteSpace(s)))
+                + (S.PlayerPlayCount && M.PlayCount is int pc && pc > 1 ? $"  · ×{pc}" : "");
             _artBrush.ImageSource = M.Art;
             _artPh.Show(M.Art == null);
             double art = Math.Clamp(S.PlayerArtSize, 40, 80);
@@ -409,6 +418,11 @@ namespace NIsland.Pages
             _next.IsEnabled = M.CanNext;
             _back10.Show(S.PlayerSeekButtons && M.CanSeek);
             _fwd10.Show(S.PlayerSeekButtons && M.CanSeek);
+            _back10.Content = "−" + MediaService.Step;
+            _fwd10.Content = "+" + MediaService.Step;
+            _ab.Show(S.PlayerAbButton && M.CanSeek);
+            _ab.Content = M.LoopB != null ? "A–B ✓" : M.LoopA != null ? "A…" : "A–B";
+            _ab.Foreground = M.LoopA != null ? (Brush)UI.Res("AccentBrush") ?? Brushes.White : Brushes.White;
             bool fav = M.IsFavorite;
             _fav.Content = fav ? "" : "";
             _fav.Foreground = fav ? UI.Hex("#FF375F") : Brushes.White;

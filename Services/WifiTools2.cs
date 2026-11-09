@@ -26,6 +26,34 @@ namespace NIsland.Services
             return global::Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
         }
 
+        // 2.2: раз в 30 секунд смотрим сигнал; ниже порога из настроек — одна всплывашка (повторно — когда сигнал вернётся и снова упадёт)
+        static System.Windows.Threading.DispatcherTimer _watch;
+        static bool _weakWarned;
+
+        public static void WatchSignal()
+        {
+            if (_watch != null) return;
+            _watch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+            _watch.Tick += async (_, __) =>
+            {
+                int lim = Store.Settings.WifiSignalAlert;
+                if (lim <= 0) { _weakWarned = false; return; }
+                try
+                {
+                    var l = await WifiTools.Current();
+                    if (l == null) { _weakWarned = false; return; }
+                    if (l.Signal < lim && !_weakWarned)
+                    {
+                        _weakWarned = true;
+                        App.Island?.Toast("\uE701", I18n.T("Слабый Wi-Fi") + $": {l.Signal}%", $"{l.Ssid} · {l.Band} · {I18n.T("канал")} {l.Channel}");
+                    }
+                    else if (l.Signal >= lim + 10) _weakWarned = false;
+                }
+                catch { }
+            };
+            _watch.Start();
+        }
+
         public static (bool On, string Name, string Pass, int Clients, int Max)? HotspotState()
         {
             try

@@ -97,6 +97,7 @@ namespace NIsland
             Safe("calls", CallService.I.Start);
             Safe("laptop", LaptopService.I.Start);
             Safe("vpn", Vpn.Watch);
+            Safe("wifi-signal", WifiTools2.WatchSignal);
             Safe("dedupe", Dedupe.Start);
             Safe("hub", Integrations.Start);
             Safe("eq", Equalizer.Start);
