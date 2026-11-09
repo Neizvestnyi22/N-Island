@@ -35,6 +35,7 @@ namespace NIsland.Services
                     "mascot" => MascotSheet(args[2]),
                     "elev" => ElevBench(args[2]),
                     "av" => Task.Run(() => AvTest(args[2])).GetAwaiter().GetResult(),
+                    "update" => Task.Run(() => UpdateTest(args[2])).GetAwaiter().GetResult(),
                     "custom" => Task.Run(() => CustomTest(args[2])).GetAwaiter().GetResult(),
                     "mcp" => McpTest.Run(args[2]),
                     "health" => Task.Run(() => HealthTest(args[2])).GetAwaiter().GetResult(),
@@ -173,6 +174,16 @@ namespace NIsland.Services
             Integrations.SetValue(bad, "url", "https://hn.algolia.com/api/v1/search?query=x"); Integrations.SetValue(bad, "items", "nope"); Integrations.SetValue(bad, "title", "title");
             await Try(bad);
             sb.AppendLine("path test: " + CustomHub.Path(System.Text.Json.JsonDocument.Parse("{\"a\":{\"b\":[{\"c\":5}]}}").RootElement, "a.b[0].c"));
+            File.WriteAllText(output, sb.ToString());
+            return 0;
+        }
+
+        /// <summary>Обновление без установки: скачать файл последнего релиза (прямо и через API), сверить SHA-256, проверить 504.</summary>
+        static async Task<int> UpdateTest(string output)
+        {
+            var sb = new StringBuilder();
+            try { sb.AppendLine("result: " + (await Updater.TestDownload(l => sb.AppendLine(l)) ?? "ok")); }
+            catch (Exception e) { sb.AppendLine("FATAL " + e); }
             File.WriteAllText(output, sb.ToString());
             return 0;
         }
