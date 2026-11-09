@@ -88,7 +88,31 @@ namespace NIsland.Services
             ["wifiscan"] = "wifiscan", ["moon"] = "sky", ["sun"] = "sky", ["autostart"] = "startup", ["windows"] = "windows", ["upgrades"] = "upgrades",
             ["keys"] = "keys", ["jobs"] = "jobs", ["mascot"] = "pet", ["lan"] = "lan", ["type"] = "typer", ["audiodev"] = "audioout", ["outdev"] = "audioout",
             ["installed"] = "launcher", ["sysinfo"] = "sysmon", ["status"] = "remote", ["conv"] = "rates", ["days"] = "countdown",
+            // 2.3.1: все остальные команды, у которых есть виджет
+            ["now"] = "player", ["vol"] = "mixer", ["note"] = "notes", ["todo"] = "todo", ["cliphist"] = "clipboard", ["scene"] = "scenes",
+            ["history"] = "history", ["speed"] = "speed", ["health"] = "health", ["startup"] = "startup", ["launch"] = "launcher", ["calc"] = "calc",
+            ["coin"] = "dice", ["mem"] = "sysmon", ["av"] = "defender", ["wdstatus"] = "defender", ["wifihealth"] = "network", ["wifiq"] = "network",
+            ["channels"] = "wifiscan", ["router"] = "network", ["netusage"] = "network", ["in"] = "jobs", ["at"] = "jobs", ["live"] = "remote",
+            ["bathealth"] = "battery",
         };
+
+        /// <summary>Экран меню бота (кнопка nav:…) → вид виджета. Навигация (главное, «Ещё», настройки, ИИ, файлы) остаётся сообщениями.</summary>
+        internal static readonly Dictionary<string, string> WMenus = new()
+        {
+            ["music"] = "player", ["sound"] = "mixer", ["outs"] = "audioout", ["eq"] = "eq", ["mixer"] = "mixer", ["screen"] = "display",
+            ["power"] = "power", ["plans"] = "battery", ["net"] = "network", ["vpn"] = "vpn", ["timer"] = "timer", ["todo"] = "todo",
+            ["modes"] = "modes", ["top"] = "apps", ["win"] = "windows", ["slides"] = "slides", ["mouse"] = "mouse", ["input"] = "keys",
+            ["av"] = "defender", ["clips"] = "clipboard", ["history"] = "history", ["jobs"] = "jobs", ["scenes"] = "scenes",
+        };
+
+        /// <summary>Кнопка меню при «Отвечать виджетами»: вместо экрана с кнопками — виджет новым сообщением.</summary>
+        async Task<bool> MenuAsWidget(string menu)
+        {
+            if (Remote != null || _noWidgets || V("widgets_default") != "1" || !WMenus.TryGetValue(menu, out var kind)) return false;
+            return await SendW(kind);
+        }
+
+        internal static IEnumerable<string> TestMenus => WMenus.Keys;
 
         /// <summary>true — ответ ушёл виджетом (Command возвращает null), false — отвечаем как обычно.</summary>
         async Task<bool> AnswerAsWidget(string cmd, string arg)

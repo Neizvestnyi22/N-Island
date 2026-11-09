@@ -240,17 +240,33 @@ namespace NIsland.Services
                 k => new[] { "ref" }.Concat(TelegramHub.WOps.TryGetValue(k.Key, out var o) ? o : Array.Empty<string>()).ToArray())));
             // «Отвечать виджетами»: команды без аргументов уходят виджетом (Command возвращает null и вызывает sendWidget)
             tg.Cfg.Values["widgets_default"] = "1";
-            foreach (var c in new[] { "music", "weather", "todos", "timer", "notes", "jobs", "keys", "clock" })
+            // все команды из списка и все экраны меню должны уходить виджетом
+            int cmdsOk = 0, menusOk = 0;
+            // виджет «Питание» только показывает кнопки; без разрешения бот правильно отвечает отказом — для проверки разрешаем
+            tg.Cfg.Values.TryGetValue("power", out var powerWas);
+            tg.Cfg.Values["power"] = "1";
+            foreach (var c in TelegramHub.TestDefaultCmds.ToList())
             {
                 int before = WidgetSends;
                 var r = await tg.TestCommand(c, "");
                 if (r?.Html != null || WidgetSends == before) Problems.Add($"widgets_default: /{c} did not answer with a widget");
+                else cmdsOk++;
             }
+            foreach (var mn in TelegramHub.TestMenus.ToList())
+            {
+                int before = WidgetSends;
+                var r = await tg.TestCallback("nav:" + mn);
+                if (WidgetSends == before) Problems.Add($"widgets_default: menu nav:{mn} did not answer with a widget ({Short(r ?? "")})");
+                else menusOk++;
+            }
+            log.AppendLine($"widgets_default: commands {cmdsOk}/{TelegramHub.TestDefaultCmds.Count()} · menus {menusOk}/{TelegramHub.TestMenus.Count()}");
+            tg.Cfg.Values["power"] = powerWas ?? "0";
             if ((await tg.TestCommand("weather", "Kyiv"))?.Html == null && WidgetSends > 0) log.AppendLine("widgets_default: /weather with arg → message (ok if not null)");
             tg.Cfg.Values["widgets_default"] = "0";
             int b0 = WidgetSends;
             await tg.TestCommand("music", "");
-            if (WidgetSends != b0) Problems.Add("widgets_default off: /music still sent a widget");
+            await tg.TestCallback("nav:music");
+            if (WidgetSends != b0) Problems.Add("widgets_default off: /music or the music menu still sent a widget");
             log.AppendLine($"widgets_default: ok, sends={WidgetSends}");
             // персонаж собирается под скин, аксессуар и эмоцию — самый тяжёлый вариант тоже должен влезать в 4 КБ
             foreach (var pSk in new[] { "blob", "cat", "ghost", "robot", "bunny" })

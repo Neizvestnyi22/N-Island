@@ -47,7 +47,7 @@ namespace NIsland.Services
             new HubField("boot", "Сообщать, что ПК включился", "сообщение при запуске N-Island", "bool", Required: false, Default: "1"),
             new HubField("unlock", "Сообщать о входе, блокировке и пробуждении", "видно, если ноутбуком пользуется кто-то другой", "bool", Required: false, Default: "0"),
             new HubField("aitext", "Обычный текст — вопрос ИИ", "иначе текст показывается в острове; ИИ — /ai вопрос", "bool", Required: false, Default: "0"),
-            new HubField("widgets_default", "Отвечать виджетами", "Где можно — виджетом, а не сообщением: /music, /weather, /todos, /timer, /vpn и ещё 34 команды без аргументов. Если Telegram виджет не примет — обычное сообщение", "bool", Required: false, Default: "0"),
+            new HubField("widgets_default", "Отвечать виджетами", "Где можно — виджетом, а не сообщением: 64 команды без аргументов (/music, /weather, /todos, /timer, /vpn…) и 23 экрана меню (музыка, звук, экран, питание, сеть…). Если Telegram виджет не примет — обычное сообщение", "bool", Required: false, Default: "0"),
             new HubField("rich", "Новое оформление сообщений", "Rich Messages из Bot API 10: заголовки, таблицы, ответы ИИ с разметкой. Если Telegram их не примет — обычный текст", "bool", Required: false, Default: "1"),
             new HubField("kbd", "Кнопки внизу чата", "Пульт, Статус, Музыка, Экран, Окна, Блок", "bool", Required: false, Default: "1"),
             new HubField("quiet", "Тихие часы", "например 23-8 — сообщения в это время приходят без звука", Required: false),
@@ -1201,6 +1201,7 @@ namespace NIsland.Services
             {
                 case "nav":
                 {
+                    if (await MenuAsWidget(rest)) return "🧩";
                     var (h, k) = await Menu(rest);
                     await Edit(msgId, h, k);
                     return "";
