@@ -39,8 +39,8 @@ namespace NIsland.Services
             try
             {
                 var m = MediaService.I;
-                m.PlaybackChanged += () => Dirty(media, "music");
-                m.TrackChanged += () => Dirty(media, "music");
+                m.PlaybackChanged += () => { Dirty(media, "music"); RestartMediaLive(); };
+                m.TrackChanged += () => { Dirty(media, "music"); RestartMediaLive(); };
                 m.Changed += () => Dirty(media, "music");
                 AudioService.I.Changed += (_, __, ___) => Dirty(vol, "music", "sound", "mixer");
                 AudioService.I.OutputChanged += _ => Dirty(new[] { "audioout", "mixer" }, "sound");
@@ -63,6 +63,14 @@ namespace NIsland.Services
                 PcWatch.Changed += () => Dirty(new[] { "timeline", "focus", "awake", "sessions", "usblog", "downloads" });
             }
             catch (Exception e) { Log.Info("telegram sync hook: " + e.Message); }
+        }
+
+        /// <summary>Музыка заиграла или сменился трек — плеер и текст песни снова живые (последние два каждого), даже если их живые минуты прошли.</summary>
+        void RestartMediaLive()
+        {
+            if (!MediaService.I.IsPlaying || _noWidgets) return;
+            foreach (var k in new[] { "player", "lyrics" })
+                foreach (var id in LatestOf(k, 2)) Live(id, k);
         }
 
         void Dirty(string[] kinds, params string[] menus)

@@ -80,7 +80,7 @@ namespace NIsland.Services
             ["awake"] = new[] { "on", "off", "h" }, ["guard"] = new[] { "cpu", "ram" },
             ["radios"] = new[] { "t" }, ["privacy"] = Array.Empty<string>(), ["prayer"] = Array.Empty<string>(), ["agenda"] = Array.Empty<string>(),
             ["shelf"] = new[] { "send" }, ["translate"] = new[] { "in", "to" }, ["cleanup"] = new[] { "scan", "clean" }, ["news"] = Array.Empty<string>(),
-            ["menu"] = new[] { "cat", "go" },
+            ["menu"] = new[] { "cat", "go" }, ["events"] = new[] { "clear", "snooze", "dl" },
             ["browser"] = new[] { "back", "fwd", "reload", "newtab", "close", "reopen", "next", "prev", "up", "down", "top", "bottom", "zin", "zout", "z0", "full",
                                   "play", "vmute", "in", "inc", "fav", "o", "w", "view", "tab", "shot", "link", "sum", "find", "type", "clip",
                                   "rw", "ff", "faster", "slower", "fc", "quit" },

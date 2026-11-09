@@ -424,6 +424,14 @@ namespace NIsland.Services
                 if (!h.Contains("⟳") && !h.Contains("↺")) Problems.Add($"widget {wk.Key}: no refresh button");
             }
             if (!TelegramHub.TestHtml("player").Contains("D.pm")) Problems.Add("player widget: no mini mascot");
+            // в общей карточке имена функций не должны совпадать с переменными (так «E» затирала рисование персонажа — его не было видно)
+            {
+                var card = TelegramHub.TestHtml("player");
+                foreach (System.Text.RegularExpressions.Match fm in System.Text.RegularExpressions.Regex.Matches(card, @"function (\w+)\("))
+                    if (System.Text.RegularExpressions.Regex.IsMatch(card, @"(var |,)" + fm.Groups[1].Value + "="))
+                        Problems.Add($"card widget js: function {fm.Groups[1].Value} is overwritten by a variable");
+                if (card.Contains("requestAnimationFrame")) Problems.Add("card widget js: requestAnimationFrame does not run in the widget viewer — use a timer");
+            }
             // синхронизация с ПК: событие → правка виджета и пульта без нажатий; второй раз то же состояние — без лишних запросов
             {
                 tg.TestRememberWidget(9001, "player");
@@ -490,6 +498,29 @@ namespace NIsland.Services
                 lock (Sent) { sends2 = Sent.Count(s => s.Method == "sendWidget"); morph2 = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("stopwatch")); }
                 if (sends2 != 1 || morph2 < 1) Problems.Add($"widgets menu: second pick should update the widget above (sent {sends2}, updated {morph2})");
                 log.AppendLine($"catalog: ok · menu sends {sends2}, updates {morph2}");
+            }
+            // уведомления виджетом: важное — новым виджетом, тихое — правкой того же; прежний такой же виджет удаляется
+            {
+                lock (Sent) Sent.Clear();
+                tg.TestRememberSent(8001, "events");
+                bool ok1 = await tg.TestPushEvent("limit", "Лимит теста", false);
+                await Task.Delay(300);
+                int sendsE, delOld;
+                lock (Sent) { sendsE = Sent.Count(s => s.Method == "sendWidget" && s.Json.Contains("events")); delOld = Sent.Count(s => s.Method == "deleteMessage" && s.Json.Contains("8001")); }
+                if (!ok1 || sendsE != 1) Problems.Add($"events: loud event should send one widget (ok={ok1}, sent {sendsE})");
+                if (delOld != 1) Problems.Add($"events: the previous events widget was not deleted ({delOld})");
+                lock (Sent) Sent.Clear();
+                bool ok2 = await tg.TestPushEvent("track", "Трек теста", true);
+                int sendsS, editsS;
+                lock (Sent) { sendsS = Sent.Count(s => s.Method == "sendWidget"); editsS = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("events")); }
+                if (!ok2 || sendsS != 0 || editsS != 1) Problems.Add($"events: quiet event should edit the same widget (sent {sendsS}, edited {editsS})");
+                lock (Sent) Sent.Clear();
+                await tg.TestPushPcText("⏰ <b>Подъём теста</b> · 07:30");
+                string st; lock (Sent) st = Sent.LastOrDefault(s => s.Method == "sendWidget").Json ?? "";
+                if (!st.Contains("snooze")) Problems.Add("events: alarm event has no snooze button");
+                var ev = tg.TestWState("events");
+                if (Encoding.UTF8.GetByteCount(ev) > 1024) Problems.Add("events: state > 1024 bytes");
+                log.AppendLine($"events: loud {sendsE}, deleted old {delOld}, quiet edits {editsS}");
             }
             foreach (var q in new[] { "w:ref", "w:zzz", "p:poke", "p:love", "p:ref" })
             {

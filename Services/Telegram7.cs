@@ -76,7 +76,7 @@ namespace NIsland.Services
             new("shelf", "📦 Полка", "Дела", 320, 0, 0), new("translate", "🌐 Переводчик", "Дела", 340, 0, 0),
             new("cleanup", "🧹 Очистка", "Система", 340, 0, 0), new("news", "📰 Новости", "Сводки", 340, 0, 0),
             new("browser", "🧭 Браузер", "Управление", 340, 0, 6),
-            new("menu", "🧩 Все виджеты", "Главное", 340, 0, 0),
+            new("menu", "🧩 Все виджеты", "Главное", 340, 0, 0), new("events", "🔔 События ПК", "Главное", 340, 0, 0),
         };
 
         static WKind WK(string key) => WKinds.FirstOrDefault(k => k.Key == key);
@@ -124,8 +124,9 @@ if(t=='g'){var a=r[2]||[],mx=Math.max.apply(0,a.concat([r[5]||1])),n=Math.max(1,
 function tick(){(D.r||[]).forEach(function(r,i){var t=r[0],e;
 if(t=='p'&&(e=$('pa'+i))){var p=Math.min(r[2],r[1]+(r[3]?el():0));e.textContent=f(p);var b=$('pb'+i);b.style.width=(r[2]?p/r[2]*100:0)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}
 if((t=='d'||t=='u')&&(e=$('cd'+i)))e.textContent=f(t=='d'?r[1]-(r[2]?el():0):r[1]+(r[2]?el():0));
-if(t=='L'&&(e=$('ly'+i))){var s=r[1]?el():0,c=-1,a=r[2];a.forEach(function(l,j){if(l[0]<=s)c=j});if(e.dataset.c!=String(c)){e.dataset.c=c;
-e.innerHTML=(c>0?'<div class="t">'+x(a[c-1][1])+'</div>':'')+'<div class="Lc">'+x(c>=0?a[c][1]:'♪')+'</div>'+(a[c+1]?'<div class="t">'+x(a[c+1][1])+'</div>':'')}}})}
+if(t=='L'&&(e=$('ly'+i))){var n=Date.now(),s=r[1]?(r[3]&&Math.abs(n-r[3])<2e4?(n-r[3])/1e3:el()):0,c=-1,a=r[2];a.forEach(function(l,j){if(l[0]<=s)c=j});if(e.dataset.c!=String(c)){e.dataset.c=c;
+e.innerHTML=(c>0?'<div class="t">'+x(a[c-1][1])+'</div>':'')+'<div class="Lc">'+x(c>=0?a[c][1]:'♪')+'</div><div class="bb" style="height:3px"><i id="lp'+i+'"></i></div>'+(a[c+1]?'<div class="t">'+x(a[c+1][1])+'</div>':'')+(a[c+2]?'<div class="t">'+x(a[c+2][1])+'</div>':'')}
+var b=$('lp'+i);if(b&&c>=0&&a[c+1]){b.style.width=Math.min(100,(s-a[c][0])/Math.max(.1,a[c+1][0]-a[c][0])*100)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}}})}
 function show(){var h='<div class="hd"><div><div class="h">'+x(D.h)+'</div>'+(D.s?'<div class="s">'+x(D.s)+'</div>':'')+'</div>'+(D.pm?'<canvas id="pm" width="92" height="92"></canvas>':'')+(D.ro?'':'<button class="rf" data-q="ref">⟳</button>')+'</div>';(D.r||[]).forEach(function(r,i){h+=row(r,i)});
 (D.ro?[]:D.b||[]).forEach(function(w){w=w.filter(function(b){return!(b[1]=='ref'&&/^⟳/.test(b[0]))});if(!w.length)return;h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
 $('c').innerHTML=h;note(D.e||'',D.e?6000:0);tick();
@@ -139,12 +140,12 @@ function note(s,k){$('e').textContent=s;clearTimeout(et);if(k)et=setTimeout(func
 function ask(q,b,n){if(!T||B)return;B=1;if(b)b.classList.add('w');note('…');
 T.request('c:'+D.k+':'+q).then(function(a){B=0;if(b)b.classList.remove('w');note('');if(a.result)load(a.result)},function(e){B=0;if(b)b.classList.remove('w');
 if((e.code=='RATE_LIMITED'||e.code=='BUSY')&&!n){note(E[e.code]);setTimeout(function(){ask(q,b,1)},1600)}else note('⚠ '+(E[e.code]||e.code),6000)})}
-function E(c,X,Y,a,b){c.beginPath();c.ellipse(X,Y,a,b,0,0,7);c.fill()}
+function PE(c,X,Y,a,b){c.beginPath();c.ellipse(X,Y,a,b,0,0,7);c.fill()}
 function pm(){var c=$('pm');if(c){var g=c.getContext('2d'),s=Date.now()/1e3,u=Math.abs(Math.sin(s*3.7));g.clearRect(0,0,92,92);g.save();g.translate(46,82-u*11);g.rotate(Math.sin(s*1.85)*.2);g.scale(1+u*.07,1-u*.07);
-g.fillStyle=D.pm;E(g,0,-26,25,24);g.fillStyle='#111';E(g,-9,-30,3.4,4.2);E(g,9,-30,3.4,4.2);g.strokeStyle='#111';g.lineWidth=2.6;g.beginPath();g.arc(0,-22,7,.25,2.9);g.stroke();
-g.strokeStyle='#333';g.lineWidth=4.5;g.beginPath();g.arc(0,-28,28,3.5,5.93);g.stroke();g.fillStyle='#333';E(g,-26,-28,5,8);E(g,26,-28,5,8);g.restore();
-g.fillStyle=D.pm;g.globalAlpha=.4+.6*u;g.font='15px sans-serif';g.fillText('♪',4,24-u*8);g.fillText('♫',74,18-(1-u)*8);g.globalAlpha=1}requestAnimationFrame(pm)}
-if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}setInterval(tick,250);requestAnimationFrame(pm);
+g.fillStyle=D.pm;PE(g,0,-26,25,24);g.fillStyle='#111';PE(g,-9,-30,3.4,4.2);PE(g,9,-30,3.4,4.2);g.strokeStyle='#111';g.lineWidth=2.6;g.beginPath();g.arc(0,-22,7,.25,2.9);g.stroke();
+g.strokeStyle='#333';g.lineWidth=4.5;g.beginPath();g.arc(0,-28,28,3.5,5.93);g.stroke();g.fillStyle='#333';PE(g,-26,-28,5,8);PE(g,26,-28,5,8);g.restore();
+g.fillStyle=D.pm;g.globalAlpha=.4+.6*u;g.font='15px sans-serif';g.fillText('♪',4,24-u*8);g.fillText('♫',74,18-(1-u)*8);g.globalAlpha=1}}
+if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}setInterval(tick,250);setInterval(pm,50);
 </script></body></html>
 """;
 
@@ -336,8 +337,9 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 case "lyrics":
                 {
                     d = Card(kind, "🎤 " + (m.HasSession ? Cut(m.TrackLine, 50) : "Ничего не играет"));
+                    if (m.IsPlaying && Store.Settings.WidgetPetDance) { string tint = null; try { tint = App.Island?.MascotTintHex; } catch { } d["pm"] = tint ?? "#7ab8ff"; }
                     var lines = m.Lyrics; int i = m.LyricIndex;
-                    if (LyricsRow(620) is { } llr) CRows(d).Add(llr);
+                    if (LyricsRow(700) is { } llr) CRows(d).Add(llr);
                     else if (lines == null || lines.Count == 0) CRows(d).Add(new object[] { "t", T(m.LyricsLoading ? "Ищу текст…" : "Текст не найден") });
                     else
                     {
@@ -502,7 +504,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     Btns(d, Bt("🔄 Перезагрузка", "restart", "d"), Bt("⏻ Выключить", "shutdown", "d"));
                     return d;
             }
-            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? CardState5(kind) ?? CardState6(kind) ?? Card(kind, "Неизвестный виджет");
+            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? CardState5(kind) ?? CardState6(kind) ?? CardState7(kind) ?? Card(kind, "Неизвестный виджет");
         }
 
         // ------------------------------------------------------------------
@@ -634,7 +636,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     }
                     else { _powerConfirm = head; _powerConfirmAt = DateTime.Now; note = T("Нажми ещё раз в течение 10 секунд, чтобы подтвердить"); }
                     break;
-                default: note = await CardAction2(kind, head, arg) ?? await CardAction3(kind, head, arg) ?? await CardAction4(kind, head, arg) ?? await CardAction5(kind, head, arg) ?? note; break;
+                default: note = await CardAction2(kind, head, arg) ?? await CardAction3(kind, head, arg) ?? await CardAction4(kind, head, arg) ?? await CardAction5(kind, head, arg) ?? await CardAction7(kind, head, arg) ?? note; break;
             }
             // нажали — живой виджет обновляется ещё 5 минут
             var wk = WK(kind);
@@ -656,7 +658,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
         //  Отправка, живые обновления, меню
         // ------------------------------------------------------------------
 
-        async Task<bool> SendW(string kind)
+        async Task<bool> SendW(string kind, bool silent = false)
         {
             if (Remote != null || _noWidgets) return false;
             var wk = WK(kind);
@@ -668,6 +670,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 // высоту 0 («по содержимому») не передаём — так делает и тестовый бот Telegram
                 var body = new Dictionary<string, object> { ["chat_id"] = V("chat"), ["html"] = HtmlOf(kind), ["width"] = wk.W, ["allow_queries"] = queries, ["chat_data"] = WState(kind) };
                 if (wk.H > 0) body["height"] = wk.H;
+                if (silent) body["disable_notification"] = true;
                 if (await ShareKeys(kind) is { } sk) body["reply_markup"] = sk;
                 JsonElement r;
                 try { r = await Call("sendWidget", body); }
@@ -680,6 +683,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 }
                 long id = r.ValueKind == JsonValueKind.Object && r.TryGetProperty("message_id", out var mid) ? mid.GetInt64() : 0;
                 if (id != 0) lock (_widgets) _widgets[id] = (kind, DateTime.Now);
+                SentWidget(kind, id);   // «без спама»: прежний такой же виджет удаляется
                 Live(id, kind);
                 return true;
             }
@@ -702,7 +706,12 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             {
                 (string Kind, DateTime Until) w;
                 lock (_widgets) if (!_widgets.TryGetValue(id, out w)) return;
-                if (DateTime.Now > w.Until) return;
+                if (DateTime.Now > w.Until)
+                {
+                    // плеер и текст песни живут, пока играет музыка (последние два виджета вида) — иначе строки кончаются и текст замирает
+                    if (kind is "player" or "lyrics" && MediaService.I.IsPlaying && LatestOf(kind, 2).Contains(id)) lock (_widgets) _widgets[id] = (kind, DateTime.Now.AddMinutes(2));
+                    else return;
+                }
                 // виджет сменили на месте — дальше обновляем уже новый вид
                 if (w.Kind != kind) { kind = w.Kind; wk = WK(kind); last = null; if (wk == null || wk.LiveSec <= 0) return; }
                 await Task.Delay(wk.LiveSec * 1000);
@@ -742,7 +751,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             ["лимиты"] = "limits", ["фокус"] = "focus", ["слежка"] = "procwatch", ["будильник"] = "alarms", ["будильники"] = "alarms",
             ["починки"] = "fixes", ["починить"] = "fixes", ["незасыпать"] = "awake", ["сторож"] = "guard", ["радио"] = "radios", ["bluetooth"] = "radios",
             ["приватность"] = "privacy", ["слежка камеры"] = "privacy", ["молитвы"] = "prayer", ["намаз"] = "prayer", ["полка"] = "shelf",
-            ["переводчик"] = "translate", ["перевод"] = "translate", ["очистка"] = "cleanup", ["мусор"] = "cleanup", ["новости"] = "news", ["каталог"] = "menu", ["меню"] = "menu",
+            ["переводчик"] = "translate", ["перевод"] = "translate", ["очистка"] = "cleanup", ["мусор"] = "cleanup", ["новости"] = "news", ["каталог"] = "menu", ["меню"] = "menu", ["события"] = "events", ["оповещения"] = "events",
             ["браузер"] = "browser", ["вкладки"] = "browser", ["ссылки"] = "browser", ["chrome"] = "browser",
         };
 

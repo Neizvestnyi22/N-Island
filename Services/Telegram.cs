@@ -48,6 +48,8 @@ namespace NIsland.Services
             new HubField("unlock", "Сообщать о входе, блокировке и пробуждении", "видно, если ноутбуком пользуется кто-то другой", "bool", Required: false, Default: "0"),
             new HubField("aitext", "Обычный текст — вопрос ИИ", "иначе текст показывается в острове; ИИ — /ai вопрос", "bool", Required: false, Default: "0"),
             new HubField("open_links", "Ссылки сразу открывать на ПК", "Прислал боту ссылку — она открывается в браузере ПК. Подозрительные (проверка на фишинг) — только после подтверждения. Нужно «Управление с телефона»", "bool", Required: false, Default: "1"),
+            new HubField("events_widget", "Уведомления виджетом", "События ПК, вход и блокировка, лимиты, IP, загрузки, будильник, нагрузка — одним виджетом «🔔 События ПК»: важные приходят новым (со звуком, прежний убирается), тихие обновляют тот же. Тревоги защитника — всегда сообщением", "bool", Required: false, Default: "1"),
+            new HubField("widgets_single", "Один виджет каждого вида", "Новый виджет заменяет прежний такой же — старое сообщение удаляется, чат не засоряется", "bool", Required: false, Default: "1"),
             new HubField("widgets_default", "Отвечать виджетами", "Где можно — виджетом, а не сообщением: 64 команды без аргументов (/music, /weather, /todos, /timer, /vpn…) и 23 экрана меню (музыка, звук, экран, питание, сеть…). Если Telegram виджет не примет — обычное сообщение", "bool", Required: false, Default: "0"),
             new HubField("rich", "Новое оформление сообщений", "Rich Messages из Bot API 10: заголовки, таблицы, ответы ИИ с разметкой. Если Telegram их не примет — обычный текст", "bool", Required: false, Default: "1"),
             new HubField("kbd", "Кнопки внизу чата", "Пульт, Статус, Музыка, Экран, Окна, Блок", "bool", Required: false, Default: "1"),
@@ -336,6 +338,8 @@ namespace NIsland.Services
         public override async Task Send(HubEvent e)
         {
             if (string.IsNullOrEmpty(V("chat"))) return;
+            // уведомления — виджетом «🔔 События ПК» (тихие — правкой того же виджета), если виджеты недоступны — сообщением
+            if (await PushEvent(e.Kind, Emoji(e.Kind), e.Title, e.Text, null, e.Kind is "track" or "notify")) { Status = "Отправлено " + DateTime.Now.ToString("HH:mm"); return; }
             var text = $"{Emoji(e.Kind)} <b>{H(e.Title)}</b>" + (e.Text != "" ? "\n" + H(e.Text) : "");
             await Message(text, e.Kind == "track" ? MusicKeys() : null, silent: e.Kind is "track" or "notify");
             Status = "Отправлено " + DateTime.Now.ToString("HH:mm");
@@ -455,7 +459,16 @@ namespace NIsland.Services
         void Notice(string what)
         {
             if (!Enabled || !Ready || !Flag("unlock")) return;
-            _ = Message(what + " · " + DateTime.Now.ToString("HH:mm"), silent: true).ContinueWith(_ => { });
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var sp = what.IndexOf(' ');
+                    if (!await PushEvent("session", sp > 0 ? what[..sp] : "🔔", sp > 0 ? what[(sp + 1)..] : what, "", null, true))
+                        await Message(what + " · " + DateTime.Now.ToString("HH:mm"), silent: true);
+                }
+                catch (Exception ex) { Log.Info("telegram notice: " + ex.Message); }
+            });
         }
 
         // ------------------------------------------------------------------
@@ -894,7 +907,7 @@ namespace NIsland.Services
                    "<b>📊 Отслеживание</b>\n/screentime · /week · /sessions · /batlog · /traffic · /wifilog · /usblog · /iplog · /downloads · /notifstats · /speedlog · /temps · /ramtop · /timeline · /report 21:00\n\n" +
                    "<b>🎛 Контроль</b>\n/limits · /limit chrome 120 · /focusmode 25 · /watchproc steam · /alarm 07:30 Подъём · /alarms · /miclevel 70 · /wallnext · /awakefor 2 · /loadalert cpu 90 · /fixes\n" +
                    "/prayer · /agenda · /shelf · /news · /privacy · /cleanscan\n\n" +
-                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 93 виджета · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 94 виджета · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
                    "<b>🖥 Программы и Windows</b>\n" +
                    "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
                    "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +

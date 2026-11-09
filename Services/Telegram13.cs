@@ -36,7 +36,7 @@ namespace NIsland.Services
             if (Remote != null || !Enabled || !Ready || string.IsNullOrEmpty(V("chat")) || string.IsNullOrEmpty(html)) return false;
             _ = Task.Run(async () =>
             {
-                try { await Message(html); }
+                try { if (!await PushPcText(html)) await Message(html); }
                 catch (Exception e) { Log.Info("telegram push: " + e.Message); }
             });
             return true;

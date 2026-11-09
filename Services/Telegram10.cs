@@ -60,7 +60,8 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
                 if (bytes > maxBytes && list.Count >= 3) break;
                 list.Add(new object[] { Math.Round(lines[k].Time.TotalSeconds - now, 1), txt });
             }
-            return new object[] { "L", m.IsPlaying ? 1 : 0, list };
+            // время расчёта на ПК: виджет считает от него, а не от момента загрузки (иначе строки отстают на задержку доставки)
+            return new object[] { "L", m.IsPlaying ? 1 : 0, list, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + PcClockFix() };
         }
 
         // ------------------------------------------------------------------
@@ -149,7 +150,7 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
             double pos = m.Position.TotalSeconds, expect = _mpPos + (m.IsPlaying ? (DateTime.Now - _mpAt).TotalSeconds : 0);
             if (Math.Abs(pos - expect) > 2.5) _seekGen++;
             _mpPos = pos; _mpAt = DateTime.Now;
-            return $"{m.TrackLine}|{m.IsPlaying}|{m.LyricIndex / 6}|{_seekGen}|{m.LyricsSynced}";
+            return $"{m.TrackLine}|{m.IsPlaying}|{m.LyricIndex / 4}|{_seekGen}|{m.LyricsSynced}";
         }
 
         /// <summary>Ключ сравнения: без меняющихся сами по себе чисел (позиция, время, строки текста) — их виджет считает сам.</summary>
@@ -157,7 +158,7 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
         {
             var k = System.Text.RegularExpressions.Regex.Replace(st, "\"(tm|t|pos)\":[^,}]*", "");
             k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""p"",[^\]]*\]", "");
-            k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""L"",\d,\[.*?\]\]\]", "");
+            k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""L"",\d,\[.*?\]\](,-?\d+)?\]", "");
             // строка батареи в плеере: оценка «до полной / осталось» меняется каждую минуту — правим виджет только при смене процента
             k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""b"",""[^""]*"",(\d+),""[^""]*"",""\d+% · [^""]*""\]", "bat$1");
             return kind is "player" or "lyrics" or "remote" ? k + MediaKey() : k;

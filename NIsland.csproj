@@ -12,7 +12,7 @@
     <AssemblyName>NIsland</AssemblyName>
     <RootNamespace>NIsland</RootNamespace>
     <ApplicationIcon>Assets\island.ico</ApplicationIcon>
-    <Version>2.4.3</Version>
+    <Version>2.4.4</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Product>N-Island</Product>
     <Company>@Ne1zvestny1i</Company>
