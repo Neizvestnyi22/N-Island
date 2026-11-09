@@ -83,7 +83,7 @@ html,body{margin:0}body{font:13px/1.35 system-ui,sans-serif;color:var(--tg-theme
 .l{display:flex;align-items:center;gap:6px;padding:2px 0}.l span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .r{display:flex;gap:6px;margin-top:6px}button{flex:1;border:0;border-radius:10px;padding:7px 4px;font-size:13px;background:#8882;color:inherit}
 .l button{flex:0 0 auto;padding:4px 9px}button.d{background:#ff453a40}button.s{background:#30d15840}button.p{background:var(--tg-theme-button-color,#3390ec);color:#fff}
-.Lc{font-size:17px;font-weight:700;margin:3px 0}#e{min-height:14px;font-size:11px;color:var(--tg-theme-hint-color,#999);margin-top:4px}
+.Lc{font-size:17px;font-weight:700;margin:3px 0}button:active{filter:brightness(1.4)}button.w{opacity:.5}#e{min-height:14px;font-size:11px;color:var(--tg-theme-hint-color,#999);margin-top:4px}
 </style></head><body><div id="c"></div><div id="e"></div><script>
 var T=window.TelegramWidget,D={},t0=Date.now();function $(i){return document.getElementById(i)}
 function f(s){s=Math.max(0,Math.round(s));var h=s/3600|0,m=(s/60|0)%60;return(h?h+':'+('0'+m).slice(-2):m)+':'+('0'+s%60).slice(-2)}
@@ -104,11 +104,17 @@ if(t=='L'&&(e=$('ly'+i))){var s=r[1]?el():0,c=-1,a=r[2];a.forEach(function(l,j){
 e.innerHTML=(c>0?'<div class="t">'+x(a[c-1][1])+'</div>':'')+'<div class="Lc">'+x(c>=0?a[c][1]:'♪')+'</div>'+(a[c+1]?'<div class="t">'+x(a[c+1][1])+'</div>':'')}}})}
 function show(){var h='<div class="h">'+x(D.h)+'</div>'+(D.s?'<div class="s">'+x(D.s)+'</div>':'');(D.r||[]).forEach(function(r,i){h+=row(r,i)});
 (D.ro?[]:D.b||[]).forEach(function(w){h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
-$('c').innerHTML=h;$('e').textContent=D.e||'';tick();
-document.querySelectorAll('button[data-q]').forEach(function(b){b.onclick=function(){ask(b.getAttribute('data-q'))}});
+$('c').innerHTML=h;note(D.e||'',D.e?6000:0);tick();
+document.querySelectorAll('button[data-q]').forEach(function(b){b.onclick=function(){ask(b.getAttribute('data-q'),b)}});
 document.querySelectorAll('button[data-y]').forEach(function(b){b.onclick=function(){if(T&&T.copyText)T.copyText(D.r[+b.getAttribute('data-y')][2]);b.textContent='✓'}})}
 function load(s){try{D=JSON.parse(s||'{}');t0=Date.now();show()}catch(e){}}
-function ask(q){if(!T)return;$('e').textContent='…';T.request('c:'+D.k+':'+q).then(function(a){$('e').textContent='';if(a.result)load(a.result)},function(e){$('e').textContent='⚠ '+e.code})}
+var B=0,et,L=navigator.language||'',E=/^uk/.test(L)?{RATE_LIMITED:'Занадто часто — повторюю…',BUSY:'Бот зайнятий — повторюю…',TIMEOUT:'ПК не відповів — натисни ще раз',NOT_ALLOWED:'У цій копії кнопки не працюють',FAILED:'Не вийшло'}
+:/^(ru|be|kk)/.test(L)?{RATE_LIMITED:'Слишком часто — повторяю…',BUSY:'Бот занят — повторяю…',TIMEOUT:'ПК не ответил — нажми ещё раз',NOT_ALLOWED:'В этой копии кнопки не работают',FAILED:'Не получилось'}
+:{RATE_LIMITED:'Too fast — retrying…',BUSY:'Busy — retrying…',TIMEOUT:'The PC did not answer — tap again',NOT_ALLOWED:'Buttons do not work in this copy',FAILED:'Failed'};
+function note(s,k){$('e').textContent=s;clearTimeout(et);if(k)et=setTimeout(function(){$('e').textContent=''},k)}
+function ask(q,b,n){if(!T||B)return;B=1;if(b)b.classList.add('w');note('…');
+T.request('c:'+D.k+':'+q).then(function(a){B=0;if(b)b.classList.remove('w');note('');if(a.result)load(a.result)},function(e){B=0;if(b)b.classList.remove('w');
+if((e.code=='RATE_LIMITED'||e.code=='BUSY')&&!n){note(E[e.code]);setTimeout(function(){ask(q,b,1)},1600)}else note('⚠ '+(E[e.code]||e.code),6000)})}
 if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}setInterval(tick,250);
 </script></body></html>
 """;
@@ -700,9 +706,10 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             return (sb.ToString(), K(rows.ToArray()));
         }
 
-        async Task<string> WidgetsCallback(string rest)
+        async Task<string> WidgetsCallback(string rest, long msgId = 0)
         {
-            if (rest.StartsWith("share:")) return await ShareHelp();
+            // «📤 Переслать» под виджетом (и старые кнопки «share:» в чате) — выбор чата и пересылка самого виджета
+            if (rest == "fw" || rest.StartsWith("share:")) return await StartForward(msgId);
             if (rest == "!stop") { lock (_widgets) _widgets.Clear(); return T("⏹ Живые виджеты больше не обновляются"); }
             if (rest == "!ref")
             {

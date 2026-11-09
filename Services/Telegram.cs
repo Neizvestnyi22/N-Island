@@ -487,6 +487,7 @@ namespace NIsland.Services
             var text = Integrations.S(m, "text").Trim();
             App.Island?.MascotReact("wave", 1.6);   // пришла команда из Telegram — персонаж машет
             _lastMsgId = m.TryGetProperty("message_id", out var lm) ? lm.GetInt64() : 0;
+            if (await ForwardPicked(m, text)) return;
             if (text == "")
             {
                 var caption = Integrations.S(m, "caption").Trim();
@@ -1549,7 +1550,7 @@ namespace NIsland.Services
                 }
             }
             if (head is "ap" or "x4") return await Callback4(head, rest, msgId) ?? "";
-            if (head == "wg") return await WidgetsCallback(rest) ?? "";
+            if (head == "wg") return await WidgetsCallback(rest, msgId) ?? "";
             return await Do2(head, rest, msgId) ?? "";
         }
 

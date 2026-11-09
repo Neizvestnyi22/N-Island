@@ -190,30 +190,6 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
             return _inlineOk.Value;
         }
 
-        /// <summary>«📤 Переслать» под виджетом: при инлайн-режиме — выбор любого чата Telegram, иначе — подсказка, как его включить.</summary>
-        async Task<object> ShareKeys(string kind)
-        {
-            if (_noWidgetKeys) return null;
-            if (await InlineOk())
-                return K(Row(new
-                {
-                    text = T("📤 Переслать"),
-                    switch_inline_query_chosen_chat = new { query = "w " + kind, allow_user_chats = true, allow_bot_chats = true, allow_group_chats = true, allow_channel_chats = true },
-                }));
-            return K(Row(B("📤 Переслать", "wg:share:" + kind)));
-        }
-
-        /// <summary>Инлайн-режим выключен: объясняем, как включить; переслать сам виджет можно всегда.</summary>
-        async Task<string> ShareHelp()
-        {
-            _inlineOk = null;   // вдруг уже включили — проверим заново при следующем виджете
-            await Message("📤 <b>Как переслать виджет в другой чат</b>\n\n" +
-                "1. Открой @BotFather → /setinline → выбери этого бота → напиши любую подсказку (например «виджеты»). Это включит инлайн-режим.\n" +
-                "2. После этого «📤 Переслать» откроет список чатов: выбираешь чат — и туда уходит виджет (снимок без управления ПК; калькулятор, игры, часы и календарь работают у всех).\n\n" +
-                "Уже сейчас можно переслать сам виджет: зажми его → «Переслать». Кнопки у получателя работать не будут.");
-            return "📤";
-        }
-
         /// <summary>Только для чтения: у карточки в чужом чате нет кнопок управления (копирование остаётся).</summary>
         static string ReadOnlyState(string st) =>
             st.StartsWith("{\"k\":") ? "{\"ro\":1," + st[1..] : st;

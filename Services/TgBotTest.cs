@@ -271,12 +271,55 @@ namespace NIsland.Services
             log.AppendLine($"widgets_default: ok, sends={WidgetSends}");
 
             // «📤 Переслать»: под виджетом — выбор чата (инлайн-режим), инлайн-ответ только владельцу и в пределах лимитов
-            TelegramHub.TestInlineMode(true);
+
             lock (Sent) Sent.Clear();
             await tg.TestCommand("widget", "плеер");
             string sw;
             lock (Sent) sw = Sent.LastOrDefault(x => x.Method == "sendWidget").Json ?? "";
-            if (!sw.Contains("switch_inline_query_chosen_chat")) Problems.Add("forward: no chat-picker button under the widget");
+            if (!sw.Contains("wg:fw")) Problems.Add("forward: no forward button under the widget");
+            // кнопка → нижняя клавиатура с выбором чата → выбранная группа → forwardMessage этого виджета
+            lock (Sent) Sent.Clear();
+            await tg.TestCallbackAt("wg:fw", 555);
+            string pick;
+            lock (Sent) pick = Sent.Where(x => x.Method is "sendMessage" or "sendRichMessage").Select(x => x.Json).LastOrDefault() ?? "";
+            if (!pick.Contains("request_chat") || !pick.Contains("request_users")) Problems.Add("forward: no chat picker keyboard");
+            lock (Sent) Sent.Clear();
+            await tg.TestUpdate("{\"update_id\":1,\"message\":{\"message_id\":900,\"chat\":{\"id\":42,\"type\":\"private\"},\"chat_shared\":{\"request_id\":1,\"chat_id\":-1001234,\"title\":\"Test group\"}}}");
+            string fwd;
+            lock (Sent) fwd = Sent.Where(x => x.Method == "forwardMessage").Select(x => x.Json).LastOrDefault() ?? "";
+            if (!fwd.Contains("-1001234") || !fwd.Contains("555")) Problems.Add("forward: the picked chat did not get the widget: " + Short(fwd));
+            // выбор без нажатой кнопки — подсказка, а не пересылка
+            lock (Sent) Sent.Clear();
+            await tg.TestUpdate("{\"update_id\":2,\"message\":{\"message_id\":901,\"chat\":{\"id\":42,\"type\":\"private\"},\"users_shared\":{\"request_id\":3,\"users\":[{\"user_id\":77,\"first_name\":\"Ann\"}]}}}");
+            bool fwd2;
+            lock (Sent) fwd2 = Sent.Any(x => x.Method == "forwardMessage");
+            if (fwd2) Problems.Add("forward: forwarded without pressing the button first");
+            log.AppendLine("forward: button, picker and forwardMessage checked");
+
+            // обработчик нажатий: ответ с состоянием + новое состояние в само сообщение; двойной тап — одно действие; чужой чат — ничего
+            string WQ(string id, long chat, long msg, string data) =>
+                "{\"update_id\":10,\"widget_query\":{\"id\":\"" + id + "\",\"from\":{\"id\":42},\"chat\":{\"id\":" + chat + ",\"type\":\"private\"},\"message_id\":" + msg + ",\"chat_instance\":\"1\",\"data\":\"" + data + "\"}}";
+            lock (Sent) Sent.Clear();
+            await tg.TestUpdate(WQ("wq1", 42, 700, "c:timer:ref"));
+            await Task.Delay(400);
+            List<(string Method, string Json)> got;
+            lock (Sent) got = Sent.ToList();
+            var tapAns = got.FirstOrDefault(x => x.Method == "answerWidgetQuery").Json ?? "";
+            if (!tapAns.Contains("\"data\"")) Problems.Add("widget tap: answer without state");
+            if (!got.Any(x => x.Method == "editMessageWidgetData" && x.Json.Contains("700"))) Problems.Add("widget tap: new state was not saved into the message");
+            lock (Sent) Sent.Clear();
+            await Task.WhenAll(tg.TestUpdate(WQ("wq2", 42, 701, "c:notes:in")), tg.TestUpdate(WQ("wq3", 42, 701, "c:notes:in")));
+            await Task.Delay(400);
+            int prompts;
+            lock (Sent) prompts = Sent.Count(x => x.Method is "sendMessage" or "sendRichMessage" && Txt(x.Json).Contains("заметки"));
+            if (prompts != 1) Problems.Add($"widget double tap: the action ran {prompts} times");
+            lock (Sent) Sent.Clear();
+            await tg.TestUpdate(WQ("wq4", 99, 702, "c:timer:toggle"));
+            await Task.Delay(300);
+            string ans4;
+            lock (Sent) ans4 = Sent.FirstOrDefault(x => x.Method == "answerWidgetQuery").Json ?? "";
+            if (ans4.Contains("\"data\"")) Problems.Add("widget tap from another chat was served");
+            log.AppendLine($"widget taps: state saved, double tap → {prompts} action, stranger refused");
             lock (Sent) Sent.Clear();
             await tg.TestInline("{\"id\":\"iq1\",\"from\":{\"id\":42},\"query\":\"w player\"}");
             await tg.TestInline("{\"id\":\"iq2\",\"from\":{\"id\":42},\"query\":\"\"}");
@@ -295,7 +338,7 @@ namespace NIsland.Services
                 using (var a3 = JsonDocument.Parse(inl[2])) if (a3.RootElement.GetProperty("results").GetArrayLength() != 0) Problems.Add("inline: a stranger got widgets");
                 log.AppendLine("inline: owner and stranger checked");
             }
-            TelegramHub.TestInlineMode(false);
+
 
             // защитник через бота: меню с управлением, карантин, неизвестная кнопка не запускает проверку, тревога — с кнопками
             lock (Sent) Sent.Clear();
@@ -305,7 +348,7 @@ namespace NIsland.Services
             await tg.TestCallback("av2:ql");
             var stale = await tg.TestCallback("av2:zzz");
             bool scanStarted;
-            lock (Sent) scanStarted = Sent.Any(x => x.Json.Contains("Быстрая проверка") || x.Json.Contains("1–3 мин"));
+            lock (Sent) scanStarted = Sent.Any(x => Txt(x.Json).Contains("Быстрая проверка") || Txt(x.Json).Contains("1–3 мин"));
             if (scanStarted) Problems.Add("defender: an unknown av2 button started a scan");
             lock (Sent) Sent.Clear();
             var fake = new Threat(Path.Combine(Path.GetTempPath(), "ni-test-not-a-file.exe"), 85, "Опасно", new List<string> { "test reason" }, "00ff", false);
@@ -356,6 +399,20 @@ namespace NIsland.Services
                 log.AppendLine($"widget {q} → {Short(res)}");
             }
             TelegramHub.TestSink = null;
+        }
+
+        /// <summary>Текст сообщения из тела запроса (в JSON кириллица экранирована — искать по нему нельзя).</summary>
+        static string Txt(string json)
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(json);
+                if (d.RootElement.TryGetProperty("text", out var t)) return t.GetString() ?? "";
+                if (d.RootElement.TryGetProperty("rich_message", out var rm))
+                    return rm.TryGetProperty("html", out var rh) ? rh.GetString() ?? "" : rm.TryGetProperty("markdown", out var rmd) ? rmd.GetString() ?? "" : "";
+            }
+            catch { }
+            return "";
         }
 
         static string LastText()

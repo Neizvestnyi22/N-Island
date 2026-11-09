@@ -55,8 +55,10 @@ function tick(){var d=D;if(!d.dur){$('pr').style.width=0;$('a').textContent=$('z
 var p=d.pos+(d.p?(Date.now()-t0)/1e3:0);p=Math.min(p,d.dur);$('pr').style.width=(p/d.dur*100)+'%';$('a').textContent=f(p);$('z').textContent=f(d.dur)}
 function load(s){try{D=JSON.parse(s||'{}');t0=Date.now();show();$('s').textContent=D.e||''}catch(e){}}
 if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}
-document.querySelectorAll('button').forEach(function(b){b.onclick=function(){if(!T)return;$('s').textContent='…';
-T.request('w:'+b.dataset.q).then(function(a){$('s').textContent='';if(a.result)load(a.result)},function(e){$('s').textContent=e.code==='NOT_ALLOWED'?'🔐 не разрешено':'⚠ '+e.code})}});
+function go(b,n){if(!T||b.B)return;b.B=1;b.style.opacity=.5;$('s').textContent='…';
+T.request('w:'+b.dataset.q).then(function(a){b.B=0;b.style.opacity='';$('s').textContent='';if(a.result)load(a.result)},function(e){b.B=0;b.style.opacity='';
+if(e.code==='RATE_LIMITED'&&!n){$('s').textContent='⏳';setTimeout(function(){go(b,1)},1600)}else $('s').textContent=e.code==='NOT_ALLOWED'?'🔐':'⚠ '+e.code})}
+document.querySelectorAll('button').forEach(function(b){b.onclick=function(){go(b)}});
 setInterval(tick,1000);
 </script></body></html>
 """;
@@ -281,7 +283,8 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
             long msgId = q.TryGetProperty("message_id", out var mi) ? mi.GetInt64() : 0;
             var data = Integrations.S(q, "data");
             string result = null;
-            var work = WidgetAction(data, msgId);
+            // случайный двойной тап (то же нажатие в том же виджете за 0,4 с) не повторяет действие — кроме повторяемых (громкость, мышь, клавиши…)
+            var work = DoubleTap(msgId, data) ? Task.Run(() => CurrentWidgetState(data)) : Serialized(msgId, () => WidgetAction(data, msgId));
             if (await Task.WhenAny(work, Task.Delay(12000)) == work)
             {
                 try { result = await work; } catch (Exception e) { Log.Info("telegram widget query: " + e.Message); }
@@ -298,6 +301,8 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
                 });
             }
             try { await Call("answerWidgetQuery", result != null ? new { widget_query_id = qid, data = result } : (object)new { widget_query_id = qid }); } catch { }
+            // ответ обновляет виджет на экране, но в сообщении остаётся старое состояние — пролистал чат и всё откатилось. Сохраняем новое в само сообщение.
+            if (result != null && msgId != 0 && result.StartsWith("{")) _ = PersistWidget(msgId, result);
         }
 
         internal Task<string> TestWidgetAction(string data) => Task.Run(() => WidgetAction(data, 7));
