@@ -47,6 +47,7 @@ namespace NIsland.Services
             new HubField("boot", "Сообщать, что ПК включился", "сообщение при запуске N-Island", "bool", Required: false, Default: "1"),
             new HubField("unlock", "Сообщать о входе, блокировке и пробуждении", "видно, если ноутбуком пользуется кто-то другой", "bool", Required: false, Default: "0"),
             new HubField("aitext", "Обычный текст — вопрос ИИ", "иначе текст показывается в острове; ИИ — /ai вопрос", "bool", Required: false, Default: "0"),
+            new HubField("open_links", "Ссылки сразу открывать на ПК", "Прислал боту ссылку — она открывается в браузере ПК. Подозрительные (проверка на фишинг) — только после подтверждения. Нужно «Управление с телефона»", "bool", Required: false, Default: "1"),
             new HubField("widgets_default", "Отвечать виджетами", "Где можно — виджетом, а не сообщением: 64 команды без аргументов (/music, /weather, /todos, /timer, /vpn…) и 23 экрана меню (музыка, звук, экран, питание, сеть…). Если Telegram виджет не примет — обычное сообщение", "bool", Required: false, Default: "0"),
             new HubField("rich", "Новое оформление сообщений", "Rich Messages из Bot API 10: заголовки, таблицы, ответы ИИ с разметкой. Если Telegram их не примет — обычный текст", "bool", Required: false, Default: "1"),
             new HubField("kbd", "Кнопки внизу чата", "Пульт, Статус, Музыка, Экран, Окна, Блок", "bool", Required: false, Default: "1"),
@@ -522,6 +523,8 @@ namespace NIsland.Services
             }
             var btn = ReplyButtons.FirstOrDefault(b => b.Label == text || T(b.Label) == text);
             if (btn.Cmd != null) { await Reply(await Command(btn.Cmd, "")); return; }
+            // ссылки: только ссылка — сразу открывается в браузере ПК (подозрительная — после подтверждения), в тексте — кнопки «Открыть на ПК»
+            try { if (await HandleLinks(text)) return; } catch (Exception e) { Log.Info("telegram links: " + e.Message); }
             if (Flag("aitext")) { await Reply(await AskAi(text)); return; }
 
             // обычный текст с телефона → в остров (ссылку можно открыть, текст — скопировать)
@@ -847,6 +850,7 @@ namespace NIsland.Services
                     return (await Shell(cmd == "ps", arg), null);
                 default:
                     if (cmd is "widget" or "widgets" or "pet") return await WidgetsCommand(cmd, arg);
+                    if (await Command6(cmd, arg) is { } r6) return r6;
                     if (await Command5(cmd, arg) is { } r5) return r5;
                     if (Commands5.Any(c => c.Cmd == cmd)) return null;   // файл уже отправлен
                     if (await Command4(cmd, arg) is { } r4) return r4;
@@ -883,10 +887,11 @@ namespace NIsland.Services
                    "Утилиты: /conv 100 usd uah · /wiki · /clock Tokyo · /days 31.12 · /moon · /sun · /tomorrow · /password · /uuid · /hash · /b64 · /roll · /coin · /sw · /pomo · /sleeptimer 30 · /water\n" +
                    "Дела: /notes · /todos · /done 2 · /deltodo 2 · /notif · /clipclear\n" +
                    "Окна и звук: /close · /maximize · /minimize · /minall · /appvol · /volup · /voldown · /like · /desklyrics · /viz · /mascot · /icons · /restartapp\n\n" +
+                   "<b>🧭 Браузер</b>\nПришли ссылку — откроется на ПК · /browser — пульт · /tab next · /back · /reload · /web котики · /incognito сайт · /links · /fav · /scroll down · /zoom in\n\n" +
                    "<b>📊 Отслеживание</b>\n/screentime · /week · /sessions · /batlog · /traffic · /wifilog · /usblog · /iplog · /downloads · /notifstats · /speedlog · /temps · /ramtop · /timeline · /report 21:00\n\n" +
                    "<b>🎛 Контроль</b>\n/limits · /limit chrome 120 · /focusmode 25 · /watchproc steam · /alarm 07:30 Подъём · /alarms · /miclevel 70 · /wallnext · /awakefor 2 · /loadalert cpu 90 · /fixes\n" +
                    "/prayer · /agenda · /shelf · /news · /privacy · /cleanscan\n\n" +
-                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 91 виджет · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 92 виджета · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
                    "<b>🖥 Программы и Windows</b>\n" +
                    "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
                    "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +
@@ -1565,6 +1570,7 @@ namespace NIsland.Services
             }
             if (head is "ap" or "x4") return await Callback4(head, rest, msgId) ?? "";
             if (head == "wg") return await WidgetsCallback(rest, msgId) ?? "";
+            if (head == "bw") return await BrowserCallback(rest, msgId) ?? "";
             return await Do2(head, rest, msgId) ?? "";
         }
 

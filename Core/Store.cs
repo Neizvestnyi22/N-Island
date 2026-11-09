@@ -524,6 +524,8 @@ namespace NIsland.Core
         public int EqBoost { get => _eqBoost; set => Set(ref _eqBoost, value); } int _eqBoost;
         /// <summary>Когда последний раз проверяли обновление Equalizer APO (yyyy-MM-dd).</summary>
         public string EqApoChecked { get => _eqApoChecked; set => Set(ref _eqApoChecked, value); } string _eqApoChecked = "";
+        /// <summary>Избранные сайты для бота и виджета «Браузер»: «Имя|ссылка;…».</summary>
+        public string BrowserFavs { get => _brFavs; set => Set(ref _brFavs, value); } string _brFavs = "YouTube|https://www.youtube.com;Google|https://www.google.com";
         public string EqPreset { get => _eqPreset; set => Set(ref _eqPreset, value); } string _eqPreset = "flat";
         /// <summary>Свой профиль эквалайзера для каждого устройства вывода (наушники, колонки).</summary>
         public bool EqPerDevice { get => _eqDev; set => Set(ref _eqDev, value); } bool _eqDev = true;

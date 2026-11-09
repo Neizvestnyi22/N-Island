@@ -633,7 +633,7 @@ namespace NIsland.Services
                     return ("🌐 Перевожу — ответ появится в виджете", null);
                 }
             }
-            return null;
+            return await WidgetInput5(kind, text);
         }
     }
 }

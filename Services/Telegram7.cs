@@ -75,6 +75,7 @@ namespace NIsland.Services
             new("prayer", "🕌 Время молитв", "Время", 300, 0, 0), new("agenda", "📅 Ближайшие события", "Время", 320, 0, 0),
             new("shelf", "📦 Полка", "Дела", 320, 0, 0), new("translate", "🌐 Переводчик", "Дела", 340, 0, 0),
             new("cleanup", "🧹 Очистка", "Система", 340, 0, 0), new("news", "📰 Новости", "Сводки", 340, 0, 0),
+            new("browser", "🧭 Браузер", "Управление", 340, 0, 6),
         };
 
         static WKind WK(string key) => WKinds.FirstOrDefault(k => k.Key == key);
@@ -500,7 +501,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     Btns(d, Bt("🔄 Перезагрузка", "restart", "d"), Bt("⏻ Выключить", "shutdown", "d"));
                     return d;
             }
-            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? Card(kind, "Неизвестный виджет");
+            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? CardState5(kind) ?? Card(kind, "Неизвестный виджет");
         }
 
         // ------------------------------------------------------------------
@@ -626,7 +627,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     }
                     else { _powerConfirm = head; _powerConfirmAt = DateTime.Now; note = T("Нажми ещё раз в течение 10 секунд, чтобы подтвердить"); }
                     break;
-                default: note = await CardAction2(kind, head, arg) ?? await CardAction3(kind, head, arg) ?? await CardAction4(kind, head, arg) ?? note; break;
+                default: note = await CardAction2(kind, head, arg) ?? await CardAction3(kind, head, arg) ?? await CardAction4(kind, head, arg) ?? await CardAction5(kind, head, arg) ?? note; break;
             }
             // нажали — живой виджет обновляется ещё 5 минут
             var wk = WK(kind);
@@ -732,6 +733,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             ["починки"] = "fixes", ["починить"] = "fixes", ["незасыпать"] = "awake", ["сторож"] = "guard", ["радио"] = "radios", ["bluetooth"] = "radios",
             ["приватность"] = "privacy", ["слежка камеры"] = "privacy", ["молитвы"] = "prayer", ["намаз"] = "prayer", ["полка"] = "shelf",
             ["переводчик"] = "translate", ["перевод"] = "translate", ["очистка"] = "cleanup", ["мусор"] = "cleanup", ["новости"] = "news",
+            ["браузер"] = "browser", ["вкладки"] = "browser", ["ссылки"] = "browser", ["chrome"] = "browser",
         };
 
         async Task<(string Html, object Keys)?> WidgetsCommand(string cmd, string arg)

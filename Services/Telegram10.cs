@@ -158,6 +158,8 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
             var k = System.Text.RegularExpressions.Regex.Replace(st, "\"(tm|t|pos)\":[^,}]*", "");
             k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""p"",[^\]]*\]", "");
             k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""L"",\d,\[.*?\]\]\]", "");
+            // строка батареи в плеере: оценка «до полной / осталось» меняется каждую минуту — правим виджет только при смене процента
+            k = System.Text.RegularExpressions.Regex.Replace(k, @"\[""b"",""[^""]*"",(\d+),""[^""]*"",""\d+% · [^""]*""\]", "bat$1");
             return kind is "player" or "lyrics" or "remote" ? k + MediaKey() : k;
         }
 

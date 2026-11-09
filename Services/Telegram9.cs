@@ -80,6 +80,8 @@ namespace NIsland.Services
             ["awake"] = new[] { "on", "off", "h" }, ["guard"] = new[] { "cpu", "ram" },
             ["radios"] = new[] { "t" }, ["privacy"] = Array.Empty<string>(), ["prayer"] = Array.Empty<string>(), ["agenda"] = Array.Empty<string>(),
             ["shelf"] = new[] { "send" }, ["translate"] = new[] { "in", "to" }, ["cleanup"] = new[] { "scan", "clean" }, ["news"] = Array.Empty<string>(),
+            ["browser"] = new[] { "back", "fwd", "reload", "newtab", "close", "reopen", "next", "prev", "up", "down", "top", "bottom", "zin", "zout", "z0", "full",
+                                  "play", "vmute", "in", "inc", "fav", "o", "w" },
         };
 
         internal static bool TestKnownOp(string kind, string head) => KnownOp(kind, head);
@@ -110,7 +112,7 @@ namespace NIsland.Services
             ["ramtop"] = "ramtop", ["timeline"] = "timeline", ["report"] = "report", ["miclevel"] = "mic", ["limits"] = "limits", ["focusmode"] = "focus",
             ["watchproc"] = "procwatch", ["alarms"] = "alarms", ["alarm"] = "alarms", ["fixes"] = "fixes", ["awakefor"] = "awake", ["loadalert"] = "guard",
             ["prayer"] = "prayer", ["agenda"] = "agenda", ["shelf"] = "shelf", ["news"] = "news", ["privacy"] = "privacy", ["cleanscan"] = "cleanup",
-            ["radio"] = "radios", ["tr"] = "translate", ["translate"] = "translate", ["usb"] = "usblog", ["boot"] = "sessions", ["idle"] = "sessions",
+            ["radio"] = "radios", ["browser"] = "browser", ["tabs"] = "browser", ["links"] = "browser", ["tr"] = "translate", ["translate"] = "translate", ["usb"] = "usblog", ["boot"] = "sessions", ["idle"] = "sessions",
         };
 
         /// <summary>Экран меню бота (кнопка nav:…) → вид виджета. Навигация (главное, «Ещё», настройки, ИИ, файлы) остаётся сообщениями.</summary>
@@ -442,6 +444,7 @@ try{var c=JSON.parse(localStorage.getItem('cd'));if(c&&c[0]>Date.now())set(new D
             ["procwatch"] = "👁 Напиши имя процесса, например: steam",
             ["alarms"] = "⏰ Напиши время и подпись, например: 07:30 Подъём",
             ["translate"] = "🌐 Напиши текст — переведу (язык меняется кнопкой в виджете)",
+            ["browser"] = "🌐 Пришли ссылку или что найти — открою в браузере на ПК (отмена: «-»)",
         };
 
         async Task<string> CardAction3(string kind, string head, string arg)

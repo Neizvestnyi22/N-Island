@@ -27,7 +27,7 @@ namespace NIsland.Services
         {
             "nav", "status!", "ask", "do", "mu", "au", "out", "mx", "eq", "br", "sh", "w", "wa", "kill", "kb", "ms", "mc", "mstep", "d", "dp", "f",
             "fg", "fo", "fd", "fdok", "fc", "z", "pw", "mode", "pp", "vpn", "td", "tm", "ev", "fl", "ainew", "aicp", "airetry", "aip", "aim", "aimodels", "noop",
-            "do2", "sc", "jb", "ch", "av2", "rd", "lv", "ap", "x4", "wg",
+            "do2", "sc", "jb", "ch", "av2", "rd", "lv", "ap", "x4", "wg", "bw",
         };
         // эти кнопки безопасно нажимать: только показывают
         static readonly string[] SafePrefixes = { "nav:", "d:", "dp:", "f:", "w:", "aimodels:", "status!", "do:sysinfo", "do:disk", "do:lyrics", "do:notes", "do:recent", "ask:ai", "ask:search", "ask:type", "ask:copy", "ask:say", "ask:todo",
@@ -116,7 +116,10 @@ namespace NIsland.Services
                 ("iplog", ""), ("downloads", ""), ("downloads", "999"), ("notifstats", ""), ("speedlog", ""), ("temps", ""), ("ramtop", ""), ("timeline", ""),
                 ("report", ""), ("report", "вчера"), ("miclevel", ""), ("limits", ""), ("limit", ""), ("limit", "abc"), ("focusmode", ""), ("watchproc", ""),
                 ("alarms", ""), ("alarm", ""), ("alarm", "99:99 x"), ("fixes", ""), ("fixes", "nope"), ("awakefor", ""), ("loadalert", ""), ("loadalert", "cpu 5"),
-                ("prayer", ""), ("agenda", ""), ("shelf", ""), ("shelf", "999"), ("news", ""), ("privacy", ""), ("widget", "экранное"), ("widget", "обои"),   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
+                ("prayer", ""), ("agenda", ""), ("shelf", ""), ("shelf", "999"), ("news", ""), ("privacy", ""), ("widget", "экранное"), ("widget", "обои"),
+                // браузер: только просмотр и неверные аргументы (ничего не открывается и не нажимается)
+                ("browser", ""), ("tabs", ""), ("links", ""), ("fav", ""), ("fav", "add"), ("fav", "del 99"), ("fav", "zzz"), ("tab", "zzz"), ("scroll", "zzz"),
+                ("zoom", "zzz"), ("web", ""), ("incognito", ""), ("widget", "браузер"),   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
             };
             var queue = new Queue<string>();
             foreach (var (c, a) in cmds)
@@ -430,9 +433,25 @@ namespace NIsland.Services
                 if (mEdits != 1) Problems.Add($"pc sync: music menu edits {mEdits} (want 1)");
                 Sent.Clear();
                 await tg.TestFlush(new[] { "player" }, new[] { "music" });
-                lock (Sent) { wEdits = Sent.Count(s => s.Method == "editMessageWidgetData"); mEdits = Sent.Count(s => s.Method == "editMessageText"); }
+                // считаем только правки своих сообщений: живые виджеты, отправленные раньше в самотесте, в это время обновляются сами
+                lock (Sent)
+                {
+                    wEdits = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("\"message_id\":9001"));
+                    mEdits = Sent.Count(s => s.Method == "editMessageText" && s.Json.Contains("\"message_id\":9002"));
+                }
                 if (wEdits + mEdits != 0) Problems.Add($"pc sync: unchanged state still edited ({wEdits}+{mEdits})");
                 log.AppendLine("pc sync: ok");
+            }
+            // ссылки из чата: что считается ссылкой и когда сообщение — «только ссылки»
+            {
+                var l = TelegramHub.TestFindLinks("смотри youtube.com/watch?v=1 и https://x.org/a, ещё www.site.ru и file.txt, mail@example.com");
+                var want = new[] { "https://youtube.com/watch?v=1", "https://x.org/a", "https://www.site.ru/" };
+                if (!l.SequenceEqual(want)) Problems.Add("links: found [" + string.Join(" ", l) + "]");
+                if (!TelegramHub.TestOnlyLinks("https://a.com/x")) Problems.Add("links: bare link not 'only links'");
+                if (!TelegramHub.TestOnlyLinks("youtube.com  github.com/x")) Problems.Add("links: two links not 'only links'");
+                if (TelegramHub.TestOnlyLinks("привет https://a.com")) Problems.Add("links: text with link counted as 'only links'");
+                if (TelegramHub.TestFindLinks("просто текст. и точка").Count != 0) Problems.Add("links: plain text has links");
+                log.AppendLine("links: ok");
             }
             foreach (var q in new[] { "w:ref", "w:zzz", "p:poke", "p:love", "p:ref" })
             {
