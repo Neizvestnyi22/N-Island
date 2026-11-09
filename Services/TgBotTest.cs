@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -27,7 +27,7 @@ namespace NIsland.Services
         {
             "nav", "status!", "ask", "do", "mu", "au", "out", "mx", "eq", "br", "sh", "w", "wa", "kill", "kb", "ms", "mc", "mstep", "d", "dp", "f",
             "fg", "fo", "fd", "fdok", "fc", "z", "pw", "mode", "pp", "vpn", "td", "tm", "ev", "fl", "ainew", "aicp", "airetry", "aip", "aim", "aimodels", "noop",
-            "do2", "sc", "jb", "ch", "av2", "rd", "lv", "ap", "x4", "wg", "bw",
+            "game", "do2", "sc", "jb", "ch", "av2", "rd", "lv", "ap", "x4", "wg", "bw",
         };
         // эти кнопки безопасно нажимать: только показывают
         static readonly string[] SafePrefixes = { "nav:", "d:", "dp:", "f:", "w:", "aimodels:", "status!", "do:sysinfo", "do:disk", "do:lyrics", "do:notes", "do:recent", "ask:ai", "ask:search", "ask:type", "ask:copy", "ask:say", "ask:todo",
@@ -44,7 +44,7 @@ namespace NIsland.Services
             var frame = new DispatcherFrame();
             task.ContinueWith(_ => frame.Continue = false);
             Dispatcher.PushFrame(frame);
-            if (task.Exception != null) sb.AppendLine("FATAL " + task.Exception);
+            if (task.Exception != null) { sb.AppendLine("FATAL " + task.Exception); Problems.Add("FATAL " + task.Exception.GetBaseException().Message); }
             sb.AppendLine();
             sb.AppendLine($"requests={Sent.Count} problems={Problems.Count}");
             foreach (var p in Problems.Distinct()) sb.AppendLine("PROBLEM " + p);
@@ -215,7 +215,7 @@ namespace NIsland.Services
                 try { st = tg.TestWState(wk.Key); } catch (Exception e) { Problems.Add($"widget {wk.Key}: state {e.GetType().Name}: {e.Message}"); continue; }
                 int sb = Encoding.UTF8.GetByteCount(st);
                 if (sb > 1024) Problems.Add($"widget {wk.Key}: state {sb} > 1024 bytes");
-                if (ms.Length > 3900) Problems.Add($"widget {wk.Key}: html compressed {ms.Length} > 3900");
+                if (ms.Length > WidgetPolicy.CompressedLimit) Problems.Add($"widget {wk.Key}: html compressed {ms.Length} > 3900");
                 try
                 {
                     using var sd = JsonDocument.Parse(st);
@@ -240,7 +240,7 @@ namespace NIsland.Services
                 }
                 catch (Exception e) { Problems.Add($"widget {wk.Key}: state not JSON ({e.GetType().Name})"); }
                 var ans = await tg.TestWidgetAction("c:" + wk.Key + ":ref");
-                if (!(wk.Key is "remote" or "pet") && ans == null) Problems.Add($"widget {wk.Key}: ref gave no state");
+                if (!(wk.Key is "remote" or "pet") && WidgetTools.Find(wk.Key) == null && ans == null) Problems.Add($"widget {wk.Key}: ref gave no state");
                 log.AppendLine($"widget {wk.Key,-10} html={raw.Length} zlib={ms.Length} state={sb}");
                 var stub = "<script>window.__q=[];window.TelegramWidget={chatData:" + JsonSerializer.Serialize(st) + ",onEvent:function(){},copyText:function(){},request:function(q){__q.push(q);document.title=q;return Promise.resolve({result:null})}};</script>";
                 File.WriteAllText(Path.Combine(wdir, wk.Key + ".html"), html.Replace("<head>", "<head>" + stub));
@@ -282,31 +282,18 @@ namespace NIsland.Services
             if (WidgetSends != b0) Problems.Add("widgets_default off: /music or the music menu still sent a widget");
             log.AppendLine($"widgets_default: ok, sends={WidgetSends}");
 
-            // «📤 Переслать»: под виджетом — выбор чата (инлайн-режим), инлайн-ответ только владельцу и в пределах лимитов
-
+            // Production 10.4: no widget forwarding/picker, a catalog button remains.
             lock (Sent) Sent.Clear();
             await tg.TestCommand("widget", "плеер");
             string sw;
             lock (Sent) sw = Sent.LastOrDefault(x => x.Method == "sendWidget").Json ?? "";
-            if (!sw.Contains("wg:fw")) Problems.Add("forward: no forward button under the widget");
-            // кнопка → нижняя клавиатура с выбором чата → выбранная группа → forwardMessage этого виджета
+            if (sw.Contains("wg:fw") || !sw.Contains("wg:menu")) Problems.Add("production: widget must have catalog, not forward button");
             lock (Sent) Sent.Clear();
-            await tg.TestCallbackAt("wg:fw", 555);
-            string pick;
-            lock (Sent) pick = Sent.Where(x => x.Method is "sendMessage" or "sendRichMessage").Select(x => x.Json).LastOrDefault() ?? "";
-            if (!pick.Contains("request_chat") || !pick.Contains("request_users")) Problems.Add("forward: no chat picker keyboard");
-            lock (Sent) Sent.Clear();
+            var blockedForward = await tg.TestCallbackAt("wg:fw", 555);
             await tg.TestUpdate("{\"update_id\":1,\"message\":{\"message_id\":900,\"chat\":{\"id\":42,\"type\":\"private\"},\"chat_shared\":{\"request_id\":1,\"chat_id\":-1001234,\"title\":\"Test group\"}}}");
-            string fwd;
-            lock (Sent) fwd = Sent.Where(x => x.Method == "forwardMessage").Select(x => x.Json).LastOrDefault() ?? "";
-            if (!fwd.Contains("-1001234") || !fwd.Contains("555")) Problems.Add("forward: the picked chat did not get the widget: " + Short(fwd));
-            // выбор без нажатой кнопки — подсказка, а не пересылка
-            lock (Sent) Sent.Clear();
-            await tg.TestUpdate("{\"update_id\":2,\"message\":{\"message_id\":901,\"chat\":{\"id\":42,\"type\":\"private\"},\"users_shared\":{\"request_id\":3,\"users\":[{\"user_id\":77,\"first_name\":\"Ann\"}]}}}");
-            bool fwd2;
-            lock (Sent) fwd2 = Sent.Any(x => x.Method == "forwardMessage");
-            if (fwd2) Problems.Add("forward: forwarded without pressing the button first");
-            log.AppendLine("forward: button, picker and forwardMessage checked");
+            lock (Sent) if (Sent.Any(x => x.Method == "forwardMessage" || x.Json.Contains("request_chat"))) Problems.Add("production: forwarding attempted");
+            if (string.IsNullOrEmpty(blockedForward)) Problems.Add("production: legacy forward callback gave no explanation");
+            log.AppendLine("production: forwarding denied");
 
             // кнопки плеера через бота и виджеты — только с поддельным плеером (tools/SmtcFake), иначе тест музыкой не управляет
             if (Environment.GetEnvironmentVariable("NISLAND_PLAYER_TEST") == "1")
@@ -356,14 +343,12 @@ namespace NIsland.Services
             if (inl.Count != 3) Problems.Add($"inline: expected 3 answers, got {inl.Count}");
             else
             {
-                using (var a1 = JsonDocument.Parse(inl[0]))
+                foreach (var answer in inl)
                 {
-                    var res = a1.RootElement.GetProperty("results");
-                    if (res.GetArrayLength() == 0 || res[0].GetProperty("id").GetString() != "player") Problems.Add("inline: 'w player' did not return the player first");
+                    using var doc = JsonDocument.Parse(answer);
+                    if (doc.RootElement.GetProperty("results").GetArrayLength() != 0) Problems.Add("production: inline returned widgets");
                 }
-                using (var a2 = JsonDocument.Parse(inl[1])) if (a2.RootElement.GetProperty("results").GetArrayLength() < 5) Problems.Add("inline: empty query returned too few widgets");
-                using (var a3 = JsonDocument.Parse(inl[2])) if (a3.RootElement.GetProperty("results").GetArrayLength() != 0) Problems.Add("inline: a stranger got widgets");
-                log.AppendLine("inline: owner and stranger checked");
+                log.AppendLine("production: inline widgets denied for owner and stranger");
             }
 
 
@@ -415,7 +400,7 @@ namespace NIsland.Services
                         var raw = Encoding.UTF8.GetBytes(TelegramHub.TestPetHtml(pSk, ht, pMd));
                         using var ms = new MemoryStream();
                         using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.SmallestSize, true)) z.Write(raw);
-                        if (ms.Length > 3900) Problems.Add($"pet widget {pSk}/{ht}/{pMd}: compressed {ms.Length} > 3900");
+                        if (ms.Length > WidgetPolicy.CompressedLimit) Problems.Add($"pet widget {pSk}/{ht}/{pMd}: compressed {ms.Length} > 3900");
                     }
             // «⟳» в каждом виджете: в карточках — в шапке, у виджетов без бота — своя кнопка перезагрузки
             foreach (var wk in TelegramHub.TestKinds)
@@ -600,7 +585,7 @@ namespace NIsland.Services
                     var raw = Encoding.UTF8.GetBytes(html);
                     using var ms = new System.IO.MemoryStream();
                     using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.SmallestSize, true)) z.Write(raw);
-                    if (ms.Length > 3900) Problems.Add($"inline {it.GetProperty("id")}: html compressed {ms.Length} > 3900");
+                    if (ms.Length > WidgetPolicy.CompressedLimit) Problems.Add($"inline {it.GetProperty("id")}: html compressed {ms.Length} > 3900");
                     var cd = c.TryGetProperty("chat_data", out var cdv) ? cdv.GetString() ?? "" : "";
                     if (Encoding.UTF8.GetByteCount(cd) > 1024) Problems.Add($"inline {it.GetProperty("id")}: chat_data > 1024 bytes");
                     if (c.TryGetProperty("allow_queries", out var aq) && aq.ValueKind == JsonValueKind.True) Problems.Add($"inline {it.GetProperty("id")}: a forwarded widget must not send queries");
@@ -615,7 +600,7 @@ namespace NIsland.Services
                 using var ms = new System.IO.MemoryStream();
                 using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.SmallestSize, true)) z.Write(raw);
                 if (raw.Length > 32768) Problems.Add($"sendWidget: html {raw.Length} > 32768");
-                if (ms.Length > 3900) Problems.Add($"sendWidget: compressed {ms.Length} > 3900 (limit 4096)");
+                if (ms.Length > WidgetPolicy.CompressedLimit) Problems.Add($"sendWidget: compressed {ms.Length} > 3900 (limit 4096)");
                 if (r.TryGetProperty("allow_queries", out var aq) && aq.ValueKind == JsonValueKind.True && !html.Contains("TelegramWidget")) Problems.Add("sendWidget: allow_queries but html does not use TelegramWidget");
                 if (Regex.IsMatch(html, @"\b(src|href)\s*=\s*[""']https?://", RegexOptions.IgnoreCase)) Problems.Add("sendWidget: external resource in widget");
                 if (r.TryGetProperty("chat_data", out var cd) && Encoding.UTF8.GetByteCount(cd.GetString() ?? "") > 1024) Problems.Add("sendWidget: chat_data > 1024 bytes");

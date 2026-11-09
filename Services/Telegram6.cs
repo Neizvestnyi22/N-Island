@@ -52,12 +52,12 @@ $('pl').textContent=d.p?'⏸':'▶';$('mu').textContent=d.mu?'🔈':'🔇';$('dn
 var g=bar('CPU',d.cpu|0,col(d.cpu))+bar('RAM',d.ram|0,col(d.ram));if(d.bat>=0)g+=bar('BAT',d.bat,d.bat<20?'#ff453a':'#30d158',d.bat+'%'+(d.chg?'⚡':''));
 g+=bar('VOL',d.mu?0:d.vol|0,'var(--tg-theme-button-color,#3390ec)',d.mu?'off':(d.vol|0)+'%');$('g').innerHTML=g;tick()}
 function tick(){var d=D;if(!d.dur){$('pr').style.width=0;$('a').textContent=$('z').textContent='';return}
-var p=d.pos+(d.p?(Date.now()-t0)/1e3:0);p=Math.min(p,d.dur);$('pr').style.width=(p/d.dur*100)+'%';$('a').textContent=f(p);$('z').textContent=f(d.dur)}
+var p=d.pos+(d.p?(Date.now()-t0)/1e3*(d.rate||1):0);p=Math.min(p,d.dur);$('pr').style.width=(p/d.dur*100)+'%';$('a').textContent=f(p);$('z').textContent=f(d.dur)}
 function load(s){try{D=JSON.parse(s||'{}');t0=Date.now();show();$('s').textContent=D.e||''}catch(e){}}
 if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}
 function go(b,n){if(!T||b.B)return;b.B=1;b.style.opacity=.5;$('s').textContent='…';
 T.request('w:'+b.dataset.q).then(function(a){b.B=0;b.style.opacity='';$('s').textContent='';if(a.result)load(a.result)},function(e){b.B=0;b.style.opacity='';
-if(e.code==='RATE_LIMITED'&&!n){$('s').textContent='⏳';setTimeout(function(){go(b,1)},1600)}else $('s').textContent=e.code==='NOT_ALLOWED'?'🔐':'⚠ '+e.code})}
+$('s').textContent=e.code==='NOT_ALLOWED'?'🔐':e.code==='RATE_LIMITED'?'⏳ Нажми ещё раз позже':'⚠ '+e.code})}
 document.querySelectorAll('button').forEach(function(b){b.onclick=function(){go(b)}});
 setInterval(tick,1000);
 </script></body></html>
@@ -254,7 +254,7 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
                 ["cpu"] = sys.CpuPercent(), ["ram"] = sys.RamPercent(), ["bat"] = sys.HasBattery ? sys.BatteryPercent : -1, ["chg"] = sys.Charging ? 1 : 0,
                 ["vol"] = (int)Math.Round(a.Volume * 100), ["mu"] = a.Muted ? 1 : 0, ["dnd"] = Store.Settings.Mode == "dnd" ? 1 : 0,
                 ["t"] = m.HasSession ? Cut(m.TrackLine, 70) : "", ["p"] = m.IsPlaying ? 1 : 0,
-                ["pos"] = m.HasTime ? (int)m.Position.TotalSeconds : 0, ["dur"] = m.HasTime ? (int)m.Duration.TotalSeconds : 0,
+                ["rate"] = m.Rate, ["pos"] = m.HasTime ? (int)m.Position.TotalSeconds : 0, ["dur"] = m.HasTime ? (int)m.Duration.TotalSeconds : 0,
             };
             if (note != null) d["e"] = note;
             return JsonSerializer.Serialize(d, WidgetJson);
@@ -278,31 +278,40 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
         async Task HandleWidgetQuery(JsonElement q)
         {
             var qid = Integrations.S(q, "id");
-            string chat = q.TryGetProperty("chat", out var c) ? c.GetProperty("id").ToString() : "";
-            if (chat != V("chat")) { try { await Call("answerWidgetQuery", new { widget_query_id = qid }); } catch { } return; }
-            long msgId = q.TryGetProperty("message_id", out var mi) ? mi.GetInt64() : 0;
-            var data = Integrations.S(q, "data");
+            if (string.IsNullOrEmpty(qid)) return;
             string result = null;
-            // случайный двойной тап (то же нажатие в том же виджете за 0,4 с) не повторяет действие — кроме повторяемых (громкость, мышь, клавиши…)
-            var work = DoubleTap(msgId, data) ? Task.Run(() => CurrentWidgetState(data, msgId)) : Serialized(msgId, () => WidgetAction(data, msgId));
-            if (await Task.WhenAny(work, Task.Delay(12000)) == work)
+            long msgId = 0;
+            try
             {
-                try { result = await work; } catch (Exception e) { Log.Info("telegram widget query: " + e.Message); }
-            }
-            else
-            {
-                // долго: сразу «выполняется», а готовое состояние — в само сообщение, когда закончится
-                var kind = data.StartsWith("c:") && data.IndexOf(':', 2) is int p and > 2 ? data[2..p] : data.StartsWith("w:") ? "remote" : null;
-                if (kind != null && WK(kind) != null && kind != "menu") result = Wrap(msgId, WState(kind, T("⏳ Выполняется…")));
-                _ = work.ContinueWith(async t =>
+                string chat = q.TryGetProperty("chat", out var c) && c.TryGetProperty("id", out var cid) ? cid.ToString() : "";
+                string from = q.TryGetProperty("from", out var f) && f.TryGetProperty("id", out var fid) ? fid.ToString() : "";
+                if (chat != V("chat") || from != chat || Integrations.S(c, "type") != "private") return;
+                if (q.TryGetProperty("type", out var qt) && (qt.ValueKind != JsonValueKind.Object || Integrations.S(qt, "type") != "data")) return;
+                msgId = q.TryGetProperty("message_id", out var mi) && mi.TryGetInt64(out var mid) ? mid : 0;
+                var data = Integrations.S(q, "data");
+                if (msgId <= 0 || !WidgetPolicy.ValidQuery(data)) return;
+                var work = DoubleTap(msgId, data) ? Task.Run(() => CurrentWidgetState(data, msgId)) : Serialized(msgId, () => WidgetAction(data, msgId));
+                if (await Task.WhenAny(work, Task.Delay(9000)) == work) result = await work;
+                else
                 {
-                    if (t.Status != TaskStatus.RanToCompletion || t.Result == null || msgId == 0) return;
-                    try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = msgId, chat_data = t.Result }); } catch (TgError) { }
-                });
+                    // Acknowledge before the 15-second deadline. Slow work persists its state later.
+                    _ = CompleteWidgetWork(work, msgId);
+                }
+                if (result != null && !WidgetPolicy.ValidData(result)) { Log.Info("widget answer exceeded 1024 bytes"); result = null; }
             }
-            try { await Call("answerWidgetQuery", result != null ? new { widget_query_id = qid, data = result } : (object)new { widget_query_id = qid }); } catch { }
-            // ответ обновляет виджет на экране, но в сообщении остаётся старое состояние — пролистал чат и всё откатилось. Сохраняем новое в само сообщение.
+            catch (Exception e) { Log.Info("telegram widget query: " + e.Message); }
+            finally
+            {
+                try { using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(4)); await Call("answerWidgetQuery", result != null ? new { widget_query_id = qid, data = result } : (object)new { widget_query_id = qid }, deadline.Token); }
+                catch (Exception e) { Log.Info("telegram widget answer: " + e.Message); }
+            }
             if (result != null && msgId != 0 && result.StartsWith("{")) _ = PersistWidget(msgId, result);
+        }
+
+        async Task CompleteWidgetWork(Task<string> work, long msgId)
+        {
+            try { var state = await work; if (state != null && WidgetPolicy.ValidData(state)) await PersistWidget(msgId, state); }
+            catch (Exception e) { Log.Info("telegram delayed widget: " + e.Message); }
         }
 
         internal Task<string> TestWidgetAction(string data) => Task.Run(() => WidgetAction(data, 7));

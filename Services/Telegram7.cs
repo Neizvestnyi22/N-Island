@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -21,7 +22,7 @@ namespace NIsland.Services
         /// <summary>Вид виджета. H = 0 — высота по содержимому (у карточек), прокрутки внутри виджета в Telegram нет.</summary>
         public record WKind(string Key, string Name, string Group, int W, int H, int LiveSec);
 
-        static readonly WKind[] WKinds =
+        static readonly WKind[] WKinds = new WKind[]
         {
             new("remote", "🎛 Пульт ПК", "Главное", 340, 300, 8), new("pet", "🫧 Персонаж", "Главное", 260, 262, 6),
             new("sysmon", "📈 Нагрузка (график)", "Система", 340, 236, 5), new("player", "🎵 Плеер", "Музыка", 340, 0, 8),
@@ -77,7 +78,7 @@ namespace NIsland.Services
             new("cleanup", "🧹 Очистка", "Система", 340, 0, 0), new("news", "📰 Новости", "Сводки", 340, 0, 0),
             new("browser", "🧭 Браузер", "Управление", 340, 0, 6),
             new("menu", "🧩 Все виджеты", "Главное", 340, 0, 0), new("events", "🔔 События ПК", "Главное", 340, 0, 0),
-        };
+        }.Concat(WidgetTools.All.Select(t => new WKind(t.Key, t.Title, "Ещё утилиты", 340, 0, 0))).ToArray();
 
         static WKind WK(string key) => WKinds.FirstOrDefault(k => k.Key == key);
 
@@ -107,6 +108,7 @@ html,body{margin:0}body{font:13px/1.35 system-ui,sans-serif;color:var(--tg-theme
 .l button{flex:0 0 auto;padding:4px 9px}button.d{background:#ff453a40}button.s{background:#30d15840}button.p{background:var(--tg-theme-button-color,#3390ec);color:#fff}
 .hd{display:flex;align-items:flex-start;gap:6px}.hd>div{flex:1;min-width:0}.hd .rf{flex:0 0 auto;padding:3px 10px;font-size:15px}#pm{width:46px;height:46px;flex:0 0 auto;margin:-6px 0 -4px}
 svg{display:block;width:100%;height:30px}.Lc{font-size:17px;font-weight:700;margin:3px 0}button:active{filter:brightness(1.4)}button.w{opacity:.5}#e{min-height:14px;font-size:11px;color:var(--tg-theme-hint-color,#999);margin-top:4px}
+button{min-height:34px}button.p{color:var(--tg-theme-button-text-color,#fff)}.h{font-size:16px}.hd{padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid #8883}.s{margin-top:3px}.k{padding:4px 0}.bb{height:8px}.r button{background:var(--tg-theme-secondary-bg-color,#8882)}.r button.p{background:var(--tg-theme-button-color,#3390ec)}.r button.d{background:#ff453a40}.r button.s{background:#30d15840}
 </style></head><body><div id="c"></div><div id="e"></div><script>
 var T=window.TelegramWidget,D={},t0=Date.now();function $(i){return document.getElementById(i)}
 function f(s){s=Math.max(0,Math.round(s));var h=s/3600|0,m=(s/60|0)%60;return(h?h+':'+('0'+m).slice(-2):m)+':'+('0'+s%60).slice(-2)}
@@ -122,24 +124,24 @@ if(t=='l')return'<div class="l"><span>'+x(r[1])+'</span>'+(r[2]&&!D.ro?'<button 
 if(t=='y')return'<div class="l"><span>'+x(r[2])+'</span><button data-y="'+i+'">'+x(r[1])+'</button></div>';
 if(t=='g'){var a=r[2]||[],mx=Math.max.apply(0,a.concat([r[5]||1])),n=Math.max(1,a.length-1);return'<div class="k"><span>'+x(r[1])+'</span><b>'+x(r[4]||'')+'</b></div><svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline fill="none" stroke-width="2" vector-effect="non-scaling-stroke" stroke="'+(r[3]||'#3390ec')+'" points="'+a.map(function(v,j){return(j/n*100).toFixed(1)+','+(29-v/mx*27).toFixed(1)}).join(' ')+'"/></svg>'}if(t=='L')return'<div id="ly'+i+'"></div>';return''}
 function tick(){(D.r||[]).forEach(function(r,i){var t=r[0],e;
-if(t=='p'&&(e=$('pa'+i))){var p=Math.min(r[2],r[1]+(r[3]?el():0));e.textContent=f(p);var b=$('pb'+i);b.style.width=(r[2]?p/r[2]*100:0)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}
+if(t=='p'&&(e=$('pa'+i))){var p=Math.min(r[2],r[1]+(r[3]?el()*(r[4]||1):0));e.textContent=f(p);var b=$('pb'+i);b.style.width=(r[2]?p/r[2]*100:0)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}
 if((t=='d'||t=='u')&&(e=$('cd'+i)))e.textContent=f(t=='d'?r[1]-(r[2]?el():0):r[1]+(r[2]?el():0));
-if(t=='L'&&(e=$('ly'+i))){var n=Date.now(),s=r[1]?(r[3]&&Math.abs(n-r[3])<2e4?(n-r[3])/1e3:el()):0,c=-1,a=r[2];a.forEach(function(l,j){if(l[0]<=s)c=j});if(e.dataset.c!=String(c)){e.dataset.c=c;
+if(t=='L'&&(e=$('ly'+i))){var n=Date.now(),s=(r[1]?(r[3]&&Math.abs(n-r[3])<2e4?(n-r[3])/1e3:el()):0)*(r[4]||1),c=-1,a=r[2];a.forEach(function(l,j){if(l[0]<=s)c=j});if(e.dataset.c!=String(c)){e.dataset.c=c;
 e.innerHTML=(c>0?'<div class="t">'+x(a[c-1][1])+'</div>':'')+'<div class="Lc">'+x(c>=0?a[c][1]:'♪')+'</div><div class="bb" style="height:3px"><i id="lp'+i+'"></i></div>'+(a[c+1]?'<div class="t">'+x(a[c+1][1])+'</div>':'')+(a[c+2]?'<div class="t">'+x(a[c+2][1])+'</div>':'')}
 var b=$('lp'+i);if(b&&c>=0&&a[c+1]){b.style.width=Math.min(100,(s-a[c][0])/Math.max(.1,a[c+1][0]-a[c][0])*100)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}}})}
 function show(){var h='<div class="hd"><div><div class="h">'+x(D.h)+'</div>'+(D.s?'<div class="s">'+x(D.s)+'</div>':'')+'</div>'+(D.pm?'<canvas id="pm" width="92" height="92"></canvas>':'')+(D.ro?'':'<button class="rf" data-q="ref">⟳</button>')+'</div>';(D.r||[]).forEach(function(r,i){h+=row(r,i)});
 (D.ro?[]:D.b||[]).forEach(function(w){w=w.filter(function(b){return!(b[1]=='ref'&&/^⟳/.test(b[0]))});if(!w.length)return;h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
 $('c').innerHTML=h;note(D.e||'',D.e?6000:0);tick();
 document.querySelectorAll('button[data-q]').forEach(function(b){b.onclick=function(){ask(b.getAttribute('data-q'),b)}});
-document.querySelectorAll('button[data-y]').forEach(function(b){b.onclick=function(){if(T&&T.copyText)T.copyText(D.r[+b.getAttribute('data-y')][2]);b.textContent='✓'}})}
+document.querySelectorAll('button[data-y]').forEach(function(b){b.onclick=function(){if(T&&T.copyText)T.copyText(String(D.r[+b.getAttribute('data-y')][2]).slice(0,256));b.textContent='✓'}})}
 function load(s){try{D=JSON.parse(s||'{}');t0=Date.now();show()}catch(e){}}
-var B=0,et,L=navigator.language||'',E=/^uk/.test(L)?{RATE_LIMITED:'Занадто часто — повторюю…',BUSY:'Бот зайнятий — повторюю…',TIMEOUT:'ПК не відповів — натисни ще раз',NOT_ALLOWED:'У цій копії кнопки не працюють',FAILED:'Не вийшло'}
-:/^(ru|be|kk)/.test(L)?{RATE_LIMITED:'Слишком часто — повторяю…',BUSY:'Бот занят — повторяю…',TIMEOUT:'ПК не ответил — нажми ещё раз',NOT_ALLOWED:'В этой копии кнопки не работают',FAILED:'Не получилось'}
-:{RATE_LIMITED:'Too fast — retrying…',BUSY:'Busy — retrying…',TIMEOUT:'The PC did not answer — tap again',NOT_ALLOWED:'Buttons do not work in this copy',FAILED:'Failed'};
+var B=0,et,L=navigator.language||'',E=/^uk/.test(L)?{RATE_LIMITED:'Занадто часто — натисни пізніше',BUSY:'Бот зайнятий — натисни пізніше',TIMEOUT:'ПК не відповів — натисни ще раз',NOT_ALLOWED:'У цій копії кнопки не працюють',FAILED:'Не вийшло'}
+:/^(ru|be|kk)/.test(L)?{RATE_LIMITED:'Слишком часто — нажми позже',BUSY:'Бот занят — нажми позже',TIMEOUT:'ПК не ответил — нажми ещё раз',NOT_ALLOWED:'В этой копии кнопки не работают',FAILED:'Не получилось'}
+:{RATE_LIMITED:'Too fast — tap later',BUSY:'Busy — tap later',TIMEOUT:'The PC did not answer — tap again',NOT_ALLOWED:'Buttons do not work in this copy',FAILED:'Failed'};
 function note(s,k){$('e').textContent=s;clearTimeout(et);if(k)et=setTimeout(function(){$('e').textContent=''},k)}
-function ask(q,b,n){if(!T||B)return;B=1;if(b)b.classList.add('w');note('…');
+function ask(q,b,n){if(!T||B)return;if(!q||new TextEncoder().encode('c:'+D.k+':'+q).length>64){note('⚠ Слишком длинная команда',6000);return;}B=1;if(b)b.classList.add('w');note('…');
 T.request('c:'+D.k+':'+q).then(function(a){B=0;if(b)b.classList.remove('w');note('');if(a.result)load(a.result)},function(e){B=0;if(b)b.classList.remove('w');
-if((e.code=='RATE_LIMITED'||e.code=='BUSY')&&!n){note(E[e.code]);setTimeout(function(){ask(q,b,1)},1600)}else note('⚠ '+(E[e.code]||e.code),6000)})}
+note('⚠ '+(E[e.code]||e.code||E.FAILED),6000)})}
 function PE(c,X,Y,a,b){c.beginPath();c.ellipse(X,Y,a,b,0,0,7);c.fill()}
 function pm(){var c=$('pm');if(c){var g=c.getContext('2d'),s=Date.now()/1e3,u=Math.abs(Math.sin(s*3.7));g.clearRect(0,0,92,92);g.save();g.translate(46,82-u*11);g.rotate(Math.sin(s*1.85)*.2);g.scale(1+u*.07,1-u*.07);
 g.fillStyle=D.pm;PE(g,0,-26,25,24);g.fillStyle='#111';PE(g,-9,-30,3.4,4.2);PE(g,9,-30,3.4,4.2);g.strokeStyle='#111';g.lineWidth=2.6;g.beginPath();g.arc(0,-22,7,.25,2.9);g.stroke();
@@ -181,8 +183,8 @@ var T=window.TelegramWidget,Z={};function $(i){return document.getElementById(i)
 function p(n){return('0'+n).slice(-2)}
 function at(off){var d=new Date(Date.now()+new Date().getTimezoneOffset()*6e4+off*6e4);return d}
 function draw(){var me=at(Z.o||0);$('t').textContent=p(me.getHours())+':'+p(me.getMinutes())+':'+p(me.getSeconds());
-$('dt').textContent=me.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
-$('l').innerHTML=(Z.z||[]).map(function(c){var d=at(c[1]),df=Math.round((c[1]-(Z.o||0))/60);return'<div class="c"><span>'+c[0]+'</span><span class="d">'+(df>=0?'+':'')+df+' ч</span><b>'+p(d.getHours())+':'+p(d.getMinutes())+'</b></div>'}).join('')}
+$('dt').textContent=me.toLocaleDateString(navigator.language||'en',{weekday:'long',day:'numeric',month:'long'});
+$('l').innerHTML=(Z.z||[]).map(function(c){var d=at(c[1]),df=Math.round((c[1]-(Z.o||0))/60);return'<div class="c"><span>'+c[0]+'</span><span class="d">'+(df>=0?'+':'')+df+' h</span><b>'+p(d.getHours())+':'+p(d.getMinutes())+'</b></div>'}).join('')}
 function load(s){try{Z=JSON.parse(s||'{}')}catch(e){}$('me').textContent=Z.n||'';draw()}
 if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}setInterval(draw,1000);
 </script></body></html>
@@ -200,8 +202,8 @@ var e='',L='C ( ) ÷ 7 8 9 × 4 5 6 − 1 2 3 + 0 . ⌫ ='.split(' ');function $
 function ev(s){var t=s.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-').match(/\d+\.?\d*|[-+*/()]/g)||[],i=0;
 function P(){var x=M();while(t[i]=='+'||t[i]=='-'){var o=t[i++],y=M();x=o=='+'?x+y:x-y}return x}
 function M(){var x=U();while(t[i]=='*'||t[i]=='/'){var o=t[i++],y=U();x=o=='*'?x*y:x/y}return x}
-function U(){if(t[i]=='-'){i++;return-U()}if(t[i]=='('){i++;var x=P();i++;return x}return parseFloat(t[i++])}
-var r=P();if(!isFinite(r))throw 0;return Math.round(r*1e10)/1e10}
+function U(){if(t[i]=='-'){i++;return-U()}if(t[i]=='('){i++;var x=P();if(t[i++]!=')')throw 0;return x}var x=t[i++];if(!/^\d+\.?\d*$/.test(x||''))throw 0;return parseFloat(x)}
+var r=P();if(i!=t.length||!isFinite(r))throw 0;return Math.round(r*1e10)/1e10}
 L.forEach(function(c){var b=document.createElement('button');b.textContent=c;if('÷×−+='.indexOf(c)>=0)b.className='o';b.onclick=function(){
 if(c=='C')e='';else if(c=='⌫')e=e.slice(0,-1);else if(c=='='){try{$('s').textContent=e+' =';e=String(ev(e))}catch(x){$('s').textContent='ошибка'}}else e+=c;
 $('v').textContent=e||'0'};$('k').appendChild(b)});
@@ -226,18 +228,17 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
 </script></body></html>
 """;
 
-        static string HtmlOf(string kind) => kind switch
+        static string HtmlOf(string kind) => WidgetPolicy.ProfileHtml(WidgetText.Localize(WidgetTools.Find(kind)?.Html ?? (kind switch
         {
             "remote" => RemoteWidgetHtml, "pet" => PetHtml(), "sysmon" => SysmonHtml, "clock" => Rf(ClockHtml, "top:6px;right:6px"), "calc" => Rf(CalcHtml, "top:6px;left:6px"),
             "dice" => Rf(DiceHtml, "top:6px;right:6px"), "calendar" => Rf(CalendarHtml, "bottom:4px;right:6px"), "breath" => Rf(BreathHtml, "top:6px;right:6px"),
             "ttt" => Rf(TttHtml, "top:6px;right:6px"), "g2048" => G2048Html, "countdown" => Rf(CountdownHtml, "top:6px;right:6px"), "viz" => Rf(VizHtml, "bottom:6px;right:8px"),
             _ => CardHtml,
-        };
+        }), T));
 
         /// <summary>Кнопка «⟳» у виджетов, которые работают сами, без бота: перезагрузить виджет (часы и визуализатор заново берут данные).
         /// Вставляется после скрипта — обработчики «все кнопки» в самих виджетах её не трогают. У 2048 это «↺» в шапке.</summary>
-        static string Rf(string html, string pos) => html.Replace("</body>",
-            $"<button onclick=\"location.reload()\" style=\"position:fixed;{pos};border:0;border-radius:8px;background:#8882;color:inherit;padding:2px 8px;font-size:13px;flex:none\">⟳</button></body>");
+        static string Rf(string html, string pos) => WidgetPolicy.RefreshButton(html, pos);
 
         // ------------------------------------------------------------------
         //  Состояния
@@ -262,13 +263,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
         /// <summary>Сериализация с ужатием под 1024 байта: длинные списки строк обрезаются с конца.</summary>
         static string Fit(Dictionary<string, object> d)
         {
-            var s = JsonSerializer.Serialize(d, WidgetJson);
-            while (Encoding.UTF8.GetByteCount(s) > 1000 && d.TryGetValue("r", out var r) && r is List<object[]> rows && rows.Count > 1)
-            {
-                rows.RemoveAt(rows.Count - 1);
-                s = JsonSerializer.Serialize(d, WidgetJson);
-            }
-            return s;
+            return WidgetPolicy.FitState(JsonSerializer.Serialize(d, WidgetJson));
         }
 
         static Dictionary<string, object> Card(string k, string h, string s = null) => new() { ["k"] = k, ["h"] = T(h), ["s"] = s, ["r"] = new List<object[]>(), ["b"] = new List<object[]>() };
@@ -301,6 +296,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 case "calc": case "dice": case "calendar": case "breath": case "ttt": case "g2048": case "countdown": return "{}";
                 case "viz": return VizState();
             }
+            if (WidgetTools.Find(kind) != null) return "{}";
             var d = CardState(kind);
             if (note != null) d["e"] = note;
             return Fit(d);
@@ -314,7 +310,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             {
                 case "player":
                     d = Card(kind, "🎵 " + (m.HasSession ? Cut(m.Title ?? m.TrackLine, 50) : "Ничего не играет"), m.HasSession ? Cut(m.Artist, 50) : null);
-                    if (m.HasTime) CRows(d).Add(new object[] { "p", (int)m.Position.TotalSeconds, (int)m.Duration.TotalSeconds, m.IsPlaying ? 1 : 0 });
+                    if (m.HasTime) CRows(d).Add(new object[] { "p", (int)m.Position.TotalSeconds, (int)m.Duration.TotalSeconds, m.IsPlaying ? 1 : 0, m.Rate });
                     if (LyricsRow(280) is { } plr) CRows(d).Add(plr);
                     // мини-персонаж в шапке плеера: танцует, пока играет музыка; на паузе его нет. Цвет — как у персонажа на острове
                     if (m.IsPlaying && Store.Settings.WidgetPetDance) { string tint = null; try { tint = App.Island?.MascotTintHex; } catch { } d["pm"] = tint ?? "#7ab8ff"; }
@@ -329,8 +325,15 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                             : PcWatch.DischargeLeft() is TimeSpan dl ? T("осталось") + " " + Du((int)dl.TotalSeconds) : T("от батареи");
                         CRows(d).Add(new object[] { "b", bs.Charging ? "⚡" : "🔋", bp, bs.Charging ? "#30d158" : bp <= 15 ? "#ff453a" : bp <= 30 ? "#ffd60a" : "#30d158", bp + "% · " + bt });
                     }
-                    Btns(d, Bt("⏮", "prev"), Bt(m.IsPlaying ? "⏸" : "▶", "play", "p"), Bt("⏭", "next"), Bt("♥", "like"));
-                    Btns(d, Bt($"⏪ {MediaService.Step}с", "back"), Bt($"⏩ {MediaService.Step}с", "fwd"), Bt("🔀", "shuffle"), Bt("🔁", "repeat"), Bt(m.LoopB != null ? "A–B ✓" : m.LoopA != null ? "A…" : "A–B", "ab", m.LoopA != null ? "p" : null));
+                    if (m.HasSession) CRows(d).Insert(0, new object[] { "t", Cut(m.AppName, 28) + (m.TimeEstimated ? " · ≈" : "") + (m.Rate != 1 ? " · ×" + m.Rate.ToString("0.##", CultureInfo.InvariantCulture) : "") });
+                    if (m.HasSession) Btns(d, Bt("⏮", "prev"), Bt(m.IsPlaying ? "⏸" : "▶", "play", "p"), Bt("⏭", "next"), Bt("♥", "like"));
+                    if (m.CanSeek) Btns(d, Bt($"⏪ {MediaService.Step}с", "back"), Bt($"⏩ {MediaService.Step}с", "fwd"), Bt(m.LoopB != null ? "A–B ✓" : m.LoopA != null ? "A…" : "A–B", "ab", m.LoopA != null ? "p" : null));
+                    var extra = new List<object[]>();
+                    if (m.CanShuffle) extra.Add(Bt(m.Shuffle ? "🔀 ✓" : "🔀", "shuffle"));
+                    if (m.CanRepeat) extra.Add(Bt("🔁 " + m.Repeat, "repeat"));
+                    if (m.CanRate) extra.Add(Bt("×" + m.Rate.ToString("0.##", CultureInfo.InvariantCulture), "rate"));
+                    if (m.SourceCount > 1) extra.Add(Bt("🔄 Источник", "source"));
+                    if (extra.Count > 0) Btns(d, extra.ToArray());
                     Btns(d, Bt("🔉", "vd"), Bt(a.Muted ? "🔈" : "🔇", "mute"), Bt("🔊", "vu"), Bt(TimerService.I.SleepAt != null ? "💤 ✓" : "💤 30", "sleep"));
                     Btns(d, Bt("🎤 Текст", "open|lyrics"), Bt("🌈 Виз", "open|viz"), Bt("🎛 EQ", "open|eq"));
                     return d;
@@ -522,7 +525,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             string head0 = op.Contains('|') ? op[..op.IndexOf('|')] : op;
             // каталог «🧩 Все виджеты» и «⬅ Назад» — меняют этот же виджет на месте
             if (kind == "menu")
-                return head0 is "ref" or "" ? Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1)))) : await MenuAction(head0, op.Contains('|') ? op[(op.IndexOf('|') + 1)..] : "", msgId);
+                return head0 is "ref" or "" ? Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1), HubPage(msgId)))) : await MenuAction(head0, op.Contains('|') ? op[(op.IndexOf('|') + 1)..] : "", msgId);
             if (head0 == "nav") return NavBack(msgId, kind);
             if (head0 == "open")
             {
@@ -544,6 +547,8 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 case ("player" or "lyrics", "prev"): await Ui(m.Prev); await Task.Delay(700); break;
                 case ("player" or "lyrics", "next"): await Ui(m.Next); await Task.Delay(700); break;
                 case ("player" or "lyrics", "play"): await Ui(m.TogglePlay); await Task.Delay(300); break;
+                case ("player", "rate"): if (m.CanRate) await Ui(m.CycleRate); break;
+                case ("player", "source"): await Ui(m.CycleSource); break;
                 case ("player", "like"): note = await Ui(() => m.ToggleFavorite()) ? "💖" : null; break;
                 case ("player" or "lyrics", "back"): await Ui(() => m.SeekStep(-1)); break;
                 case ("player" or "lyrics", "fwd"): await Ui(() => m.SeekStep(1)); break;
@@ -660,17 +665,20 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
 
         async Task<bool> SendW(string kind, bool silent = false)
         {
-            if (Remote != null || _noWidgets) return false;
+            if (Remote != null || _noWidgets || !long.TryParse(V("chat"), out var privateId) || privateId <= 0) return false;
             var wk = WK(kind);
             if (wk == null) return false;
             if (WFlag(kind) is { } need && !Flag(need)) { await Message(Need(need)); return true; }
             try
             {
-                bool queries = kind is not ("calc" or "dice" or "clock" or "calendar" or "breath" or "ttt" or "g2048" or "countdown" or "viz");
+                bool queries = WidgetTools.Find(kind) == null && kind is not ("calc" or "dice" or "clock" or "calendar" or "breath" or "ttt" or "g2048" or "countdown" or "viz");
                 // высоту 0 («по содержимому») не передаём — так делает и тестовый бот Telegram
                 var body = new Dictionary<string, object> { ["chat_id"] = V("chat"), ["html"] = HtmlOf(kind), ["width"] = wk.W, ["allow_queries"] = queries, ["chat_data"] = WState(kind) };
+                WidgetPolicy.ValidateHtml((string)body["html"]);
+                if (!WidgetPolicy.ValidData((string)body["chat_data"])) throw new ArgumentException("Widget state exceeds 1024 UTF-8 bytes");
+                body["caption"] = T(wk.Name) + " · N-Island · /widgets";
                 if (wk.H > 0) body["height"] = wk.H;
-                if (silent) body["disable_notification"] = true;
+                if (silent || QuietNow()) body["disable_notification"] = true;
                 if (await ShareKeys(kind) is { } sk) body["reply_markup"] = sk;
                 JsonElement r;
                 try { r = await Call("sendWidget", body); }
@@ -690,9 +698,10 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             catch (TgError e)
             {
                 Log.Info("telegram widget: " + e.Message);
-                if (e.Code == 404 || e.Message.Contains("not found", StringComparison.OrdinalIgnoreCase) || e.Message.Contains("NOT_ALLOWED")) _noWidgets = true;
+                if (e.Code == 404 || e.Message.Contains("not found", StringComparison.OrdinalIgnoreCase) || e.Message.Contains("method not found", StringComparison.OrdinalIgnoreCase)) _noWidgets = true;
                 return false;
             }
+            catch (ArgumentException e) { Log.Info("telegram widget budget: " + e.Message); return false; }
         }
 
         /// <summary>Живой виджет: бот обновляет состояние с шагом вида (4–30 с), пока не истекло время и только если оно изменилось.</summary>
@@ -747,7 +756,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             ["визуализатор"] = "viz", ["спектр"] = "viz", ["отсчёт"] = "countdown", ["отсчет"] = "countdown", ["крестики"] = "ttt", ["2048"] = "g2048",
             ["экранное"] = "screentime", ["время"] = "screentime", ["неделя"] = "week", ["сессии"] = "sessions", ["заряд"] = "batlog", ["трафик"] = "traffic",
             ["флешки"] = "usblog", ["usb"] = "usblog", ["ip"] = "iplog", ["загрузки"] = "downloads", ["температура"] = "temps", ["память"] = "ramtop",
-            ["журнал"] = "timeline", ["события"] = "agenda", ["отчёт"] = "report", ["отчет"] = "report", ["микрофон"] = "mic", ["обои"] = "wall",
+            ["журнал"] = "timeline", ["календарь событий"] = "agenda", ["отчёт"] = "report", ["отчет"] = "report", ["микрофон"] = "mic", ["обои"] = "wall",
             ["лимиты"] = "limits", ["фокус"] = "focus", ["слежка"] = "procwatch", ["будильник"] = "alarms", ["будильники"] = "alarms",
             ["починки"] = "fixes", ["починить"] = "fixes", ["незасыпать"] = "awake", ["сторож"] = "guard", ["радио"] = "radios", ["bluetooth"] = "radios",
             ["приватность"] = "privacy", ["слежка камеры"] = "privacy", ["молитвы"] = "prayer", ["намаз"] = "prayer", ["полка"] = "shelf",
@@ -780,7 +789,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 lock (_widgets) list = _widgets.OrderByDescending(w => w.Key).Take(20).Select(w => (w.Key, w.Value.Kind)).ToList();
                 foreach (var (id, kind) in list)
                 {
-                    try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = WState(kind) }); } catch (TgError) { }
+                    try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = Wrap(id, kind == "menu" ? Fit(MenuState(_hubCat.GetValueOrDefault(id, -1), HubPage(id))) : WState(kind)) }); } catch (TgError) { }
                     Live(id, kind);
                 }
                 return T("🔄 Обновлено: ") + list.Count;

@@ -61,7 +61,7 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
                 list.Add(new object[] { Math.Round(lines[k].Time.TotalSeconds - now, 1), txt });
             }
             // время расчёта на ПК: виджет считает от него, а не от момента загрузки (иначе строки отстают на задержку доставки)
-            return new object[] { "L", m.IsPlaying ? 1 : 0, list, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + PcClockFix() };
+            return new object[] { "L", m.IsPlaying ? 1 : 0, list, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + PcClockFix(), m.Rate };
         }
 
         // ------------------------------------------------------------------
@@ -205,29 +205,8 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
             var qid = Integrations.S(q, "id");
             string from = q.TryGetProperty("from", out var f) && f.TryGetProperty("id", out var fid) ? fid.ToString() : "";
             var results = new List<object>();
-            if (from != "" && from == V("chat") && Remote == null)
-            {
-                var text = Integrations.S(q, "query").Trim();
-                var want = text.StartsWith("w ") ? text[2..].Trim() : text;
-                var kind = want == "" ? null : WAliases.TryGetValue(want, out var al) ? al : WK(want.ToLowerInvariant())?.Key;
-                IEnumerable<WKind> kinds = kind != null ? new[] { WK(kind) }.Concat(InlineFavorites.Where(k => k != kind).Select(WK))
-                    : want == "" ? InlineFavorites.Select(WK)
-                    : WKinds.Where(k => T(k.Name).Contains(want, StringComparison.OrdinalIgnoreCase) || k.Name.Contains(want, StringComparison.OrdinalIgnoreCase) || k.Key.Contains(want, StringComparison.OrdinalIgnoreCase));
-                foreach (var wk in kinds.Where(k => k != null && k.Key != "remote" && WFlag(k.Key) is null or "control").Take(10))
-                {
-                    string st;
-                    try { st = ReadOnlyState(WState(wk.Key)); } catch (Exception e) { Log.Info("inline widget: " + e.Message); continue; }
-                    var content = new Dictionary<string, object> { ["html"] = HtmlOf(wk.Key), ["width"] = wk.W, ["allow_queries"] = false, ["chat_data"] = st };
-                    if (wk.H > 0) content["height"] = wk.H;
-                    bool local = wk.Key is "calc" or "dice" or "clock" or "calendar" or "breath" or "ttt" or "g2048" or "countdown";
-                    results.Add(new Dictionary<string, object>
-                    {
-                        ["type"] = "article", ["id"] = wk.Key, ["title"] = T(wk.Name),
-                        ["description"] = T(local ? "Работает у всех в чате" : "Снимок без управления ПК"),
-                        ["input_message_content"] = content,
-                    });
-                }
-            }
+            // Bot API 10.4 production does not allow widgets in inline answers.
+            // Do not expose local PC state outside the owner's private chat.
             try { await Call("answerInlineQuery", new { inline_query_id = qid, results, cache_time = 0, is_personal = true }); }
             catch (TgError e) { Log.Info("telegram inline: " + e.Message); }
         }

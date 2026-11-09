@@ -20,40 +20,54 @@ namespace NIsland.Services
     {
         /// <summary>Виджеты со своим HTML — их нельзя превратить в другой на месте (у карточек HTML общий).</summary>
         static readonly HashSet<string> OwnHtml = new() { "remote", "pet", "sysmon", "clock", "calc", "dice", "calendar", "breath", "ttt", "g2048", "countdown", "viz" };
-        static bool IsCard(string kind) => WK(kind) != null && !OwnHtml.Contains(kind);
+        static bool IsCard(string kind) => WK(kind) != null && !OwnHtml.Contains(kind) && WidgetTools.Find(kind) == null;
 
         /// <summary>Сообщение → откуда пришли (стек видов для «⬅ Назад»).</summary>
         readonly Dictionary<long, List<string>> _wBack = new();
         /// <summary>Каталог: какая категория открыта в этом сообщении (−1 — список категорий).</summary>
-        readonly Dictionary<long, int> _hubCat = new();
+        readonly System.Collections.Concurrent.ConcurrentDictionary<long, int> _hubCat = new();
         /// <summary>Последний виджет, открытый из меню /widgets, — его и обновляем при следующем выборе.</summary>
         long _menuWidget;
 
         static string[] Cats() => WKinds.Where(k => k.Key != "menu").Select(k => k.Group).Distinct().ToArray();
 
-        /// <summary>Каталог: категории (cat = −1) или виджеты категории.</summary>
-        Dictionary<string, object> MenuState(int cat)
+        readonly System.Collections.Concurrent.ConcurrentDictionary<long, int> _hubPage = new();
+        int HubPage(long msgId) => _hubPage.GetValueOrDefault(msgId, 0);
+
+        /// <summary>Six entries per page fit chat_data and a 600px bubble without scrolling.</summary>
+        Dictionary<string, object> MenuState(int cat, int page = 0)
         {
             var cats = Cats();
-            if (cat < 0 || cat >= cats.Length)
+            bool root = cat < 0 || cat >= cats.Length;
+            var list = root ? Array.Empty<WKind>() : WKinds.Where(k => k.Group == cats[cat] && k.Key != "menu").ToArray();
+            int count = root ? cats.Length : list.Length;
+            int pages = Math.Max(1, (count + 5) / 6);
+            page = Math.Clamp(page, 0, pages - 1);
+            var d = Card("menu", root ? "🧩 Все виджеты" : "🧩 " + T(cats[cat]), (page + 1) + "/" + pages + " · " + T("↗ — отдельное сообщение"));
+            var buttons = root
+                ? cats.Select((c, i) => Bt(T(c) + " · " + WKinds.Count(k => k.Group == c && k.Key != "menu"), "cat|" + i)).ToArray()
+                : list.Select(k => Bt(k.Name + (IsCard(k.Key) ? "" : " ↗"), "go|" + k.Key)).ToArray();
+            foreach (var pair in buttons.Skip(page * 6).Take(6).Chunk(2)) Btns(d, pair);
+            if (pages > 1)
             {
-                var d = Card("menu", "🧩 Все виджеты", T("выбери категорию — виджет откроется здесь же"));
-                var btns = cats.Select((c, i) => Bt(T(c) + " · " + WKinds.Count(k => k.Group == c && k.Key != "menu"), "cat|" + i)).ToList();
-                foreach (var ch in btns.Chunk(2)) Btns(d, ch.ToArray());
-                return d;
+                var nav = new List<object[]>();
+                if (page > 0) nav.Add(Bt("‹", "page|" + (page - 1)));
+                if (page + 1 < pages) nav.Add(Bt("›", "page|" + (page + 1)));
+                Btns(d, nav.ToArray());
             }
-            var list = WKinds.Where(k => k.Group == cats[cat] && k.Key != "menu").ToList();
-            var dc = Card("menu", "🧩 " + T(cats[cat]), list.Count + " · " + T("↗ — придёт отдельным сообщением"));
-            foreach (var ch in list.Chunk(3)) Btns(dc, ch.Select(k => Bt(k.Name + (IsCard(k.Key) ? "" : " ↗"), "go|" + k.Key)).ToArray());
-            Btns(dc, Bt("⬅ Категории", "nav"));
-            return dc;
+            if (!root) Btns(d, Bt("⬅ Категории", "nav"));
+            return d;
         }
 
         /// <summary>Кнопка «⬅ Назад» для сообщения, в котором виджет сменили на месте (с ужатием под 1000 байт).</summary>
         string Wrap(long msgId, string st)
         {
             List<string> stack;
-            lock (_wBack) if (!_wBack.TryGetValue(msgId, out stack) || stack.Count == 0) return st;
+            lock (_wBack)
+            {
+                if (!_wBack.TryGetValue(msgId, out var current) || current.Count == 0) return st;
+                stack = current.ToList();
+            }
             try
             {
                 var n = JsonNode.Parse(st)!.AsObject();
@@ -63,7 +77,7 @@ namespace NIsland.Services
                 b.Add(new JsonArray(new JsonArray(Cut(label, 26), "nav")));
                 var s = n.ToJsonString(WidgetJson);
                 while (System.Text.Encoding.UTF8.GetByteCount(s) > 1000 && n["r"] is JsonArray r && r.Count > 1) { r.RemoveAt(r.Count - 1); s = n.ToJsonString(WidgetJson); }
-                return s;
+                return WidgetPolicy.FitState(s);
             }
             catch { return st; }
         }
@@ -81,7 +95,7 @@ namespace NIsland.Services
             lock (_widgets) _widgets[msgId] = (to, DateTime.Now);
             WStateDirty(to);
             Live(msgId, to);
-            return Wrap(msgId, to == "menu" ? Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1))) : WState(to, note));
+            return Wrap(msgId, to == "menu" ? Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1), HubPage(msgId))) : WState(to, note));
         }
 
         /// <summary>«⬅ Назад»: в каталоге — к категориям, иначе к прежнему виду этого сообщения.</summary>
@@ -90,6 +104,7 @@ namespace NIsland.Services
             if (kind == "menu" && _hubCat.GetValueOrDefault(msgId, -1) >= 0)
             {
                 _hubCat[msgId] = -1;
+                _hubPage[msgId] = 0;
                 return Wrap(msgId, Fit(MenuState(-1)));
             }
             string prev = null;
@@ -99,7 +114,7 @@ namespace NIsland.Services
             lock (_widgets) _widgets[msgId] = (prev, DateTime.Now);
             WStateDirty(prev);
             Live(msgId, prev);
-            return Wrap(msgId, prev == "menu" ? Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1))) : WState(prev));
+            return Wrap(msgId, prev == "menu" ? Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1), HubPage(msgId))) : WState(prev));
         }
 
         /// <summary>Нажатия в каталоге.</summary>
@@ -109,18 +124,22 @@ namespace NIsland.Services
             {
                 case "cat" when int.TryParse(arg, out var ci):
                     _hubCat[msgId] = ci;
+                    _hubPage[msgId] = 0;
                     return Wrap(msgId, Fit(MenuState(ci)));
+                case "page" when int.TryParse(arg, out var page):
+                    _hubPage[msgId] = Math.Clamp(page, 0, 100);
+                    return Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1), HubPage(msgId))));
                 case "go" when WK(arg) != null:
                 {
                     if (IsCard(arg) && msgId != 0) return Morph(msgId, "menu", arg);
                     var ok = await SendW(arg);
-                    var d = MenuState(_hubCat.GetValueOrDefault(msgId, -1));
+                    var d = MenuState(_hubCat.GetValueOrDefault(msgId, -1), HubPage(msgId));
                     d["e"] = ok ? T("🧩 Виджет — ниже в чате") : T("Виджеты недоступны в этом Telegram");
                     return Wrap(msgId, Fit(d));
                 }
                 case "nav": return NavBack(msgId, "menu");
             }
-            return Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1))));
+            return Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1), HubPage(msgId))));
         }
 
         Dictionary<string, object> CardState6(string kind) => kind == "menu" ? MenuState(-1) : null;
