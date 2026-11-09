@@ -65,10 +65,10 @@ setInterval(tick,1000);
 
         // Персонаж: капля с глазами и ртом по настроению, тап по нему — тык (персонаж на ПК тоже реагирует)
         const string PetWidgetHtml = """
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
 body{margin:0;font:13px system-ui;color:var(--tg-theme-text-color,#eee);text-align:center;padding:6px}canvas{width:220px;height:170px;display:block;margin:auto}#h{font-size:11px;opacity:.6;min-height:14px}
 button{border:0;border-radius:10px;padding:7px 10px;margin:6px 2px 0;font-size:17px;background:#8882;color:inherit}
-</style></head><body><canvas id="v" width="440" height="340"></canvas><b id="n"></b><div id="h">тыкни меня</div><button>❤</button><button>🎉</button><button>😂</button><button>💃</button><button>😴</button>
+</style><body><canvas id="v" width="440" height="340"></canvas><b id="n"></b><div id="h">тыкни меня</div><button>❤</button><button>🎉</button><button>😂</button><button>💃</button><button>😴</button><button>⟳</button>
 <script>
 var T=window.TelegramWidget,S={m:'idle',k:'blob',h:'auto',c:'#7ab8ff'},t=0,J=0,ba=2,F,FU=0,X=document.getElementById('v').getContext('2d'),M=Math,PI=M.PI,sn=M.sin,ab=M.abs,dk='#14141a',lk=0;
 function $(i){return document.getElementById(i)}
@@ -202,7 +202,7 @@ function fl(m){F=m;FU=Date.now()+1800;J=1}
 function show(s,tap){var d={};try{d=JSON.parse(s||'{}')}catch(e){}if(tap&&d.m)fl(d.m);else for(var k in d)S[k]=d[k];$('n').textContent=S.n||''}
 function ask(q){fl(q=='poke'?'happy':q);if(!T)return;$('h').textContent='…';T.request('p:'+q).then(function(a){$('h').textContent='';a.result&&show(a.result,1)},function(e){$('h').textContent='⚠ '+e.code})}
 if(T){show(T.chatData);T.onEvent('chatDataChanged',function(){show(T.chatData)})}
-$('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEach(function(b,i){b.onclick=function(){ask(['love','party','laugh','dance','sleep'][i])}});
+$('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEach(function(b,i){b.onclick=function(){ask(['love','party','laugh','dance','sleep','ref'][i])}});
 </script></body></html>
 """;
 
@@ -337,7 +337,7 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
                 // тык: реакция из тех, что умеет рисовать виджет, — на острове та же самая
                 if (op == "poke") { mood = PetPokes[Random.Shared.Next(PetPokes.Length)]; App.Island?.MascotReact(mood, 1.8); }
                 else if (mood != null) App.Island?.MascotReact(mood, mood == "sleep" ? 6 : 3);
-                if (Store.Settings.TgWidgetToasts) Toast("🫧 Из Telegram", op == "poke" ? "Тебя потыкали в Telegram" : "Персонаж: " + op);
+                if (Store.Settings.TgWidgetToasts && op != "ref") Toast("🫧 Из Telegram", op == "poke" ? "Тебя потыкали в Telegram" : "Персонаж: " + op);
                 return PetState(mood ?? App.Island?.MascotMood);
             }
             return null;

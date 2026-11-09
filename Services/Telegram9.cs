@@ -70,6 +70,16 @@ namespace NIsland.Services
             ["crypto"] = Array.Empty<string>(),
             ["askai"] = new[] { "in", "clear", "put" },
             ["ttt"] = Array.Empty<string>(), ["g2048"] = Array.Empty<string>(), ["countdown"] = Array.Empty<string>(), ["viz"] = Array.Empty<string>(),
+            // 2.4
+            ["screentime"] = new[] { "day" }, ["week"] = Array.Empty<string>(), ["sessions"] = new[] { "lock" }, ["batlog"] = Array.Empty<string>(),
+            ["traffic"] = Array.Empty<string>(), ["wifilog"] = new[] { "reconnect" }, ["usblog"] = Array.Empty<string>(), ["iplog"] = new[] { "alert", "check" },
+            ["downloads"] = new[] { "send", "notify" }, ["notifstats"] = Array.Empty<string>(), ["speedlog"] = new[] { "run" }, ["temps"] = Array.Empty<string>(),
+            ["ramtop"] = new[] { "free" }, ["timeline"] = Array.Empty<string>(), ["report"] = new[] { "time", "send" },
+            ["mic"] = new[] { "v", "mute" }, ["wall"] = new[] { "prev", "next", "rnd" }, ["limits"] = new[] { "del", "in", "act" }, ["focus"] = new[] { "go", "stop" },
+            ["procwatch"] = new[] { "del", "in" }, ["alarms"] = new[] { "del", "in" }, ["fixes"] = new[] { "explorer", "dns", "wifi", "ram" },
+            ["awake"] = new[] { "on", "off", "h" }, ["guard"] = new[] { "cpu", "ram" },
+            ["radios"] = new[] { "t" }, ["privacy"] = Array.Empty<string>(), ["prayer"] = Array.Empty<string>(), ["agenda"] = Array.Empty<string>(),
+            ["shelf"] = new[] { "send" }, ["translate"] = new[] { "in", "to" }, ["cleanup"] = new[] { "scan", "clean" }, ["news"] = Array.Empty<string>(),
         };
 
         internal static bool TestKnownOp(string kind, string head) => KnownOp(kind, head);
@@ -94,6 +104,13 @@ namespace NIsland.Services
             ["coin"] = "dice", ["mem"] = "sysmon", ["av"] = "defender", ["wdstatus"] = "defender", ["wifihealth"] = "network", ["wifiq"] = "network",
             ["channels"] = "wifiscan", ["router"] = "network", ["netusage"] = "network", ["in"] = "jobs", ["at"] = "jobs", ["live"] = "remote",
             ["bathealth"] = "battery",
+            // 2.4
+            ["screentime"] = "screentime", ["week"] = "week", ["sessions"] = "sessions", ["batlog"] = "batlog", ["traffic"] = "traffic", ["wifilog"] = "wifilog",
+            ["usblog"] = "usblog", ["iplog"] = "iplog", ["downloads"] = "downloads", ["notifstats"] = "notifstats", ["speedlog"] = "speedlog", ["temps"] = "temps",
+            ["ramtop"] = "ramtop", ["timeline"] = "timeline", ["report"] = "report", ["miclevel"] = "mic", ["limits"] = "limits", ["focusmode"] = "focus",
+            ["watchproc"] = "procwatch", ["alarms"] = "alarms", ["alarm"] = "alarms", ["fixes"] = "fixes", ["awakefor"] = "awake", ["loadalert"] = "guard",
+            ["prayer"] = "prayer", ["agenda"] = "agenda", ["shelf"] = "shelf", ["news"] = "news", ["privacy"] = "privacy", ["cleanscan"] = "cleanup",
+            ["radio"] = "radios", ["tr"] = "translate", ["translate"] = "translate", ["usb"] = "usblog", ["boot"] = "sessions", ["idle"] = "sessions",
         };
 
         /// <summary>Экран меню бота (кнопка nav:…) → вид виджета. Навигация (главное, «Ещё», настройки, ИИ, файлы) остаётся сообщениями.</summary>
@@ -172,7 +189,7 @@ namespace NIsland.Services
                     res = $"⏲ Таймер на {min} мин запущен";
                     break;
                 }
-                default: return null;
+                default: return await WidgetInput4(kind, text);
             }
             _ = PushKind(kind);
             return (res, null);
@@ -421,6 +438,10 @@ try{var c=JSON.parse(localStorage.getItem('cd'));if(c&&c[0]>Date.now())set(new D
             ["notes"] = "📝 Напиши, что дописать в заметки",
             ["clipboard"] = "📋 Напиши текст — положу в буфер обмена ПК",
             ["timer"] = "⏲ Сколько минут поставить? Напиши число (1–600)",
+            ["limits"] = "⏳ Напиши программу и минуты в день, например: chrome 120 (0 — снять лимит)",
+            ["procwatch"] = "👁 Напиши имя процесса, например: steam",
+            ["alarms"] = "⏰ Напиши время и подпись, например: 07:30 Подъём",
+            ["translate"] = "🌐 Напиши текст — переведу (язык меняется кнопкой в виджете)",
         };
 
         async Task<string> CardAction3(string kind, string head, string arg)

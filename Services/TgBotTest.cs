@@ -110,7 +110,13 @@ namespace NIsland.Services
                 ("forget", ""), ("launch", ""), ("launch", "zzzz-none"), ("quit", ""), ("quit", "zzzz-none"), ("freeze", ""), ("freeze", "zzzz-none"), ("priority", ""),
                 ("uninstall", ""), ("uninstall", "zzzz-none"), ("upgrade", ""), ("upgrade", "a b"), ("winstall", "Mozilla.Firefox"), ("focus", ""), ("appmute", "zzzz-none"),
                 // виджеты Bot API 10.4
-                ("widget", ""), ("pet", ""), ("widgets", ""), ("widget", "nope"), ("widget", "плеер"), ("widget", "sysmon"), ("widget", "clock"), ("widget", "calc"),   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
+                ("widget", ""), ("pet", ""), ("widgets", ""), ("widget", "nope"), ("widget", "плеер"), ("widget", "sysmon"), ("widget", "clock"), ("widget", "calc"),
+                // 2.4: отслеживание и контроль — только просмотр (лимиты, фокус, будильники, обои, починки здесь не меняются)
+                ("screentime", ""), ("screentime", "вчера"), ("week", ""), ("sessions", ""), ("batlog", ""), ("traffic", ""), ("wifilog", ""), ("usblog", ""),
+                ("iplog", ""), ("downloads", ""), ("downloads", "999"), ("notifstats", ""), ("speedlog", ""), ("temps", ""), ("ramtop", ""), ("timeline", ""),
+                ("report", ""), ("report", "вчера"), ("miclevel", ""), ("limits", ""), ("limit", ""), ("limit", "abc"), ("focusmode", ""), ("watchproc", ""),
+                ("alarms", ""), ("alarm", ""), ("alarm", "99:99 x"), ("fixes", ""), ("fixes", "nope"), ("awakefor", ""), ("loadalert", ""), ("loadalert", "cpu 5"),
+                ("prayer", ""), ("agenda", ""), ("shelf", ""), ("shelf", "999"), ("news", ""), ("privacy", ""), ("widget", "экранное"), ("widget", "обои"),   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
             };
             var queue = new Queue<string>();
             foreach (var (c, a) in cmds)
@@ -405,7 +411,30 @@ namespace NIsland.Services
                         using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.SmallestSize, true)) z.Write(raw);
                         if (ms.Length > 3900) Problems.Add($"pet widget {pSk}/{ht}/{pMd}: compressed {ms.Length} > 3900");
                     }
-            foreach (var q in new[] { "w:ref", "w:zzz", "p:poke", "p:love" })
+            // «⟳» в каждом виджете: в карточках — в шапке, у виджетов без бота — своя кнопка перезагрузки
+            foreach (var wk in TelegramHub.TestKinds)
+            {
+                var h = TelegramHub.TestHtml(wk.Key);
+                if (!h.Contains("⟳") && !h.Contains("↺")) Problems.Add($"widget {wk.Key}: no refresh button");
+            }
+            if (!TelegramHub.TestHtml("player").Contains("D.pm")) Problems.Add("player widget: no mini mascot");
+            // синхронизация с ПК: событие → правка виджета и пульта без нажатий; второй раз то же состояние — без лишних запросов
+            {
+                tg.TestRememberWidget(9001, "player");
+                tg.TestTrackMenu("music", 9002);
+                Sent.Clear();
+                await tg.TestFlush(new[] { "player" }, new[] { "music" });
+                int wEdits, mEdits;
+                lock (Sent) { wEdits = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("9001")); mEdits = Sent.Count(s => s.Method == "editMessageText" && s.Json.Contains("9002")); }
+                if (wEdits != 1) Problems.Add($"pc sync: player widget edits {wEdits} (want 1)");
+                if (mEdits != 1) Problems.Add($"pc sync: music menu edits {mEdits} (want 1)");
+                Sent.Clear();
+                await tg.TestFlush(new[] { "player" }, new[] { "music" });
+                lock (Sent) { wEdits = Sent.Count(s => s.Method == "editMessageWidgetData"); mEdits = Sent.Count(s => s.Method == "editMessageText"); }
+                if (wEdits + mEdits != 0) Problems.Add($"pc sync: unchanged state still edited ({wEdits}+{mEdits})");
+                log.AppendLine("pc sync: ok");
+            }
+            foreach (var q in new[] { "w:ref", "w:zzz", "p:poke", "p:love", "p:ref" })
             {
                 var res = await tg.TestWidgetAction(q);
                 if (res == null) { Problems.Add($"widget {q}: no state"); continue; }

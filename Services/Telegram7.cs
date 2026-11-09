@@ -55,6 +55,26 @@ namespace NIsland.Services
             new("crypto", "🪙 Криптовалюты", "Сводки", 320, 0, 0), new("askai", "🧠 Спросить ИИ", "Дела", 340, 0, 0),
             new("countdown", "⏳ Обратный отсчёт", "Время", 300, 230, 0), new("ttt", "❌ Крестики-нолики", "Игры и утилиты", 280, 330, 0),
             new("g2048", "🔢 2048", "Игры и утилиты", 280, 370, 0), new("viz", "🌈 Визуализатор", "Музыка", 340, 200, 4),
+            // 2.4: отслеживание (Telegram14.cs)
+            new("screentime", "⏱ Экранное время", "Отслеживание", 340, 0, 30), new("week", "📅 Неделя за ПК", "Отслеживание", 340, 0, 0),
+            new("sessions", "🔐 Сессии", "Отслеживание", 320, 0, 0), new("batlog", "🔋 История заряда", "Отслеживание", 320, 0, 60),
+            new("traffic", "🌐 Трафик", "Отслеживание", 320, 0, 30), new("wifilog", "📶 История Wi-Fi", "Отслеживание", 320, 0, 0),
+            new("usblog", "🔌 USB-журнал", "Отслеживание", 340, 0, 0), new("iplog", "🌍 Внешний IP", "Отслеживание", 320, 0, 0),
+            new("downloads", "📥 Загрузки", "Отслеживание", 340, 0, 30), new("notifstats", "🔔 Кто шлёт уведомления", "Отслеживание", 320, 0, 0),
+            new("speedlog", "🚀 История скорости", "Отслеживание", 320, 0, 0), new("temps", "🌡 Температура", "Отслеживание", 320, 0, 15),
+            new("ramtop", "🧠 Кто занял память", "Отслеживание", 340, 0, 15), new("timeline", "🗓 События дня", "Отслеживание", 340, 0, 30),
+            new("report", "📊 Отчёт за день", "Отслеживание", 340, 0, 0),
+            // 2.4: контроль
+            new("mic", "🎙 Микрофон", "Контроль", 320, 0, 10), new("wall", "🖼 Обои", "Контроль", 320, 0, 0),
+            new("limits", "⏳ Лимиты времени", "Контроль", 340, 0, 30), new("focus", "🎯 Фокус", "Контроль", 320, 0, 15),
+            new("procwatch", "👁 Слежка за программами", "Контроль", 320, 0, 15), new("alarms", "⏰ Будильники", "Контроль", 320, 0, 0),
+            new("fixes", "🛠 Быстрые починки", "Контроль", 320, 0, 0), new("awake", "☕ Не засыпать", "Контроль", 300, 0, 30),
+            new("guard", "🚨 Сторож нагрузки", "Контроль", 320, 0, 10),
+            // 2.4: для того, что уже было
+            new("radios", "📻 Wi-Fi и Bluetooth", "Сеть", 320, 0, 0), new("privacy", "🕵 Кто слушает и смотрит", "Система", 340, 0, 15),
+            new("prayer", "🕌 Время молитв", "Время", 300, 0, 0), new("agenda", "📅 Ближайшие события", "Время", 320, 0, 0),
+            new("shelf", "📦 Полка", "Дела", 320, 0, 0), new("translate", "🌐 Переводчик", "Дела", 340, 0, 0),
+            new("cleanup", "🧹 Очистка", "Система", 340, 0, 0), new("news", "📰 Новости", "Сводки", 340, 0, 0),
         };
 
         static WKind WK(string key) => WKinds.FirstOrDefault(k => k.Key == key);
@@ -83,7 +103,8 @@ html,body{margin:0}body{font:13px/1.35 system-ui,sans-serif;color:var(--tg-theme
 .l{display:flex;align-items:center;gap:6px;padding:2px 0}.l span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .r{display:flex;gap:6px;margin-top:6px}button{flex:1;border:0;border-radius:10px;padding:7px 4px;font-size:13px;background:#8882;color:inherit}
 .l button{flex:0 0 auto;padding:4px 9px}button.d{background:#ff453a40}button.s{background:#30d15840}button.p{background:var(--tg-theme-button-color,#3390ec);color:#fff}
-.Lc{font-size:17px;font-weight:700;margin:3px 0}button:active{filter:brightness(1.4)}button.w{opacity:.5}#e{min-height:14px;font-size:11px;color:var(--tg-theme-hint-color,#999);margin-top:4px}
+.hd{display:flex;align-items:flex-start;gap:6px}.hd>div{flex:1;min-width:0}.hd .rf{flex:0 0 auto;padding:3px 10px;font-size:15px}#pm{width:46px;height:46px;flex:0 0 auto;margin:-6px 0 -4px}
+svg{display:block;width:100%;height:30px}.Lc{font-size:17px;font-weight:700;margin:3px 0}button:active{filter:brightness(1.4)}button.w{opacity:.5}#e{min-height:14px;font-size:11px;color:var(--tg-theme-hint-color,#999);margin-top:4px}
 </style></head><body><div id="c"></div><div id="e"></div><script>
 var T=window.TelegramWidget,D={},t0=Date.now();function $(i){return document.getElementById(i)}
 function f(s){s=Math.max(0,Math.round(s));var h=s/3600|0,m=(s/60|0)%60;return(h?h+':'+('0'+m).slice(-2):m)+':'+('0'+s%60).slice(-2)}
@@ -96,14 +117,15 @@ if(t=='k')return'<div class="k"><span>'+x(r[1])+'</span><b>'+x(r[2])+'</b></div>
 if(t=='p')return'<div class="g"><span id="pa'+i+'"></span><div class="bb"><i id="pb'+i+'"></i></div><span>'+f(r[2])+'</span></div>';
 if(t=='d'||t=='u')return'<div class="T" id="cd'+i+'"></div>'+(r[3]?'<div class="t">'+x(r[3])+'</div>':'');
 if(t=='l')return'<div class="l"><span>'+x(r[1])+'</span>'+(r[2]&&!D.ro?'<button data-q="'+x(r[2])+'">'+x(r[3]||'›')+'</button>':'')+'</div>';
-if(t=='y')return'<div class="l"><span>'+x(r[2])+'</span><button data-y="'+i+'">'+x(r[1])+'</button></div>';if(t=='L')return'<div id="ly'+i+'"></div>';return''}
+if(t=='y')return'<div class="l"><span>'+x(r[2])+'</span><button data-y="'+i+'">'+x(r[1])+'</button></div>';
+if(t=='g'){var a=r[2]||[],mx=Math.max.apply(0,a.concat([r[5]||1])),n=Math.max(1,a.length-1);return'<div class="k"><span>'+x(r[1])+'</span><b>'+x(r[4]||'')+'</b></div><svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline fill="none" stroke-width="2" vector-effect="non-scaling-stroke" stroke="'+(r[3]||'#3390ec')+'" points="'+a.map(function(v,j){return(j/n*100).toFixed(1)+','+(29-v/mx*27).toFixed(1)}).join(' ')+'"/></svg>'}if(t=='L')return'<div id="ly'+i+'"></div>';return''}
 function tick(){(D.r||[]).forEach(function(r,i){var t=r[0],e;
 if(t=='p'&&(e=$('pa'+i))){var p=Math.min(r[2],r[1]+(r[3]?el():0));e.textContent=f(p);var b=$('pb'+i);b.style.width=(r[2]?p/r[2]*100:0)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}
 if((t=='d'||t=='u')&&(e=$('cd'+i)))e.textContent=f(t=='d'?r[1]-(r[2]?el():0):r[1]+(r[2]?el():0));
 if(t=='L'&&(e=$('ly'+i))){var s=r[1]?el():0,c=-1,a=r[2];a.forEach(function(l,j){if(l[0]<=s)c=j});if(e.dataset.c!=String(c)){e.dataset.c=c;
 e.innerHTML=(c>0?'<div class="t">'+x(a[c-1][1])+'</div>':'')+'<div class="Lc">'+x(c>=0?a[c][1]:'♪')+'</div>'+(a[c+1]?'<div class="t">'+x(a[c+1][1])+'</div>':'')}}})}
-function show(){var h='<div class="h">'+x(D.h)+'</div>'+(D.s?'<div class="s">'+x(D.s)+'</div>':'');(D.r||[]).forEach(function(r,i){h+=row(r,i)});
-(D.ro?[]:D.b||[]).forEach(function(w){h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
+function show(){var h='<div class="hd"><div><div class="h">'+x(D.h)+'</div>'+(D.s?'<div class="s">'+x(D.s)+'</div>':'')+'</div>'+(D.pm?'<canvas id="pm" width="92" height="92"></canvas>':'')+(D.ro?'':'<button class="rf" data-q="ref">⟳</button>')+'</div>';(D.r||[]).forEach(function(r,i){h+=row(r,i)});
+(D.ro?[]:D.b||[]).forEach(function(w){w=w.filter(function(b){return!(b[1]=='ref'&&/^⟳/.test(b[0]))});if(!w.length)return;h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
 $('c').innerHTML=h;note(D.e||'',D.e?6000:0);tick();
 document.querySelectorAll('button[data-q]').forEach(function(b){b.onclick=function(){ask(b.getAttribute('data-q'),b)}});
 document.querySelectorAll('button[data-y]').forEach(function(b){b.onclick=function(){if(T&&T.copyText)T.copyText(D.r[+b.getAttribute('data-y')][2]);b.textContent='✓'}})}
@@ -115,7 +137,12 @@ function note(s,k){$('e').textContent=s;clearTimeout(et);if(k)et=setTimeout(func
 function ask(q,b,n){if(!T||B)return;B=1;if(b)b.classList.add('w');note('…');
 T.request('c:'+D.k+':'+q).then(function(a){B=0;if(b)b.classList.remove('w');note('');if(a.result)load(a.result)},function(e){B=0;if(b)b.classList.remove('w');
 if((e.code=='RATE_LIMITED'||e.code=='BUSY')&&!n){note(E[e.code]);setTimeout(function(){ask(q,b,1)},1600)}else note('⚠ '+(E[e.code]||e.code),6000)})}
-if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}setInterval(tick,250);
+function E(c,X,Y,a,b){c.beginPath();c.ellipse(X,Y,a,b,0,0,7);c.fill()}
+function pm(){var c=$('pm');if(c){var g=c.getContext('2d'),s=Date.now()/1e3,u=Math.abs(Math.sin(s*3.7));g.clearRect(0,0,92,92);g.save();g.translate(46,82-u*11);g.rotate(Math.sin(s*1.85)*.2);g.scale(1+u*.07,1-u*.07);
+g.fillStyle=D.pm;E(g,0,-26,25,24);g.fillStyle='#111';E(g,-9,-30,3.4,4.2);E(g,9,-30,3.4,4.2);g.strokeStyle='#111';g.lineWidth=2.6;g.beginPath();g.arc(0,-22,7,.25,2.9);g.stroke();
+g.strokeStyle='#333';g.lineWidth=4.5;g.beginPath();g.arc(0,-28,28,3.5,5.93);g.stroke();g.fillStyle='#333';E(g,-26,-28,5,8);E(g,26,-28,5,8);g.restore();
+g.fillStyle=D.pm;g.globalAlpha=.4+.6*u;g.font='15px sans-serif';g.fillText('♪',4,24-u*8);g.fillText('♫',74,18-(1-u)*8);g.globalAlpha=1}requestAnimationFrame(pm)}
+if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}setInterval(tick,250);requestAnimationFrame(pm);
 </script></body></html>
 """;
 
@@ -198,9 +225,16 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
 
         static string HtmlOf(string kind) => kind switch
         {
-            "remote" => RemoteWidgetHtml, "pet" => PetHtml(), "sysmon" => SysmonHtml, "clock" => ClockHtml, "calc" => CalcHtml, "dice" => DiceHtml, "calendar" => CalendarHtml, "breath" => BreathHtml, "ttt" => TttHtml, "g2048" => G2048Html, "countdown" => CountdownHtml, "viz" => VizHtml,
+            "remote" => RemoteWidgetHtml, "pet" => PetHtml(), "sysmon" => SysmonHtml, "clock" => Rf(ClockHtml, "top:6px;right:6px"), "calc" => Rf(CalcHtml, "top:6px;left:6px"),
+            "dice" => Rf(DiceHtml, "top:6px;right:6px"), "calendar" => Rf(CalendarHtml, "bottom:4px;right:6px"), "breath" => Rf(BreathHtml, "top:6px;right:6px"),
+            "ttt" => Rf(TttHtml, "top:6px;right:6px"), "g2048" => G2048Html, "countdown" => Rf(CountdownHtml, "top:6px;right:6px"), "viz" => Rf(VizHtml, "bottom:6px;right:8px"),
             _ => CardHtml,
         };
+
+        /// <summary>Кнопка «⟳» у виджетов, которые работают сами, без бота: перезагрузить виджет (часы и визуализатор заново берут данные).
+        /// Вставляется после скрипта — обработчики «все кнопки» в самих виджетах её не трогают. У 2048 это «↺» в шапке.</summary>
+        static string Rf(string html, string pos) => html.Replace("</body>",
+            $"<button onclick=\"location.reload()\" style=\"position:fixed;{pos};border:0;border-radius:8px;background:#8882;color:inherit;padding:2px 8px;font-size:13px;flex:none\">⟳</button></body>");
 
         // ------------------------------------------------------------------
         //  Состояния
@@ -279,7 +313,19 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     d = Card(kind, "🎵 " + (m.HasSession ? Cut(m.Title ?? m.TrackLine, 50) : "Ничего не играет"), m.HasSession ? Cut(m.Artist, 50) : null);
                     if (m.HasTime) CRows(d).Add(new object[] { "p", (int)m.Position.TotalSeconds, (int)m.Duration.TotalSeconds, m.IsPlaying ? 1 : 0 });
                     if (LyricsRow(280) is { } plr) CRows(d).Add(plr);
+                    // мини-персонаж в шапке плеера: танцует, пока играет музыка; на паузе его нет. Цвет — как у персонажа на острове
+                    if (m.IsPlaying && Store.Settings.WidgetPetDance) { string tint = null; try { tint = App.Island?.MascotTintHex; } catch { } d["pm"] = tint ?? "#7ab8ff"; }
                     CRows(d).Add(new object[] { "b", "🔊", Math.Round(a.Volume * 100), null, a.Muted ? "off" : Math.Round(a.Volume * 100) + "%" });
+                    // батарея: сколько осталось до разряда, а на зарядке — до полной
+                    var bs = SystemService.I;
+                    if (bs.HasBattery)
+                    {
+                        int bp = bs.BatteryPercent;
+                        string bt = bs.Charging
+                            ? (bp >= 100 ? T("заряжен") : PcWatch.ChargeLeft() is TimeSpan cl ? T("до полной") + " " + Du((int)cl.TotalSeconds) : T("заряжается"))
+                            : PcWatch.DischargeLeft() is TimeSpan dl ? T("осталось") + " " + Du((int)dl.TotalSeconds) : T("от батареи");
+                        CRows(d).Add(new object[] { "b", bs.Charging ? "⚡" : "🔋", bp, bs.Charging ? "#30d158" : bp <= 15 ? "#ff453a" : bp <= 30 ? "#ffd60a" : "#30d158", bp + "% · " + bt });
+                    }
                     Btns(d, Bt("⏮", "prev"), Bt(m.IsPlaying ? "⏸" : "▶", "play", "p"), Bt("⏭", "next"), Bt("♥", "like"));
                     Btns(d, Bt($"⏪ {MediaService.Step}с", "back"), Bt($"⏩ {MediaService.Step}с", "fwd"), Bt("🔀", "shuffle"), Bt("🔁", "repeat"), Bt(m.LoopB != null ? "A–B ✓" : m.LoopA != null ? "A…" : "A–B", "ab", m.LoopA != null ? "p" : null));
                     Btns(d, Bt("🔉", "vd"), Bt(a.Muted ? "🔈" : "🔇", "mute"), Bt("🔊", "vu"), Bt(TimerService.I.SleepAt != null ? "💤 ✓" : "💤 30", "sleep"));
@@ -454,7 +500,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     Btns(d, Bt("🔄 Перезагрузка", "restart", "d"), Bt("⏻ Выключить", "shutdown", "d"));
                     return d;
             }
-            return CardState2(kind) ?? CardState3(kind) ?? Card(kind, "Неизвестный виджет");
+            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? Card(kind, "Неизвестный виджет");
         }
 
         // ------------------------------------------------------------------
@@ -580,7 +626,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     }
                     else { _powerConfirm = head; _powerConfirmAt = DateTime.Now; note = T("Нажми ещё раз в течение 10 секунд, чтобы подтвердить"); }
                     break;
-                default: note = await CardAction2(kind, head, arg) ?? await CardAction3(kind, head, arg) ?? note; break;
+                default: note = await CardAction2(kind, head, arg) ?? await CardAction3(kind, head, arg) ?? await CardAction4(kind, head, arg) ?? note; break;
             }
             // нажали — живой виджет обновляется ещё 5 минут
             var wk = WK(kind);
@@ -592,7 +638,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
         static string WFlag(string kind) => kind switch
         {
             "power" => "power", "apps" or "windows" or "startup" or "upgrades" or "launcher" => "apps", "keys" or "slides" or "mouse" or "typer" => "input",
-            "screenshot" => "screen", _ => null,
+            "screenshot" => "screen", "downloads" or "shelf" => "files", _ => null,
         };
 
         string _powerConfirm;
@@ -679,6 +725,13 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             ["вывод"] = "audioout", ["звук"] = "audioout", ["снимок"] = "screenshot", ["скриншот"] = "screenshot", ["хотспот"] = "hotspot", ["точка"] = "hotspot",
             ["пинг"] = "ping", ["устройства"] = "lan", ["крипта"] = "crypto", ["криптовалюты"] = "crypto", ["спросить"] = "askai", ["вопрос"] = "askai",
             ["визуализатор"] = "viz", ["спектр"] = "viz", ["отсчёт"] = "countdown", ["отсчет"] = "countdown", ["крестики"] = "ttt", ["2048"] = "g2048",
+            ["экранное"] = "screentime", ["время"] = "screentime", ["неделя"] = "week", ["сессии"] = "sessions", ["заряд"] = "batlog", ["трафик"] = "traffic",
+            ["флешки"] = "usblog", ["usb"] = "usblog", ["ip"] = "iplog", ["загрузки"] = "downloads", ["температура"] = "temps", ["память"] = "ramtop",
+            ["журнал"] = "timeline", ["события"] = "agenda", ["отчёт"] = "report", ["отчет"] = "report", ["микрофон"] = "mic", ["обои"] = "wall",
+            ["лимиты"] = "limits", ["фокус"] = "focus", ["слежка"] = "procwatch", ["будильник"] = "alarms", ["будильники"] = "alarms",
+            ["починки"] = "fixes", ["починить"] = "fixes", ["незасыпать"] = "awake", ["сторож"] = "guard", ["радио"] = "radios", ["bluetooth"] = "radios",
+            ["приватность"] = "privacy", ["слежка камеры"] = "privacy", ["молитвы"] = "prayer", ["намаз"] = "prayer", ["полка"] = "shelf",
+            ["переводчик"] = "translate", ["перевод"] = "translate", ["очистка"] = "cleanup", ["мусор"] = "cleanup", ["новости"] = "news",
         };
 
         async Task<(string Html, object Keys)?> WidgetsCommand(string cmd, string arg)

@@ -45,8 +45,21 @@ namespace NIsland.Pages
                 _presets.Children.Add(b);
             }
 
-            var head = UI.Grid("a,*,a").Add(_on, UI.Text("Эквалайзер", 13.5, true).At(0, 1).M(8, 0, 0, 0),
-                UI.IconBtn("\uE713", () => App.ShowSettings("eq"), 11, 24, "Настройки эквалайзера").At(0, 2));
+            // усиление громкости прямо в чёлке: 0 → +3 → +6 → +9 → +12 → 0 дБ
+            Button boost = null;
+            void BoostText() => boost.Content = "🔊 " + (S.EqBoost > 0 ? "+" : "") + S.EqBoost + " " + I18n.T("дБ");
+            boost = UI.Pill("", () =>
+            {
+                S.EqBoost = S.EqBoost >= 12 ? 0 : (S.EqBoost < 0 ? 0 : S.EqBoost / 3 * 3 + 3);
+                if (!S.EqOn && S.EqBoost != 0) Equalizer.SetOn(true);
+                Equalizer.Apply();
+                BoostText(); Sync();
+            }, false, "Усиление громкости для тихих динамиков ноутбука (каждое нажатие +3 дБ)");
+            boost.FontSize = 10.5;
+            boost.Padding = new Thickness(8, 2, 8, 2);
+            BoostText();
+            var head = UI.Grid("a,*,a,a").Add(_on, UI.Text("Эквалайзер", 13.5, true).At(0, 1).M(8, 0, 0, 0), boost.At(0, 2).M(0, 0, 4, 0),
+                UI.IconBtn("\uE713", () => App.ShowSettings("eq"), 11, 24, "Настройки эквалайзера").At(0, 3));
             var left = UI.Grid(null, "a,a,a,*").Add(
                 head,
                 _status.At(1, 0).M(0, 4, 0, 2),
@@ -89,7 +102,9 @@ namespace NIsland.Pages
             var dev = AudioService.I.OutputName ?? "";
             _device.Text = S.EqPerDevice && dev != "" ? I18n.T("Профиль для: ") + dev : dev;
             _device.Tag = "no-translate";
-            if (!inst) _status.Text = I18n.T("Нужен бесплатный движок Equalizer APO — без него Windows не даёт менять звук других приложений. Кривая уже сохраняется.");
+            if (!inst) _status.Text = I18n.T(Equalizer.Bundled
+                ? "Встроенный эквалайзер ещё не установлен — нажми «Установить»: одно подтверждение Windows и перезагрузка. Кривая уже сохраняется."
+                : "Нужен бесплатный движок Equalizer APO — без него Windows не даёт менять звук других приложений. Кривая уже сохраняется.");
             else if (Equalizer.LastError != null) _status.Text = I18n.T(Equalizer.LastError);
             else if (Equalizer.OnCurrentDevice() == false) _status.Text = I18n.T("APO не подключён к этому устройству. Открой «Настройки → Эквалайзер → Выбрать устройства».");
             else _status.Text = I18n.T(S.EqOn ? "Работает для всех приложений · " + Equalizer.PresetName(S.EqPreset) : "Выключен — звук без изменений");
@@ -101,7 +116,7 @@ namespace NIsland.Pages
             var err = await Equalizer.Install(s => _status.Text = I18n.T(s));
             _install.IsEnabled = true;
             if (err != null) _status.Text = I18n.T(err);
-            else App.Island?.Toast("\uE896", "Установщик Equalizer APO запущен", "Отметь свои наушники и колонки, затем перезагрузи ПК");
+            else App.Island?.Toast("\uE896", "Эквалайзер установлен", "Отметь свои наушники и колонки, затем перезагрузи ПК");
         }
     }
 }

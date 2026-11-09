@@ -18,6 +18,16 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue) -or -not (& dotnet -
 $version = ([xml](Get-Content NIsland.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
 New-Item -ItemType Directory -Force dist | Out-Null
 
+# Встроенный эквалайзер: официальный установщик Equalizer APO вшивается в exe (кнопка «Установить» работает без интернета).
+# Берём с SourceForge и сверяем SHA-256, опубликованный проектом; не совпал — сборка останавливается.
+$eqFile = "obj\eqapo\EqualizerAPO-x64-1.4.2.exe"
+$eqSha = "7403BE7427BBE1936A40DDED082829B6E217FC4F5990FEE5CBA501F0AE055AFA"
+if (-not (Test-Path $eqFile) -or (Get-FileHash $eqFile -Algorithm SHA256).Hash -ne $eqSha) {
+    New-Item -ItemType Directory -Force (Split-Path $eqFile) | Out-Null
+    Invoke-WebRequest "https://sourceforge.net/projects/equalizerapo/files/1.4.2/EqualizerAPO-x64-1.4.2.exe/download" -OutFile $eqFile -UserAgent "Wget/1.21" -UseBasicParsing
+    if ((Get-FileHash $eqFile -Algorithm SHA256).Hash -ne $eqSha) { Remove-Item $eqFile -Force; throw "Equalizer APO: SHA-256 не совпал — файл не тот" }
+}
+
 function Build($rid, $self, $suffix) {
     $out = "obj\dist-$rid$suffix"
     if (Test-Path $out) { Remove-Item $out -Recurse -Force }
@@ -27,7 +37,8 @@ function Build($rid, $self, $suffix) {
     $name = "NIsland-$version-$rid$suffix"
     if ($self) {
         Copy-Item README.txt "$out\README.txt" -Force
-        Compress-Archive -Path "$out\NIsland.exe", "$out\README.txt" -DestinationPath "dist\$name.zip" -Force -CompressionLevel Optimal
+        Copy-Item THIRD-PARTY-NOTICES.txt "$out\THIRD-PARTY-NOTICES.txt" -Force
+        Compress-Archive -Path "$out\NIsland.exe", "$out\README.txt", "$out\THIRD-PARTY-NOTICES.txt" -DestinationPath "dist\$name.zip" -Force -CompressionLevel Optimal
         "{0,-40} {1,8:N1} МБ" -f "$name.zip", ((Get-Item "dist\$name.zip").Length / 1MB)
     } else {
         Copy-Item "$out\NIsland.exe" "dist\$name.exe" -Force

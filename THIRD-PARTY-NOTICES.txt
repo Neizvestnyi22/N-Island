@@ -1,0 +1,11 @@
+N-Island — сторонние компоненты / third-party components
+
+Equalizer APO 1.4.2 (x64 installer, embedded in NIsland.exe)
+  Copyright (C) Jonas Thedering
+  License: GNU General Public License v2.0 (GPL-2.0)
+  Source code and the original installer: https://sourceforge.net/projects/equalizerapo/
+  N-Island ships the official, unmodified installer (SHA-256 7403be7427bbe1936a40dded082829b6e217fc4f5990fee5cba501f0ae055afa)
+  and runs it only when you press "Install" in the equalizer settings. The GPL-2.0 text: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+RU: N-Island содержит официальный неизменённый установщик Equalizer APO 1.4.2 (GPL-2.0) и запускает его только по кнопке «Установить»
+в настройках эквалайзера. Исходный код и оригинал — https://sourceforge.net/projects/equalizerapo/

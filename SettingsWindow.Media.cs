@@ -53,23 +53,31 @@ namespace NIsland
                 status,
                 curve.M(8, 4, 8, 4),
                 presets,
+                Row("Не терять громкость", "Раньше при подъёме полос весь звук делался тише на величину подъёма. Теперь запас вдвое меньше — громкость почти как без эквалайзера",
+                    ToggleAct(nameof(Settings.EqAutoGain), _ => Equalizer.Apply())),
+                Row("Усиление громкости", "Для тихих динамиков ноутбука: добавляет громкости всем приложениям. Больше +6 дБ на громкой музыке может хрипеть",
+                    Stepper(nameof(Settings.EqBoost), -6, 12, 1, v => (v > 0 ? "+" : "") + v + " " + I18n.T("дБ"), () => { if (!S.EqOn && S.EqBoost != 0) Equalizer.SetOn(true); Equalizer.Apply(); })),
                 Row("Свой профиль для каждого устройства", "Наушники, колонки и Bluetooth звучат по-разному: настройка запоминается для каждого и включается сама при переключении",
                     Toggle(nameof(Settings.EqPerDevice))),
                 Row("Страница «Эквалайзер» в чёлке", "Кривая с живым спектром и пресеты прямо в чёлке", Toggle(nameof(Settings.PgEq)))));
 
             var install = new StackPanel();
             page.Children.Add(Group("Движок Equalizer APO",
-                Row(inst ? "Установлен" : "Установить Equalizer APO", inst ? Equalizer.ConfigDir : "Бесплатная открытая программа (sourceforge.net/projects/equalizerapo), её используют Peace и другие эквалайзеры. " +
-                    "В установщике отметь свои наушники и колонки, потом перезагрузи ПК — дальше всё управляется из N-Island",
-                    inst ? UI.Pill("Выбрать устройства", Equalizer.OpenConfigurator) : UI.Pill("Скачать и установить", async () =>
+                Row(inst ? "Установлен" : "Установить Equalizer APO",
+                    inst ? Equalizer.ConfigDir
+                         : (Equalizer.Bundled ? "Уже встроен в N-Island — скачивать ничего не нужно. " : "") +
+                           "Бесплатная открытая программа (sourceforge.net/projects/equalizerapo, GPL-2.0), её используют Peace и другие эквалайзеры: без такого модуля Windows не даёт менять звук других приложений. " +
+                           "Ставится тихо, одно подтверждение Windows; потом отметь свои динамики и наушники и перезагрузи ПК — дальше всё управляется из N-Island",
+                    inst ? UI.Pill("Выбрать устройства", Equalizer.OpenConfigurator) : UI.Pill(Equalizer.Bundled ? "Установить" : "Скачать и установить", async () =>
                     {
                         install.Children.Clear();
-                        var t = Info("Скачиваю…");
+                        var t = Info(Equalizer.Bundled ? "Устанавливаю…" : "Скачиваю…");
                         install.Children.Add(t);
                         var err = await Equalizer.Install(s => t.Text = I18n.T(s));
                         t.Text = I18n.T(err ?? "Установщик запущен. Отметь устройства, нажми OK и перезагрузи компьютер.");
                     }, true)),
                 install,
+                inst ? EqUpdateRow() : null,
                 Equalizer.NeedsPermission
                     ? Row("Нет права записи", "Папка настроек APO закрыта для обычных программ — дай доступ один раз", UI.Pill("Разрешить запись", () => { Equalizer.FixPermissions(); Upd(); Open("eq"); }, true))
                     : null,
@@ -80,6 +88,51 @@ namespace NIsland
         }
 
         /// <summary>Переключатель с действием (а не просто привязкой) — состояние всё равно следует за настройкой.</summary>
+        /// <summary>Версия Equalizer APO: проверить на официальной странице и обновить прямо отсюда (тихо, с проверкой SHA-256).</summary>
+        UIElement EqUpdateRow()
+        {
+            var info = new TextBlock { FontSize = 12, Foreground = UI.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+            var upd = UI.Pill("Обновить", null, true);
+            upd.Visibility = Visibility.Collapsed;
+            Equalizer.ApoRelease found = null;
+            void Show(string extra) => info.Text = I18n.T("Установлена версия") + " " + Equalizer.InstalledVersion + (extra != null ? " · " + extra : "");
+            Show(null);
+            var check = UI.Pill("Проверить обновление", null);
+            check.Click += async (_, __) =>
+            {
+                check.IsEnabled = false;
+                info.Text = I18n.T("Проверяю на sourceforge.net…");
+                try
+                {
+                    found = await Equalizer.Latest();
+                    S.EqApoChecked = DateTime.Today.ToString("yyyy-MM-dd");
+                    if (found == null) Show(I18n.T("не удалось узнать последнюю версию"));
+                    else if (Equalizer.IsNewer(found.Version, Equalizer.InstalledVersion))
+                    {
+                        Show(I18n.T("на сайте") + " " + found.Version);
+                        upd.Content = I18n.T("Обновить до") + " " + found.Version;
+                        upd.Visibility = Visibility.Visible;
+                    }
+                    else Show(I18n.T("это последняя версия ✓"));
+                }
+                catch (Exception e) { Show(I18n.T("нет связи с sourceforge.net") + ": " + Integrations.Reason(e)); }
+                check.IsEnabled = true;
+            };
+            upd.Click += async (_, __) =>
+            {
+                if (found == null) return;
+                upd.IsEnabled = check.IsEnabled = false;
+                var err = await Equalizer.Install(s => info.Text = I18n.T(s), found);
+                info.Text = err != null ? I18n.T(err) : I18n.T("Обновлено до") + " " + Equalizer.InstalledVersion + " · " + I18n.T("перезагрузи ПК, чтобы звук пошёл через новую версию");
+                upd.IsEnabled = check.IsEnabled = true;
+                if (err == null) upd.Visibility = Visibility.Collapsed;
+            };
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = I18n.T("Версия движка"), FontSize = 13.5, FontWeight = FontWeights.SemiBold });
+            text.Children.Add(info);
+            return UI.Grid("*,a").M(14, 10, 14, 10).Add(text, UI.Row(check, upd.M(6, 0, 0, 0)).At(0, 1));
+        }
+
         static CheckBox ToggleAct(string prop, Action<bool> act)
         {
             var p = P(prop);

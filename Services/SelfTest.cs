@@ -36,6 +36,7 @@ namespace NIsland.Services
                     "elev" => ElevBench(args[2]),
                     "av" => Task.Run(() => AvTest(args[2])).GetAwaiter().GetResult(),
                     "update" => Task.Run(() => UpdateTest(args[2])).GetAwaiter().GetResult(),
+                    "eq" => Task.Run(() => EqTest(args[2])).GetAwaiter().GetResult(),
                     "custom" => Task.Run(() => CustomTest(args[2])).GetAwaiter().GetResult(),
                     "mcp" => McpTest.Run(args[2]),
                     "health" => Task.Run(() => HealthTest(args[2])).GetAwaiter().GetResult(),
@@ -186,6 +187,35 @@ namespace NIsland.Services
             catch (Exception e) { sb.AppendLine("FATAL " + e); }
             File.WriteAllText(output, sb.ToString());
             return 0;
+        }
+
+        /// <summary>Встроенный эквалайзер: установщик внутри exe и его SHA-256, последняя версия на сайте, сравнение версий, предусилитель. Ничего не ставит.</summary>
+        static async Task<int> EqTest(string output)
+        {
+            var sb = new StringBuilder();
+            int bad = 0;
+            void Ok(bool cond, string what) { sb.AppendLine((cond ? "ok   " : "FAIL ") + what); if (!cond) bad++; }
+            try
+            {
+                Ok(Equalizer.Bundled, "installer is bundled in the exe");
+                Ok(Equalizer.TestBundledHashOk(), "bundled installer SHA-256 matches the official one");
+                sb.AppendLine("installed: " + (Equalizer.Installed ? Equalizer.InstalledVersion : "no") + " · dir " + (Equalizer.InstallDir ?? "—"));
+                var rel = await Equalizer.Latest();
+                Ok(rel != null && System.Version.TryParse(rel.Version, out _), "latest release parsed: " + rel?.Version + " " + rel?.Url);
+                Ok(rel?.Sha256?.Length == 64, "latest release has SHA-256");
+                Ok(Equalizer.IsNewer("1.4.10", "1.4.2") && !Equalizer.IsNewer("1.4.2", "1.4.2") && !Equalizer.IsNewer("1.3", "1.4.2") && Equalizer.IsNewer("1.5", "?"), "version compare");
+                var s = Store.Settings;
+                s.EqAutoGain = true; s.EqBoost = 0;
+                Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == -3, "preamp keeps loudness: +6 dB → −3 dB");
+                s.EqBoost = 4;
+                Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == 1, "volume boost +4 dB → +1 dB");
+                s.EqAutoGain = false; s.EqBoost = 0;
+                Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == -6.5, "old safe mode → −6.5 dB");
+            }
+            catch (Exception e) { sb.AppendLine("FATAL " + e); bad++; }
+            sb.AppendLine($"problems={bad}");
+            File.WriteAllText(output, sb.ToString());
+            return bad == 0 ? 0 : 3;
         }
 
         static async Task<int> AvTest(string output)

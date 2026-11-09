@@ -39,7 +39,9 @@ namespace NIsland.Services
                 while ((n = await s.ReadAsync(buf)) > 0) { total += n; if (sw.Elapsed.TotalSeconds > 12) break; }
             }
             double mbps = total * 8 / sw.Elapsed.TotalSeconds / 1e6;
-            return $"Загрузка ≈ {mbps:0.#} Мбит/с · задержка {ping:0} мс · скачано {total / 1e6:0.#} МБ (speed.cloudflare.com)";
+            var speedRes = $"Загрузка ≈ {mbps:0.#} Мбит/с · задержка {ping:0} мс · скачано {total / 1e6:0.#} МБ (speed.cloudflare.com)";
+            PcWatch.AddSpeed(speedRes);   // история скорости (/speedlog)
+            return speedRes;
         }
 
         public static async Task<string> PublicIp()

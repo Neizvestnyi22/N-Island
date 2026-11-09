@@ -493,6 +493,36 @@ namespace NIsland.Services
             }
         }
 
+        /// <summary>Громкость микрофона 0–1 (−1 — микрофона нет).</summary>
+        public double MicLevel
+        {
+            get
+            {
+                var m = Mic();
+                if (m == null) return -1;
+                try { m.GetMasterVolumeLevelScalar(out var v); return v; }
+                catch { return -1; }
+                finally { Marshal.ReleaseComObject(m); }
+            }
+            set
+            {
+                var m = Mic();
+                if (m == null) return;
+                try { var g = Guid.Empty; m.SetMasterVolumeLevelScalar((float)Math.Clamp(value, 0, 1), ref g); }
+                catch { }
+                finally { Marshal.ReleaseComObject(m); }
+            }
+        }
+
+        public void SetMicMute(bool mute)
+        {
+            var m = Mic();
+            if (m == null) return;
+            try { var g = Guid.Empty; m.SetMute(mute, ref g); }
+            catch { }
+            finally { Marshal.ReleaseComObject(m); }
+        }
+
         public bool ToggleMicMute()
         {
             var m = Mic();

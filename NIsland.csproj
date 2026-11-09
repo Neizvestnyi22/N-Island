@@ -12,7 +12,7 @@
     <AssemblyName>NIsland</AssemblyName>
     <RootNamespace>NIsland</RootNamespace>
     <ApplicationIcon>Assets\island.ico</ApplicationIcon>
-    <Version>2.3.5</Version>
+    <Version>2.4.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Product>N-Island</Product>
     <Company>@Ne1zvestny1i</Company>
@@ -42,6 +42,10 @@
     <Resource Include="Assets\island.ico" />
     <!-- словари интерфейса (генерирует tools/I18nGen) -->
     <EmbeddedResource Include="Assets\i18n\*.json" LogicalName="i18n.%(Filename).json" />
+    <!-- встроенный эквалайзер: официальный установщик Equalizer APO (GPL-2.0), build.ps1 скачивает его и сверяет SHA-256.
+         В git не хранится; в 32-битную сборку не входит (там нужен x86-установщик — он скачивается при нажатии) -->
+    <EmbeddedResource Include="obj\eqapo\EqualizerAPO-x64-1.4.2.exe" LogicalName="eqapo.x64.exe"
+                      Condition="Exists('obj\eqapo\EqualizerAPO-x64-1.4.2.exe') And '$(RuntimeIdentifier)' != 'win-x86'" />
   </ItemGroup>
 
   <ItemGroup>

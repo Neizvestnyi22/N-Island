@@ -49,6 +49,7 @@ namespace NIsland
             new("auto", "Автоматизация", "", "#636366", AutoSec),
             new("wifi", "Wi-Fi: анализ", "", "#0A84FF", WifiSec),
             new("osint", "OSINT и проверки", "", "#5E5CE6", OsintSec),
+            new("track", "Отслеживание и контроль", "\uE823", "#FF9F0A", TrackSec),
         };
 
         static readonly Dictionary<string, string> CenterKeywords = new()
@@ -68,6 +69,7 @@ namespace NIsland
             ["system"] = "модель процессор видеокарта серийный номер bios память",
             ["auto"] = "автоочистка напоминания сторож новичок уведомления",
             ["wifi"] = "wi-fi wifi вайфай сигнал канал роутер сети рядом устройства пинг качество скорость пароль qr хотспот 5 ггц",
+            ["track"] = "экранное время лимиты фокус будильник отчёт трафик сессии блокировка загрузки обои сторож нагрузка ip процессы слежка",
             ["osint"] = "osint фишинг ссылка whois домен dns сертификат поддомены архив wayback ip пароль утечка exif gps фото virustotal хэш вирус",
         };
 

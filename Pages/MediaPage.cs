@@ -91,6 +91,14 @@ namespace NIsland.Pages
             return b;
         }
 
+        /// <summary>Подпись текстовой кнопки (−10, +10, A–B). Раньше Content заменялся строкой, и она рисовалась значковым шрифтом кнопки —
+        /// в Segoe Fluent Icons нет цифр и букв, поэтому вместо «−10» были квадратики.</summary>
+        static void SetLabel(Button b, string text)
+        {
+            if (b.Content is TextBlock tb) tb.Text = text;
+            else b.Content = new TextBlock { Text = text, FontSize = 10.5, FontWeight = FontWeights.SemiBold, FontFamily = (FontFamily)Application.Current.Resources["UiFont"] };
+        }
+
         public MediaPage()
         {
             _art.Background = UI.Hex("#22FFFFFF");
@@ -418,10 +426,10 @@ namespace NIsland.Pages
             _next.IsEnabled = M.CanNext;
             _back10.Show(S.PlayerSeekButtons && M.CanSeek);
             _fwd10.Show(S.PlayerSeekButtons && M.CanSeek);
-            _back10.Content = "−" + MediaService.Step;
-            _fwd10.Content = "+" + MediaService.Step;
+            SetLabel(_back10, "−" + MediaService.Step);
+            SetLabel(_fwd10, "+" + MediaService.Step);
             _ab.Show(S.PlayerAbButton && M.CanSeek);
-            _ab.Content = M.LoopB != null ? "A–B ✓" : M.LoopA != null ? "A…" : "A–B";
+            SetLabel(_ab, M.LoopB != null ? "A–B ✓" : M.LoopA != null ? "A…" : "A–B");
             _ab.Foreground = M.LoopA != null ? (Brush)UI.Res("AccentBrush") ?? Brushes.White : Brushes.White;
             bool fav = M.IsFavorite;
             _fav.Content = fav ? "" : "";

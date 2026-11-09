@@ -114,6 +114,8 @@ namespace NIsland
                 }));
                 Antivirus.Start();
             });
+            Safe("pcwatch", PcWatch.Start);
+            Safe("eqcheck", () => _ = Equalizer.CheckForUpdateLater());
             Safe("mcp", () =>
             {
                 if (Array.IndexOf(e.Args, "--mcp-on") >= 0) Store.Settings.McpOn = true;

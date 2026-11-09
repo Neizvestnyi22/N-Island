@@ -383,6 +383,7 @@ namespace NIsland.Services
             _ = Task.Run(async () =>
             {
                 int fails = 0;
+                HookPcSync();   // изменения на ПК сами обновляют виджеты и пульты в чате
                 await SetCommands();
                 Greet();
                 while (!ct.IsCancellationRequested && Enabled && Ready && V("chat") != "" && V("token") == _loopToken)
@@ -503,7 +504,13 @@ namespace NIsland.Services
                 var sp = text.IndexOfAny(new[] { ' ', '\n' });
                 var cmd = (sp > 0 ? text[1..sp] : text[1..]).ToLowerInvariant();
                 if (cmd.Contains('@')) cmd = cmd[..cmd.IndexOf('@')];
-                await Reply(await Command(cmd, sp > 0 ? text[(sp + 1)..].Trim() : ""));
+                var cargs = sp > 0 ? text[(sp + 1)..].Trim() : "";
+                var cres = await Command(cmd, cargs);
+                if (cres?.Html != null)
+                {
+                    long mid = await Message(cres.Value.Html, cres.Value.Keys);
+                    if (cargs == "" && MenuOfCommand(cmd) is { } mn) TrackMenu(mn, mid);   // /music, /sound… — пульт обновляется сам
+                }
                 return;
             }
             if (ReplyButtons.Any(b => b.Label == text || T(b.Label) == text)) _await = null;
@@ -840,6 +847,8 @@ namespace NIsland.Services
                     return (await Shell(cmd == "ps", arg), null);
                 default:
                     if (cmd is "widget" or "widgets" or "pet") return await WidgetsCommand(cmd, arg);
+                    if (await Command5(cmd, arg) is { } r5) return r5;
+                    if (Commands5.Any(c => c.Cmd == cmd)) return null;   // файл уже отправлен
                     if (await Command4(cmd, arg) is { } r4) return r4;
                     if (Commands4.Any(c => c.Cmd == cmd) || cmd is "batreport" or "clipimg") return null;   // ответ уже отправлен файлом
                     if (await Command3(cmd, arg) is { } r3) return r3;
@@ -874,7 +883,10 @@ namespace NIsland.Services
                    "Утилиты: /conv 100 usd uah · /wiki · /clock Tokyo · /days 31.12 · /moon · /sun · /tomorrow · /password · /uuid · /hash · /b64 · /roll · /coin · /sw · /pomo · /sleeptimer 30 · /water\n" +
                    "Дела: /notes · /todos · /done 2 · /deltodo 2 · /notif · /clipclear\n" +
                    "Окна и звук: /close · /maximize · /minimize · /minall · /appvol · /volup · /voldown · /like · /desklyrics · /viz · /mascot · /icons · /restartapp\n\n" +
-                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 59 виджетов · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>📊 Отслеживание</b>\n/screentime · /week · /sessions · /batlog · /traffic · /wifilog · /usblog · /iplog · /downloads · /notifstats · /speedlog · /temps · /ramtop · /timeline · /report 21:00\n\n" +
+                   "<b>🎛 Контроль</b>\n/limits · /limit chrome 120 · /focusmode 25 · /watchproc steam · /alarm 07:30 Подъём · /alarms · /miclevel 70 · /wallnext · /awakefor 2 · /loadalert cpu 90 · /fixes\n" +
+                   "/prayer · /agenda · /shelf · /news · /privacy · /cleanscan\n\n" +
+                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 91 виджет · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
                    "<b>🖥 Программы и Windows</b>\n" +
                    "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
                    "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +
@@ -1191,6 +1203,7 @@ namespace NIsland.Services
                 await Task.Delay(head is "au" or "mx" or "br" ? 350 : head is "mu" ? 700 : 100);   // громкость и плеер обновляются не мгновенно
                 var (h, k) = await Menu(back);
                 await Edit(msgId, h, k);
+                TrackMenu(back, msgId);
             }
             return res;
         }
@@ -1207,6 +1220,7 @@ namespace NIsland.Services
                     if (await MenuAsWidget(rest)) return "🧩";
                     var (h, k) = await Menu(rest);
                     await Edit(msgId, h, k);
+                    TrackMenu(rest, msgId);
                     return "";
                 }
                 case "status!":

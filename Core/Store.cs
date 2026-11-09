@@ -259,8 +259,35 @@ namespace NIsland.Core
         public int WidgetLiveMin { get => _wLive; set => Set(ref _wLive, value); } int _wLive = 5;
         /// <summary>Всплывашка на острове, когда в Telegram нажимают в виджете персонажа.</summary>
         public bool TgWidgetToasts { get => _wToast; set => Set(ref _wToast, value); } bool _wToast = true;
+        /// <summary>Мини-персонаж танцует в виджете плеера, пока играет музыка.</summary>
+        public bool WidgetPetDance { get => _wPetDance; set => Set(ref _wPetDance, value); } bool _wPetDance = true;
         /// <summary>Предупредить, если сигнал Wi-Fi ниже N % (0 — не следить).</summary>
         public int WifiSignalAlert { get => _wifiAlert; set => Set(ref _wifiAlert, value); } int _wifiAlert;
+        // 2.4: отслеживание и контроль (PcWatch)
+        /// <summary>Считать экранное время, программы, трафик, заряд, сессии, USB, загрузки (всё хранится только на этом ПК, 14 дней).</summary>
+        public bool TrackOn { get => _trackOn; set => Set(ref _trackOn, value); } bool _trackOn = true;
+        /// <summary>Лимиты времени в программах: «chrome=120;steam=60» (минут в день).</summary>
+        public string AppLimits { get => _appLimits; set => Set(ref _appLimits, value); } string _appLimits = "";
+        /// <summary>Что делать, когда лимит исчерпан: warn — только предупредить, minimize — сворачивать окно.</summary>
+        public string LimitAction { get => _limitAct; set => Set(ref _limitAct, value); } string _limitAct = "warn";
+        /// <summary>Что сворачивать во время фокус-сессии (имена процессов через запятую).</summary>
+        public string FocusBlockApps { get => _focusApps; set => Set(ref _focusApps, value); } string _focusApps = "Telegram, Discord, steam";
+        /// <summary>Сообщать в Telegram о запуске и закрытии этих программ.</summary>
+        public string WatchProcs { get => _watchProcs; set => Set(ref _watchProcs, value); } string _watchProcs = "";
+        /// <summary>Будильники: «07:30|Подъём;13:00|Обед».</summary>
+        public string Alarms { get => _alarms; set => Set(ref _alarms, value); } string _alarms = "";
+        /// <summary>Ежедневный отчёт в Telegram в это время (ЧЧ:мм), пусто — не присылать.</summary>
+        public string DailyReportTime { get => _dailyRep; set => Set(ref _dailyRep, value); } string _dailyRep = "";
+        /// <summary>Сообщить в Telegram, если процессор загружен на N % и больше 5 минут подряд (0 — выкл).</summary>
+        public int LoadAlertCpu { get => _loadCpu; set => Set(ref _loadCpu, value); } int _loadCpu;
+        /// <summary>То же для памяти.</summary>
+        public int LoadAlertRam { get => _loadRam; set => Set(ref _loadRam, value); } int _loadRam;
+        /// <summary>Сообщить в Telegram, когда меняется внешний IP.</summary>
+        public bool IpAlert { get => _ipAlert; set => Set(ref _ipAlert, value); } bool _ipAlert;
+        /// <summary>Сообщить в Telegram о каждом новом файле в «Загрузках».</summary>
+        public bool DownloadsNotify { get => _dlNotify; set => Set(ref _dlNotify, value); } bool _dlNotify;
+        /// <summary>Папка с обоями для «следующие обои» (пусто — Изображения\Wallpapers или Изображения).</summary>
+        public string WallpaperFolder { get => _wallDir; set => Set(ref _wallDir, value); } string _wallDir = "";
         /// <summary>Жидкое стекло: чёткий яркий фон и преломление по краям.</summary>
         public bool LiquidGlass { get => _liquid; set => Set(ref _liquid, value); } bool _liquid = true;
         public int LiquidRefract { get => _liqRef; set => Set(ref _liqRef, value); } int _liqRef = 60;
@@ -491,6 +518,12 @@ namespace NIsland.Core
         public bool PgEq { get => _pgEq; set => Set(ref _pgEq, value); } bool _pgEq = true;
         public bool EqOn { get => _eqOn; set => Set(ref _eqOn, value); } bool _eqOn;
         public string EqGains { get => _eqGains; set => Set(ref _eqGains, value); } string _eqGains = "";
+        /// <summary>Не терять громкость: запас под подъём полос — половина самой большой прибавки, а не вся (раньше с басами звук становился заметно тише).</summary>
+        public bool EqAutoGain { get => _eqAutoGain; set => Set(ref _eqAutoGain, value); } bool _eqAutoGain = true;
+        /// <summary>Усиление громкости через эквалайзер, дБ (−6…+12): тихим динамикам ноутбука.</summary>
+        public int EqBoost { get => _eqBoost; set => Set(ref _eqBoost, value); } int _eqBoost;
+        /// <summary>Когда последний раз проверяли обновление Equalizer APO (yyyy-MM-dd).</summary>
+        public string EqApoChecked { get => _eqApoChecked; set => Set(ref _eqApoChecked, value); } string _eqApoChecked = "";
         public string EqPreset { get => _eqPreset; set => Set(ref _eqPreset, value); } string _eqPreset = "flat";
         /// <summary>Свой профиль эквалайзера для каждого устройства вывода (наушники, колонки).</summary>
         public bool EqPerDevice { get => _eqDev; set => Set(ref _eqDev, value); } bool _eqDev = true;
