@@ -467,7 +467,8 @@ namespace NIsland
         {
             if (Island.RenderTransform != _grow) { Island.RenderTransformOrigin = new Point(0.5, 0); Island.RenderTransform = _grow; }
             double to = on && S.IslandHoverGrow && _mode == Mode.Collapsed && !Modes.Hidden && !S.LiteMode ? 1.045 : 1;
-            if (Math.Abs(_grow.ScaleX - to) < 0.001 && !on) return;
+            // всегда запускаем анимацию к цели: раньше «уже почти 1» при раскрытии наведением пропускало сжатие, рост доигрывал до 104,5 %,
+            // и нижний ряд раскрытого острова (кнопки плеера) выходил за область окна, по которой Windows отдаёт клики
             var a = new DoubleAnimation(to, TimeSpan.FromMilliseconds(on ? 220 : 160)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
             _grow.BeginAnimation(ScaleTransform.ScaleXProperty, a);
             _grow.BeginAnimation(ScaleTransform.ScaleYProperty, a);

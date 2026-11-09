@@ -296,6 +296,21 @@ namespace NIsland.Services
             if (fwd2) Problems.Add("forward: forwarded without pressing the button first");
             log.AppendLine("forward: button, picker and forwardMessage checked");
 
+            // кнопки плеера через бота и виджеты — только с поддельным плеером (tools/SmtcFake), иначе тест музыкой не управляет
+            if (Environment.GetEnvironmentVariable("NISLAND_PLAYER_TEST") == "1")
+            {
+                for (int i = 0; i < 40 && !MediaService.I.HasSession; i++) await Task.Delay(250);
+                log.AppendLine("player test: session " + MediaService.I.HasSession + " · " + MediaService.I.TrackLine);
+                foreach (var (kind, q) in new[] { ("bot", "mu:play"), ("bot", "mu:play"), ("bot", "mu:next"), ("bot", "mu:prev"),
+                                                  ("widget", "c:player:play"), ("widget", "c:player:play"), ("widget", "c:player:next"), ("widget", "c:player:prev"),
+                                                  ("remote", "w:play"), ("remote", "w:play"), ("remote", "w:next"), ("remote", "w:prev") })
+                {
+                    var r = kind == "bot" ? await tg.TestCallback(q) : await tg.TestWidgetAction(q);
+                    log.AppendLine($"player {DateTime.Now:HH:mm:ss.fff} {kind} {q} → {Short(r ?? "")}");
+                    await Task.Delay(1300);
+                }
+            }
+
             // обработчик нажатий: ответ с состоянием + новое состояние в само сообщение; двойной тап — одно действие; чужой чат — ничего
             string WQ(string id, long chat, long msg, string data) =>
                 "{\"update_id\":10,\"widget_query\":{\"id\":\"" + id + "\",\"from\":{\"id\":42},\"chat\":{\"id\":" + chat + ",\"type\":\"private\"},\"message_id\":" + msg + ",\"chat_instance\":\"1\",\"data\":\"" + data + "\"}}";

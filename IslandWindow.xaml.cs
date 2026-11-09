@@ -985,6 +985,8 @@ namespace NIsland
 
         void Retarget(bool instant = false)
         {
+            // остров вне свёрнутого вида всегда в натуральную величину — иначе края не попадают в область кликов окна
+            if (_mode != Mode.Collapsed && Math.Abs(_grow.ScaleX - 1) > 0.0005) Grow(false);
             switch (_mode)
             {
                 case Mode.Expanded:

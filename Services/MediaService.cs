@@ -708,20 +708,63 @@ namespace NIsland.Services
 
         void Confirm() { _confirm.Stop(); _confirm.Start(); }
 
+        // Команды плеера. Windows отвечает, выполнилась ли команда: многие приложения (особенно браузеры — YouTube, VK, Яндекс Музыка)
+        // не поддерживают «переключить», но поддерживают отдельные «играть» и «пауза». Раньше ответ не проверялся — кнопка молча
+        // ничего не делала, а значок переключался. Теперь: переключатель → отдельная команда → мультимедийная клавиша Windows.
+
         public async void TogglePlay()
         {
-            if (_s == null) return;
+            if (_s == null) { PcControl.Hotkey("play"); return; }
             Rebase();
-            IsPlaying = !IsPlaying;
+            bool was;
+            try { was = _s.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing; } catch { was = IsPlaying; }
+            IsPlaying = !was;
             PlaybackChanged?.Invoke();
-            try { await _s.TryTogglePlayPauseAsync(); } catch { }
+            bool ok = false;
+            try
+            {
+                var c = _s.GetPlaybackInfo()?.Controls;
+                if (c == null || c.IsPlayPauseToggleEnabled) ok = await _s.TryTogglePlayPauseAsync();
+                if (!ok) ok = was ? await _s.TryPauseAsync() : await _s.TryPlayAsync();
+            }
+            catch { }
+            if (!ok) PcControl.Hotkey("play");   // приложение не приняло команду — как клавиша ⏯ на клавиатуре
             Confirm();
         }
 
-        public async void Play() { if (_s != null && !IsPlaying) { try { await _s.TryPlayAsync(); } catch { } Confirm(); } }
-        public async void Pause() { if (_s != null && IsPlaying) { try { await _s.TryPauseAsync(); } catch { } Confirm(); } }
-        public async void Next() { try { if (_s != null) await _s.TrySkipNextAsync(); } catch { } Confirm(); }
-        public async void Prev() { try { if (_s != null) await _s.TrySkipPreviousAsync(); } catch { } Confirm(); }
+        public async void Play()
+        {
+            if (_s == null || IsPlaying) return;
+            bool ok = false;
+            try { ok = await _s.TryPlayAsync(); if (!ok) ok = await _s.TryTogglePlayPauseAsync(); } catch { }
+            if (!ok) PcControl.Hotkey("play");
+            Confirm();
+        }
+
+        public async void Pause()
+        {
+            if (_s == null || !IsPlaying) return;
+            bool ok = false;
+            try { ok = await _s.TryPauseAsync(); if (!ok) ok = await _s.TryTogglePlayPauseAsync(); } catch { }
+            if (!ok) PcControl.Hotkey("play");
+            Confirm();
+        }
+
+        public async void Next()
+        {
+            bool ok = false;
+            try { if (_s != null) ok = await _s.TrySkipNextAsync(); } catch { }
+            if (!ok) PcControl.Hotkey("next");
+            Confirm();
+        }
+
+        public async void Prev()
+        {
+            bool ok = false;
+            try { if (_s != null) ok = await _s.TrySkipPreviousAsync(); } catch { }
+            if (!ok) PcControl.Hotkey("prev");
+            Confirm();
+        }
 
         public async void Seek(TimeSpan to)
         {
