@@ -119,7 +119,8 @@ namespace NIsland.Services
                 ("prayer", ""), ("agenda", ""), ("shelf", ""), ("shelf", "999"), ("news", ""), ("privacy", ""), ("widget", "экранное"), ("widget", "обои"),
                 // браузер: только просмотр и неверные аргументы (ничего не открывается и не нажимается)
                 ("browser", ""), ("tabs", ""), ("links", ""), ("fav", ""), ("fav", "add"), ("fav", "del 99"), ("fav", "zzz"), ("tab", "zzz"), ("scroll", "zzz"),
-                ("zoom", "zzz"), ("web", ""), ("incognito", ""), ("widget", "браузер"),   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
+                ("zoom", "zzz"), ("web", ""), ("incognito", ""), ("widget", "браузер"),
+                ("pagefind", ""), ("typein", ""), ("pagelink", ""), ("video", "zzz"), ("closebrowser", ""),   // снимок, пересказ и «из буфера» — не здесь: трогают браузер   // /close, /minall, /volup… меняют ПК — их проверяет только пульт без разрешений ниже
             };
             var queue = new Queue<string>();
             foreach (var (c, a) in cmds)
@@ -427,6 +428,7 @@ namespace NIsland.Services
                 tg.TestTrackMenu("music", 9002);
                 Sent.Clear();
                 await tg.TestFlush(new[] { "player" }, new[] { "music" });
+                string first; lock (Sent) first = Sent.LastOrDefault(s => s.Method == "editMessageWidgetData" && s.Json.Contains("\"message_id\":9001")).Json;
                 int wEdits, mEdits;
                 lock (Sent) { wEdits = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("9001")); mEdits = Sent.Count(s => s.Method == "editMessageText" && s.Json.Contains("9002")); }
                 if (wEdits != 1) Problems.Add($"pc sync: player widget edits {wEdits} (want 1)");
@@ -439,7 +441,10 @@ namespace NIsland.Services
                     wEdits = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("\"message_id\":9001"));
                     mEdits = Sent.Count(s => s.Method == "editMessageText" && s.Json.Contains("\"message_id\":9002"));
                 }
-                if (wEdits + mEdits != 0) Problems.Add($"pc sync: unchanged state still edited ({wEdits}+{mEdits})");
+                string second; lock (Sent) second = Sent.LastOrDefault(s => s.Method == "editMessageWidgetData" && s.Json.Contains("\"message_id\":9001")).Json;
+                // повторная правка — ошибка, только если состояние то же самое (за 2,5 с на ПК могло что-то правда поменяться: заряд, громкость)
+                if (mEdits != 0 || (wEdits != 0 && second == first)) Problems.Add($"pc sync: unchanged state still edited ({wEdits}+{mEdits})");
+                else if (wEdits != 0) log.AppendLine("pc sync: state changed between checks — re-edit is right");
                 log.AppendLine("pc sync: ok");
             }
             // ссылки из чата: что считается ссылкой и когда сообщение — «только ссылки»

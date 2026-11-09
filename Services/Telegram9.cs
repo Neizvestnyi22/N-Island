@@ -81,7 +81,8 @@ namespace NIsland.Services
             ["radios"] = new[] { "t" }, ["privacy"] = Array.Empty<string>(), ["prayer"] = Array.Empty<string>(), ["agenda"] = Array.Empty<string>(),
             ["shelf"] = new[] { "send" }, ["translate"] = new[] { "in", "to" }, ["cleanup"] = new[] { "scan", "clean" }, ["news"] = Array.Empty<string>(),
             ["browser"] = new[] { "back", "fwd", "reload", "newtab", "close", "reopen", "next", "prev", "up", "down", "top", "bottom", "zin", "zout", "z0", "full",
-                                  "play", "vmute", "in", "inc", "fav", "o", "w" },
+                                  "play", "vmute", "in", "inc", "fav", "o", "w", "view", "tab", "shot", "link", "sum", "find", "type", "clip",
+                                  "rw", "ff", "faster", "slower", "fc", "quit" },
         };
 
         internal static bool TestKnownOp(string kind, string head) => KnownOp(kind, head);
@@ -121,7 +122,7 @@ namespace NIsland.Services
             ["music"] = "player", ["sound"] = "mixer", ["outs"] = "audioout", ["eq"] = "eq", ["mixer"] = "mixer", ["screen"] = "display",
             ["power"] = "power", ["plans"] = "battery", ["net"] = "network", ["vpn"] = "vpn", ["timer"] = "timer", ["todo"] = "todo",
             ["modes"] = "modes", ["top"] = "apps", ["win"] = "windows", ["slides"] = "slides", ["mouse"] = "mouse", ["input"] = "keys",
-            ["av"] = "defender", ["clips"] = "clipboard", ["history"] = "history", ["jobs"] = "jobs", ["scenes"] = "scenes",
+            ["av"] = "defender", ["clips"] = "clipboard", ["history"] = "history", ["jobs"] = "jobs", ["scenes"] = "scenes", ["browser"] = "browser",
         };
 
         /// <summary>Кнопка меню при «Отвечать виджетами»: вместо экрана с кнопками — виджет новым сообщением.</summary>

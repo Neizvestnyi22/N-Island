@@ -850,6 +850,8 @@ namespace NIsland.Services
                     return (await Shell(cmd == "ps", arg), null);
                 default:
                     if (cmd is "widget" or "widgets" or "pet") return await WidgetsCommand(cmd, arg);
+                    if (await Command7(cmd, arg) is { } r7) return r7;
+                    if (Commands7.Any(c => c.Cmd == cmd)) return null;   // снимок уже отправлен
                     if (await Command6(cmd, arg) is { } r6) return r6;
                     if (await Command5(cmd, arg) is { } r5) return r5;
                     if (Commands5.Any(c => c.Cmd == cmd)) return null;   // файл уже отправлен
@@ -887,7 +889,8 @@ namespace NIsland.Services
                    "Утилиты: /conv 100 usd uah · /wiki · /clock Tokyo · /days 31.12 · /moon · /sun · /tomorrow · /password · /uuid · /hash · /b64 · /roll · /coin · /sw · /pomo · /sleeptimer 30 · /water\n" +
                    "Дела: /notes · /todos · /done 2 · /deltodo 2 · /notif · /clipclear\n" +
                    "Окна и звук: /close · /maximize · /minimize · /minall · /appvol · /volup · /voldown · /like · /desklyrics · /viz · /mascot · /icons · /restartapp\n\n" +
-                   "<b>🧭 Браузер</b>\nПришли ссылку — откроется на ПК · /browser — пульт · /tab next · /back · /reload · /web котики · /incognito сайт · /links · /fav · /scroll down · /zoom in\n\n" +
+                   "<b>🧭 Браузер</b>\nПришли ссылку — откроется на ПК · /browser — пульт · /tabs — вкладки · /tab next · /back · /reload · /web котики · /incognito сайт · /links · /fav · /scroll down · /zoom in\n" +
+                   "/pagefind слово · /typein текст · /pageshot · /pagelink · /summary — кратко о странице · /fromclip · /video ff · /closebrowser\n\n" +
                    "<b>📊 Отслеживание</b>\n/screentime · /week · /sessions · /batlog · /traffic · /wifilog · /usblog · /iplog · /downloads · /notifstats · /speedlog · /temps · /ramtop · /timeline · /report 21:00\n\n" +
                    "<b>🎛 Контроль</b>\n/limits · /limit chrome 120 · /focusmode 25 · /watchproc steam · /alarm 07:30 Подъём · /alarms · /miclevel 70 · /wallnext · /awakefor 2 · /loadalert cpu 90 · /fixes\n" +
                    "/prayer · /agenda · /shelf · /news · /privacy · /cleanscan\n\n" +
@@ -917,9 +920,11 @@ namespace NIsland.Services
                           Row(B("⚙️ Система", "nav:sys"), B("⚡ Питание", "nav:power"), B("🌐 Сеть", "nav:net")),
                           Row(B("🧰 Полезное", "nav:tools"), B("🧠 ИИ", "nav:ai"), B("🎬 Сценарии", "nav:scenes")),
                           Row(B("📡 Живая панель", "do2:live"), B("✨ Ещё", "nav:more"), B("🔧 Настройки", "nav:set")),
-                          Row(B("🧩 Виджеты", "nav:widgets"), B("🔄 Обновить", "nav:main"))));
+                          Row(B("🧩 Виджеты", "nav:widgets"), B("🧭 Браузер", "nav:browser"), B("🔄 Обновить", "nav:main"))));
                 case "widgets":
                     return WidgetsMenu();
+                case "browser":
+                    return (await BrowserPanel(), BrowserKeys());
 
                 case "music":
                 {

@@ -18,7 +18,7 @@ namespace NIsland.Services
     /// прокрутка, масштаб, видео, текущий адрес. Клавиши уходят только в окно браузера: сначала оно выходит на передний план,
     /// и если Windows не отдала ему фокус — ничего не нажимается.
     /// </summary>
-    static class Browser
+    static partial class Browser
     {
         /// <summary>Процессы браузеров → имя для показа.</summary>
         static readonly Dictionary<string, string> Known = new(StringComparer.OrdinalIgnoreCase)

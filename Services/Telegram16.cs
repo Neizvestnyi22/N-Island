@@ -29,8 +29,12 @@ namespace NIsland.Services
             Row(B("⏫", "bw:k:top"), B("⬆", "bw:k:up"), B("⬇", "bw:k:down"), B("⏬", "bw:k:bottom")),
             Row(B("🔍−", "bw:k:zout"), B("100%", "bw:k:z0"), B("🔍+", "bw:k:zin"), B("⛶", "bw:k:full")),
             Row(B("⏯ Видео", "bw:k:play"), B("🔇", "bw:k:vmute"), B("↩ Вкладку", "bw:k:reopen")),
+            Row(B("📑 Вкладки", "bw:tl"), B("📸 Снимок", "bw:s"), B("🔗 Ссылку сюда", "bw:l")),
+            Row(B("🧠 Кратко", "bw:sum"), B("🔎 Найти", "ask:pagefind"), B("⌨️ Ввести", "ask:typein")),
+            Row(B("⏪ 10", "bw:v:rw"), B("⏩ 10", "bw:v:ff"), B("🐢", "bw:v:slower"), B("🐇", "bw:v:faster")),
+            Row(B("📋 Из буфера ПК", "bw:clip"), B("⭐ Сюда", "bw:fc"), B("⏻ Закрыть", "bw:q")),
             Row(B("🌐 Открыть ссылку", "ask:web"), B("🕵 Инкогнито", "ask:incognito")),
-            Row(B("🧩 Виджет", "wg:browser"), B("🔄", "bw:p")));
+            Row(B("🧩 Виджет", "wg:browser"), B("🔄", "bw:p"), B("⬅️ Назад", "nav:main")));
 
         /// <summary>Текст пульта браузера: активная вкладка, адрес, окна.</summary>
         async Task<string> BrowserPanel()
@@ -51,7 +55,7 @@ namespace NIsland.Services
             arg = arg.Trim();
             switch (cmd)
             {
-                case "browser": case "tabs":
+                case "browser":
                     return (await BrowserPanel(), BrowserKeys());
                 case "tab":
                 {
@@ -209,85 +213,12 @@ namespace NIsland.Services
                     return T("⭐ В избранном");
                 }
             }
-            return Stale;
-        }
-
-        // ------------------------------------------------------------------
-        //  Виджет «🧭 Браузер»
-        // ------------------------------------------------------------------
-
-        Dictionary<string, object> CardState5(string kind)
-        {
-            if (kind != "browser") return null;
-            var ws = Browser.Windows();
-            var t = ws.FirstOrDefault(w => w.Active) ?? ws.FirstOrDefault(w => !w.Minimized) ?? ws.FirstOrDefault();
-            var d = Card(kind, "🧭 Браузер", t == null ? T("не открыт — пришли ссылку в чат") : Browser.NameOf(t.Process) + " · " + T("окон") + ": " + ws.Count);
-            if (t != null)
-            {
-                CRows(d).Add(new object[] { "t", "📄 " + Cut(Browser.TabTitle(t), 70) });
-                var url = WC<string>("burl");
-                if (url == null || (DateTime.Now - WCAt("burl")).TotalSeconds > 4) WCSet("burl", url = Browser.CurrentUrl(t, 1500) ?? "");
-                if (url != "") CRows(d).Add(new object[] { "y", "📋", Cut(url, 110) });
-            }
-            Btns(d, Bt("◀", "back"), Bt("↻", "reload"), Bt("▶", "fwd"));
-            Btns(d, Bt("⇤", "prev"), Bt("➕", "newtab"), Bt("✖", "close"), Bt("⇥", "next"));
-            Btns(d, Bt("⏫", "top"), Bt("⬆", "up"), Bt("⬇", "down"), Bt("⏬", "bottom"));
-            Btns(d, Bt("−", "zout"), Bt("100%", "z0"), Bt("+", "zin"), Bt("⛶", "full"));
-            Btns(d, Bt("⏯", "play"), Bt("🔇", "vmute"), Bt("↩", "reopen"));
-            Btns(d, Bt("✍️ Ссылка или поиск", "in", "p"), Bt("🕵", "inc"));
-            var favs = Browser.Favs().Take(4).ToList();
-            if (favs.Count > 0) Btns(d, favs.Select((f, i) => Bt("⭐" + Cut(f.Name, 9), "fav|" + i)).ToArray());
-            foreach (var w in ws.Where(w => t != null && w.Handle != t.Handle).Take(2))
-                CRows(d).Add(new object[] { "l", "🪟 " + Cut(Browser.TabTitle(w), 30), "w|" + WHash(w.Handle.ToString()), "→" });
-            foreach (var u in Browser.Recent().Take(3))
-                CRows(d).Add(new object[] { "l", "🕘 " + Cut(Browser.Short(u), 30), "o|" + WHash(u), "↗" });
-            return d;
-        }
-
-        async Task<string> CardAction5(string kind, string head, string arg)
-        {
-            if (kind != "browser") return null;
-            WCSet("burl", null);
-            switch (head)
-            {
-                case "inc":
-                    Await("w:browserp");
-                    await Message("🕵 Пришли ссылку или что найти — открою в режиме инкогнито (отмена: «-»)");
-                    return T("✍️ Напиши в чат");
-                case "fav" when int.TryParse(arg, out var fi):
-                {
-                    var f = Browser.Favs().ElementAtOrDefault(fi);
-                    if (f.Url == null) return T("Нет такого сайта в избранном");
-                    var r = await Ui(() => Browser.Open(f.Url));
-                    await Task.Delay(600);
-                    return r != null ? T(r) : "⭐ " + f.Name;
-                }
-                case "o":
-                {
-                    var u = Browser.Recent().FirstOrDefault(x => WHash(x) == arg);
-                    if (u == null) return T("Ссылки уже нет в списке");
-                    var r = await Ui(() => Browser.Open(u));
-                    await Task.Delay(600);
-                    return r != null ? T(r) : "↗ " + Cut(Browser.Short(u), 40);
-                }
-                case "w":
-                {
-                    var w = Browser.Windows().FirstOrDefault(x => WHash(x.Handle.ToString()) == arg);
-                    if (w == null) return T("Окно уже закрыто");
-                    var r = await Task.Run(() => Browser.FocusWindow(w.Handle));
-                    await Task.Delay(300);
-                    return r != null ? T(r) : "🪟";
-                }
-                default:
-                    if (!Browser.Keys.ContainsKey(head)) return null;
-                    var res = await Task.Run(() => Browser.Press(head));
-                    await Task.Delay(head is "reload" or "back" or "fwd" or "newtab" or "close" or "reopen" or "next" or "prev" or "full" ? 600 : 150);
-                    return res != null ? T(res) : null;
-            }
+            return await BrowserCallback2(op, val, msgId) ?? Stale;
         }
 
         async Task<(string Html, object Keys)?> WidgetInput5(string kind, string text)
         {
+            if (kind is "browserf" or "browsert") return await WidgetInput7(kind, text);
             if (kind is not ("browser" or "browserp")) return null;
             var r = await Ui(() => Browser.OpenOrSearch(text, kind == "browserp" ? Browser.Mode.Private : Browser.Mode.Normal));
             WCSet("burl", null);
