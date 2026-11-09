@@ -225,7 +225,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     if (items.Count == 0) CRows(d).Add(new object[] { "t", T("VPN-программы не найдены") });
                     foreach (var i in items.Take(6))
                         CRows(d).Add(new object[] { "l", (i.State == VpnState.On ? "🟢 " : i.State == VpnState.Connecting ? "🟡 " : "⚪ ") + Cut(i.Name, 26),
-                            i.Switch != null ? "v|" + Cut(i.Key, 50) : null, T(i.State == VpnState.On ? "Выкл" : "Вкл") });
+                            i.Switch != null ? "v|" + WHash(i.Key) : null, T(i.State == VpnState.On ? "Выкл" : "Вкл") });
                     Btns(d, Bt("🌐 Проверить IP", "ip"), Bt("⟳", "ref"));
                     return d;
                 }
@@ -297,7 +297,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     var items = Maint.Startup();
                     d = Card(kind, "🚀 Автозагрузка", T("включено: ") + items.Count(i => i.Enabled) + " / " + items.Count);
                     foreach (var i in items.OrderByDescending(i => i.CanToggle).Take(9))
-                        CRows(d).Add(new object[] { "l", (i.Enabled ? "🟢 " : "⚪ ") + Cut(i.Name, 26), i.CanToggle ? "s|" + Cut(i.Name, 60) : null, T(i.Enabled ? "Выкл" : "Вкл") });
+                        CRows(d).Add(new object[] { "l", (i.Enabled ? "🟢 " : "⚪ ") + Cut(i.Name, 26), i.CanToggle ? "s|" + WHash(i.Name) : null, T(i.Enabled ? "Выкл" : "Вкл") });
                     Btns(d, Bt("⟳", "ref"));
                     return d;
                 }
@@ -319,7 +319,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     else if (WC<string>("upgErr") is { } err) CRows(d).Add(new object[] { "t", "⚠️ " + Cut(T(err), 120) });
                     else if (r?.Count == 0) CRows(d).Add(new object[] { "t", T("✓ Всё обновлено") });
                     foreach (var u in (r ?? new()).Take(7))
-                        CRows(d).Add(new object[] { "l", $"{Cut(u.Name, 20)} · {Cut(u.Current, 9)} → {Cut(u.Available, 9)}", "u|" + Cut(u.Id, 60), "⬆" });
+                        CRows(d).Add(new object[] { "l", $"{Cut(u.Name, 20)} · {Cut(u.Current, 9)} → {Cut(u.Available, 9)}", "u|" + WHash(u.Id), "⬆" });
                     Btns(d, Bt("🔍 Проверить", "run"));
                     return d;
                 }
@@ -429,7 +429,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     return null;
                 case ("vpn", "v"):
                 {
-                    var item = Vpn.Items.FirstOrDefault(x => x.Key == arg || Cut(x.Key, 50) == arg);
+                    var item = Vpn.Items.FirstOrDefault(x => WHash(x.Key) == arg);
                     if (item == null) return T("Нет такого подключения");
                     bool on = item.State != VpnState.On;
                     Bg("vpn", async () => T(await await Ui(() => Vpn.Set(item, on))));
@@ -444,7 +444,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                 case ("health", "run"): Bg("health", HealthCheck); return null;
                 case ("startup", "s"):
                 {
-                    var it = Maint.Startup().FirstOrDefault(x => x.CanToggle && (x.Name == arg || Cut(x.Name, 60) == arg));
+                    var it = Maint.Startup().FirstOrDefault(x => x.CanToggle && WHash(x.Name) == arg);
                     if (it == null) return T("Нет такой записи");
                     await Task.Run(() => Maint.SetStartup(it, !it.Enabled));
                     return (it.Enabled ? "⚪ " : "🟢 ") + it.Name;
@@ -460,7 +460,8 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                 case ("upgrades", "run"): Bg("upgrades", CheckUpgrades); return null;
                 case ("upgrades", "u"):
                 {
-                    if (!Regex.IsMatch(arg, @"^[\w.+-]{1,100}$")) return null;
+                    arg = (WC<List<WingetUpgrade>>("upg") ?? new()).FirstOrDefault(x => WHash(x.Id) == arg)?.Id ?? "";
+                    if (!Regex.IsMatch(arg, @"^[\w.+-]{1,100}$")) return T("Список устарел — нажми «Проверить»");
                     Bg("upgrades", async () =>
                     {
                         var o = await Task.Run(() => Winget($"upgrade --id {arg} -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity", 600000));

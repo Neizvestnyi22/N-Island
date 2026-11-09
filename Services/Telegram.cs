@@ -47,6 +47,7 @@ namespace NIsland.Services
             new HubField("boot", "Сообщать, что ПК включился", "сообщение при запуске N-Island", "bool", Required: false, Default: "1"),
             new HubField("unlock", "Сообщать о входе, блокировке и пробуждении", "видно, если ноутбуком пользуется кто-то другой", "bool", Required: false, Default: "0"),
             new HubField("aitext", "Обычный текст — вопрос ИИ", "иначе текст показывается в острове; ИИ — /ai вопрос", "bool", Required: false, Default: "0"),
+            new HubField("widgets_default", "Отвечать виджетами", "Где можно — виджетом, а не сообщением: /music, /weather, /todos, /timer, /vpn и ещё 34 команды без аргументов. Если Telegram виджет не примет — обычное сообщение", "bool", Required: false, Default: "0"),
             new HubField("rich", "Новое оформление сообщений", "Rich Messages из Bot API 10: заголовки, таблицы, ответы ИИ с разметкой. Если Telegram их не примет — обычный текст", "bool", Required: false, Default: "1"),
             new HubField("kbd", "Кнопки внизу чата", "Пульт, Статус, Музыка, Экран, Окна, Блок", "bool", Required: false, Default: "1"),
             new HubField("quiet", "Тихие часы", "например 23-8 — сообщения в это время приходят без звука", Required: false),
@@ -310,7 +311,7 @@ namespace NIsland.Services
 
         static readonly (string Cmd, string Desc)[] Commands =
         {
-            ("menu", "Пульт ПК кнопками"), ("widget", "Живой пульт-виджет в чате"), ("widgets", "Все виджеты (45)"), ("pet", "Персонаж острова в чате"), ("status", "Состояние ПК"), ("music", "Музыка и кнопки"), ("vol", "Громкость: /vol 40"),
+            ("menu", "Пульт ПК кнопками"), ("widget", "Живой пульт-виджет в чате"), ("widgets", "Все виджеты (59)"), ("pet", "Персонаж острова в чате"), ("status", "Состояние ПК"), ("music", "Музыка и кнопки"), ("vol", "Громкость: /vol 40"),
             ("screenshot", "Снимок экрана"), ("windows", "Открытые окна"), ("keys", "Клавиши и мышь"), ("type", "Напечатать текст на ПК"),
             ("files", "Файлы на ПК"), ("search", "Найти файл: /search отчёт"), ("top", "Что грузит ПК"), ("power", "Питание: сон, выключение"),
             ("lock", "Заблокировать ПК"), ("sysinfo", "О компьютере"), ("ip", "IP, Wi-Fi и VPN"), ("weather", "Погода"),
@@ -548,6 +549,10 @@ namespace NIsland.Services
         {
             var m = MediaService.I;
             string no;
+            // ответ в чат после «✍️» в виджете; «w:» нельзя набрать как команду
+            if (cmd.StartsWith("w:")) return await WidgetInput(cmd[2..], arg);
+            // настройка «Отвечать виджетами»: команда без аргументов, у которой есть виджет
+            if (await AnswerAsWidget(cmd, arg)) return null;
             switch (cmd)
             {
                 case "start":
@@ -866,7 +871,7 @@ namespace NIsland.Services
                    "Утилиты: /conv 100 usd uah · /wiki · /clock Tokyo · /days 31.12 · /moon · /sun · /tomorrow · /password · /uuid · /hash · /b64 · /roll · /coin · /sw · /pomo · /sleeptimer 30 · /water\n" +
                    "Дела: /notes · /todos · /done 2 · /deltodo 2 · /notif · /clipclear\n" +
                    "Окна и звук: /close · /maximize · /minimize · /minall · /appvol · /volup · /voldown · /like · /desklyrics · /viz · /mascot · /icons · /restartapp\n\n" +
-                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 45 виджетов · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 59 виджетов · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
                    "<b>🖥 Программы и Windows</b>\n" +
                    "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
                    "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +
@@ -892,7 +897,9 @@ namespace NIsland.Services
                           Row(B("⚙️ Система", "nav:sys"), B("⚡ Питание", "nav:power"), B("🌐 Сеть", "nav:net")),
                           Row(B("🧰 Полезное", "nav:tools"), B("🧠 ИИ", "nav:ai"), B("🎬 Сценарии", "nav:scenes")),
                           Row(B("📡 Живая панель", "do2:live"), B("✨ Ещё", "nav:more"), B("🔧 Настройки", "nav:set")),
-                          Row(B("🔄 Обновить", "nav:main"))));
+                          Row(B("🧩 Виджеты", "nav:widgets"), B("🔄 Обновить", "nav:main"))));
+                case "widgets":
+                    return WidgetsMenu();
 
                 case "music":
                 {

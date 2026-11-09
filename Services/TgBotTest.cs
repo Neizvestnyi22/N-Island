@@ -53,6 +53,7 @@ namespace NIsland.Services
         }
 
         static string output = "";
+        static int WidgetSends, widgetButtons;
         static async Task Body(StringBuilder log)
         {
             var tg = (TelegramHub)Integrations.Get("telegram");
@@ -202,15 +203,55 @@ namespace NIsland.Services
                 int sb = Encoding.UTF8.GetByteCount(st);
                 if (sb > 1024) Problems.Add($"widget {wk.Key}: state {sb} > 1024 bytes");
                 if (ms.Length > 3900) Problems.Add($"widget {wk.Key}: html compressed {ms.Length} > 3900");
-                try { JsonDocument.Parse(st).Dispose(); } catch { Problems.Add($"widget {wk.Key}: state not JSON"); }
+                try
+                {
+                    using var sd = JsonDocument.Parse(st);
+                    // каждая кнопка и каждая строка с кнопкой должны вести к действию, которое этот вид умеет
+                    if (sd.RootElement.TryGetProperty("k", out _) && !(wk.Key is "remote" or "pet"))
+                    {
+                        if (!TelegramHub.TestHasOps(wk.Key)) Problems.Add($"widget {wk.Key}: no action list (WOps)");
+                        var qs = new List<string>();
+                        if (sd.RootElement.TryGetProperty("b", out var bs))
+                            foreach (var row in bs.EnumerateArray()) foreach (var b in row.EnumerateArray()) qs.Add(b[1].GetString());
+                        if (sd.RootElement.TryGetProperty("r", out var rs))
+                            foreach (var row in rs.EnumerateArray())
+                                if (row[0].GetString() == "l" && row.GetArrayLength() > 2 && row[2].ValueKind == JsonValueKind.String) qs.Add(row[2].GetString());
+                        foreach (var q in qs)
+                        {
+                            var head = q.Contains('|') ? q[..q.IndexOf('|')] : q;
+                            if (!TelegramHub.TestKnownOp(wk.Key, head)) Problems.Add($"widget {wk.Key}: button '{q}' has no action");
+                            if (Encoding.UTF8.GetByteCount("c:" + wk.Key + ":" + q) > 64) Problems.Add($"widget {wk.Key}: query '{q}' longer than 64 bytes");
+                        }
+                        widgetButtons += qs.Count;
+                    }
+                }
+                catch (Exception e) { Problems.Add($"widget {wk.Key}: state not JSON ({e.GetType().Name})"); }
                 var ans = await tg.TestWidgetAction("c:" + wk.Key + ":ref");
                 if (!(wk.Key is "remote" or "pet") && ans == null) Problems.Add($"widget {wk.Key}: ref gave no state");
                 log.AppendLine($"widget {wk.Key,-10} html={raw.Length} zlib={ms.Length} state={sb}");
-                var stub = "<script>window.TelegramWidget={chatData:" + JsonSerializer.Serialize(st) + ",onEvent:function(){},copyText:function(){},request:function(q){document.title=q;return Promise.resolve({result:null})}};</script>";
+                var stub = "<script>window.__q=[];window.TelegramWidget={chatData:" + JsonSerializer.Serialize(st) + ",onEvent:function(){},copyText:function(){},request:function(q){__q.push(q);document.title=q;return Promise.resolve({result:null})}};</script>";
                 File.WriteAllText(Path.Combine(wdir, wk.Key + ".html"), html.Replace("<head>", "<head>" + stub));
                 index.Append($"<div class=w><span>{wk.Name}</span><iframe src=\"{wk.Key}.html\" width={wk.W} height={(wk.H == 0 ? 360 : wk.H)}></iframe></div>");
             }
             File.WriteAllText(Path.Combine(wdir, "index.html"), index.ToString());
+            log.AppendLine($"widget buttons checked: {widgetButtons}");
+            // список действий каждого вида — для проверки нажатий в браузере (widgets/ops.json)
+            File.WriteAllText(Path.Combine(wdir, "ops.json"), JsonSerializer.Serialize(TelegramHub.TestKinds.ToDictionary(k => k.Key,
+                k => new[] { "ref" }.Concat(TelegramHub.WOps.TryGetValue(k.Key, out var o) ? o : Array.Empty<string>()).ToArray())));
+            // «Отвечать виджетами»: команды без аргументов уходят виджетом (Command возвращает null и вызывает sendWidget)
+            tg.Cfg.Values["widgets_default"] = "1";
+            foreach (var c in new[] { "music", "weather", "todos", "timer", "notes", "jobs", "keys", "clock" })
+            {
+                int before = WidgetSends;
+                var r = await tg.TestCommand(c, "");
+                if (r?.Html != null || WidgetSends == before) Problems.Add($"widgets_default: /{c} did not answer with a widget");
+            }
+            if ((await tg.TestCommand("weather", "Kyiv"))?.Html == null && WidgetSends > 0) log.AppendLine("widgets_default: /weather with arg → message (ok if not null)");
+            tg.Cfg.Values["widgets_default"] = "0";
+            int b0 = WidgetSends;
+            await tg.TestCommand("music", "");
+            if (WidgetSends != b0) Problems.Add("widgets_default off: /music still sent a widget");
+            log.AppendLine($"widgets_default: ok, sends={WidgetSends}");
             // персонаж собирается под скин, аксессуар и эмоцию — самый тяжёлый вариант тоже должен влезать в 4 КБ
             foreach (var pSk in new[] { "blob", "cat", "ghost", "robot", "bunny" })
                 foreach (var ht in new[] { "auto", "none", "cap", "crown", "bow", "party", "santa", "headphones", "glasses", "flower" })
@@ -276,6 +317,7 @@ namespace NIsland.Services
             }
             if (method == "sendWidget")
             {
+                System.Threading.Interlocked.Increment(ref WidgetSends);
                 var html = r.TryGetProperty("html", out var wh) ? wh.GetString() ?? "" : "";
                 var raw = Encoding.UTF8.GetBytes(html);
                 using var ms = new System.IO.MemoryStream();

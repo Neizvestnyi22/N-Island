@@ -54,7 +54,7 @@ g+=bar('VOL',d.mu?0:d.vol|0,'var(--tg-theme-button-color,#3390ec)',d.mu?'off':(d
 function tick(){var d=D;if(!d.dur){$('pr').style.width=0;$('a').textContent=$('z').textContent='';return}
 var p=d.pos+(d.p?(Date.now()-t0)/1e3:0);p=Math.min(p,d.dur);$('pr').style.width=(p/d.dur*100)+'%';$('a').textContent=f(p);$('z').textContent=f(d.dur)}
 function load(s){try{D=JSON.parse(s||'{}');t0=Date.now();show();$('s').textContent=D.e||''}catch(e){}}
-if(T){load(T.chatData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}
+if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}
 document.querySelectorAll('button').forEach(function(b){b.onclick=function(){if(!T)return;$('s').textContent='…';
 T.request('w:'+b.dataset.q).then(function(a){$('s').textContent='';if(a.result)load(a.result)},function(e){$('s').textContent=e.code==='NOT_ALLOWED'?'🔐 не разрешено':'⚠ '+e.code})}});
 setInterval(tick,1000);
