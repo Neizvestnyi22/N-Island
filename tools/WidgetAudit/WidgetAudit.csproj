@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable></PropertyGroup>
+  <ItemGroup><Compile Include="../../Core/WidgetTools.cs" Link="WidgetTools.cs"/><Compile Include="../../Core/WidgetPolicy.cs" Link="WidgetPolicy.cs"/><Compile Include="../../Core/WidgetText.cs" Link="WidgetText.cs"/></ItemGroup>
+</Project>

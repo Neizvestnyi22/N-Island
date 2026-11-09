@@ -21,7 +21,7 @@ namespace NIsland.Services
         /// <summary>Какие действия умеет каждый вид ("#" — число, "ref" есть у всех). Пустой список — только просмотр.</summary>
         internal static readonly Dictionary<string, string[]> WOps = new()
         {
-            ["player"] = new[] { "prev", "next", "play", "like", "back", "fwd", "shuffle", "repeat", "ab", "vu", "vd", "mute", "sleep" },
+            ["player"] = new[] { "prev", "next", "play", "like", "back", "fwd", "shuffle", "repeat", "ab", "vu", "vd", "mute", "sleep", "rate", "source" },
             ["lyrics"] = new[] { "prev", "next", "play", "back", "fwd", "like" },
             ["mixer"] = new[] { "vu", "vd", "mute", "m", "v" },
             ["eq"] = new[] { "p", "toggle" },
@@ -80,14 +80,14 @@ namespace NIsland.Services
             ["awake"] = new[] { "on", "off", "h" }, ["guard"] = new[] { "cpu", "ram" },
             ["radios"] = new[] { "t" }, ["privacy"] = Array.Empty<string>(), ["prayer"] = Array.Empty<string>(), ["agenda"] = Array.Empty<string>(),
             ["shelf"] = new[] { "send" }, ["translate"] = new[] { "in", "to" }, ["cleanup"] = new[] { "scan", "clean" }, ["news"] = Array.Empty<string>(),
-            ["menu"] = new[] { "cat", "go" }, ["events"] = new[] { "clear", "snooze", "dl" },
+            ["menu"] = new[] { "cat", "go", "page" }, ["events"] = new[] { "clear", "snooze", "dl" },
             ["browser"] = new[] { "back", "fwd", "reload", "newtab", "close", "reopen", "next", "prev", "up", "down", "top", "bottom", "zin", "zout", "z0", "full",
                                   "play", "vmute", "in", "inc", "fav", "o", "w", "view", "tab", "shot", "link", "sum", "find", "type", "clip",
                                   "rw", "ff", "faster", "slower", "fc", "quit" },
         };
 
         internal static bool TestKnownOp(string kind, string head) => KnownOp(kind, head);
-        internal static bool TestHasOps(string kind) => WOps.ContainsKey(kind);
+        internal static bool TestHasOps(string kind) => WOps.ContainsKey(kind) || WidgetTools.Find(kind) != null;
         internal static IEnumerable<string> TestDefaultCmds => WDefaults.Keys;
 
         static bool KnownOp(string kind, string head) =>

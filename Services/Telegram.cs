@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -43,6 +43,7 @@ namespace NIsland.Services
             new HubField("screen", "Снимок экрана", "всех мониторов или активного окна", "bool", Required: false, Default: "0"),
             new HubField("camera", "Камера и местоположение", "найти пропавший ноутбук: фото с камеры и точка на карте (на ПК появится уведомление)", "bool", Required: false, Default: "0"),
             new HubField("power", "Питание", "блокировка, сон, гибернация, выход, перезагрузка и выключение (с подтверждением)", "bool", Required: false, Default: "0"),
+            new HubField("friend_games", "Сервер игр с друзьями", "/games и приглашения — только игры, без доступа к ПК. Работает, пока N-Island включён. Порты открывать не нужно.", "bool", Required: false, Default: "1"),
             new HubField("shell", "Команды Windows (опасно)", "/cmd и /ps — любая команда, как в консоли. Включай, только если токен бота никому не известен", "bool", Required: false, Default: "0"),
             new HubField("boot", "Сообщать, что ПК включился", "сообщение при запуске N-Island", "bool", Required: false, Default: "1"),
             new HubField("unlock", "Сообщать о входе, блокировке и пробуждении", "видно, если ноутбуком пользуется кто-то другой", "bool", Required: false, Default: "0"),
@@ -329,7 +330,7 @@ namespace NIsland.Services
             if (_commandsSet) return;
             try
             {
-                await Call("setMyCommands", new { commands = Commands.Concat(Commands2).Concat(Commands3).Take(100).Select(c => new { command = c.Cmd, description = T(c.Desc) }).ToArray() });
+                await Call("setMyCommands", new { commands = Commands.Where(c => c.Cmd is "start" or "menu" or "help").Concat(new[] { (Cmd: "games", Desc: "Игры с друзьями по приглашению"), (Cmd: "widgets", Desc: "Каталог виджетов"), (Cmd: "widget", Desc: "Открыть виджет: /widget имя") }).Concat(Commands).Concat(Commands2).Concat(Commands3).DistinctBy(c => c.Cmd).Take(100).Select(c => new { command = c.Cmd, description = T(c.Desc) }).ToArray() });
                 _commandsSet = true;
             }
             catch { }
@@ -396,7 +397,7 @@ namespace NIsland.Services
                     try
                     {
                         long.TryParse(St("offset"), out var offset);
-                        var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query", "widget_query", "inline_query" } }, ct);
+                        var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query", "widget_query", "shared_widget_query", "inline_query" } }, ct);
                         foreach (var u in res.EnumerateArray())
                         {
                             offset = Math.Max(offset, u.GetProperty("update_id").GetInt64() + 1);
@@ -484,6 +485,13 @@ namespace NIsland.Services
 
         async Task Handle(JsonElement u)
         {
+            if (u.TryGetProperty("shared_widget_query", out var sq))
+            {
+                // Never run PC commands from a forwarded copy. Always release the client's query spinner.
+                try { await Call("answerWidgetQuery", new { widget_query_id = Integrations.S(sq, "id") }); } catch { }
+                return;
+            }
+            if (await FriendGameUpdate(u)) return;
             if (u.TryGetProperty("widget_query", out var wq)) { await HandleWidgetQuery(wq); return; }
             if (u.TryGetProperty("inline_query", out var iq)) { await HandleInline(iq); return; }
             if (u.TryGetProperty("callback_query", out var cq))
@@ -907,7 +915,7 @@ namespace NIsland.Services
                    "<b>📊 Отслеживание</b>\n/screentime · /week · /sessions · /batlog · /traffic · /wifilog · /usblog · /iplog · /downloads · /notifstats · /speedlog · /temps · /ramtop · /timeline · /report 21:00\n\n" +
                    "<b>🎛 Контроль</b>\n/limits · /limit chrome 120 · /focusmode 25 · /watchproc steam · /alarm 07:30 Подъём · /alarms · /miclevel 70 · /wallnext · /awakefor 2 · /loadalert cpu 90 · /fixes\n" +
                    "/prayer · /agenda · /shelf · /news · /privacy · /cleanscan\n\n" +
-                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 94 виджета · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>🧩 " + T("Виджеты Telegram") + "</b>\n/widgets · " + WKinds.Length + " · /widget counter · /widget player · /widget timer · /pet\n\n" +
                    "<b>🖥 Программы и Windows</b>\n" +
                    "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
                    "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +
@@ -933,6 +941,7 @@ namespace NIsland.Services
                           Row(B("⚙️ Система", "nav:sys"), B("⚡ Питание", "nav:power"), B("🌐 Сеть", "nav:net")),
                           Row(B("🧰 Полезное", "nav:tools"), B("🧠 ИИ", "nav:ai"), B("🎬 Сценарии", "nav:scenes")),
                           Row(B("📡 Живая панель", "do2:live"), B("✨ Ещё", "nav:more"), B("🔧 Настройки", "nav:set")),
+                          Row(B("🎲 Игры", "game:menu")),
                           Row(B("🧩 Виджеты", "nav:widgets"), B("🧭 Браузер", "nav:browser"), B("🔄 Обновить", "nav:main"))));
                 case "widgets":
                     return WidgetsMenu();
