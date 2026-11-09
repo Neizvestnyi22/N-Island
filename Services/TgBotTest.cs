@@ -73,6 +73,7 @@ namespace NIsland.Services
                     "getUpdates" => "{\"ok\":true,\"result\":[]}",
                     "sendMessageDraft" => "{\"ok\":false,\"description\":\"Bad Request: method not available in test\"}",
                     "sendRichMessageDraft" => "{\"ok\":true,\"result\":true}",
+                    "getMe" => "{\"ok\":true,\"result\":{\"id\":1,\"is_bot\":true,\"username\":\"test_bot\",\"supports_inline_queries\":true}}",
                     _ => "{\"ok\":true,\"result\":{\"message_id\":7}}",
                 };
             };
@@ -268,6 +269,74 @@ namespace NIsland.Services
             await tg.TestCallback("nav:music");
             if (WidgetSends != b0) Problems.Add("widgets_default off: /music or the music menu still sent a widget");
             log.AppendLine($"widgets_default: ok, sends={WidgetSends}");
+
+            // «📤 Переслать»: под виджетом — выбор чата (инлайн-режим), инлайн-ответ только владельцу и в пределах лимитов
+            TelegramHub.TestInlineMode(true);
+            lock (Sent) Sent.Clear();
+            await tg.TestCommand("widget", "плеер");
+            string sw;
+            lock (Sent) sw = Sent.LastOrDefault(x => x.Method == "sendWidget").Json ?? "";
+            if (!sw.Contains("switch_inline_query_chosen_chat")) Problems.Add("forward: no chat-picker button under the widget");
+            lock (Sent) Sent.Clear();
+            await tg.TestInline("{\"id\":\"iq1\",\"from\":{\"id\":42},\"query\":\"w player\"}");
+            await tg.TestInline("{\"id\":\"iq2\",\"from\":{\"id\":42},\"query\":\"\"}");
+            await tg.TestInline("{\"id\":\"iq3\",\"from\":{\"id\":99},\"query\":\"w player\"}");
+            List<string> inl;
+            lock (Sent) inl = Sent.Where(x => x.Method == "answerInlineQuery").Select(x => x.Json).ToList();
+            if (inl.Count != 3) Problems.Add($"inline: expected 3 answers, got {inl.Count}");
+            else
+            {
+                using (var a1 = JsonDocument.Parse(inl[0]))
+                {
+                    var res = a1.RootElement.GetProperty("results");
+                    if (res.GetArrayLength() == 0 || res[0].GetProperty("id").GetString() != "player") Problems.Add("inline: 'w player' did not return the player first");
+                }
+                using (var a2 = JsonDocument.Parse(inl[1])) if (a2.RootElement.GetProperty("results").GetArrayLength() < 5) Problems.Add("inline: empty query returned too few widgets");
+                using (var a3 = JsonDocument.Parse(inl[2])) if (a3.RootElement.GetProperty("results").GetArrayLength() != 0) Problems.Add("inline: a stranger got widgets");
+                log.AppendLine("inline: owner and stranger checked");
+            }
+            TelegramHub.TestInlineMode(false);
+
+            // защитник через бота: меню с управлением, карантин, неизвестная кнопка не запускает проверку, тревога — с кнопками
+            lock (Sent) Sent.Clear();
+            var avm = await tg.TestCommand("defender", "");
+            if (avm?.Html == null || !JsonSerializer.Serialize(avm.Value.Keys).Contains("av2:rt") || !JsonSerializer.Serialize(avm.Value.Keys).Contains("av2:ql"))
+                Problems.Add("defender menu: no realtime / quarantine buttons");
+            await tg.TestCallback("av2:ql");
+            var stale = await tg.TestCallback("av2:zzz");
+            bool scanStarted;
+            lock (Sent) scanStarted = Sent.Any(x => x.Json.Contains("Быстрая проверка") || x.Json.Contains("1–3 мин"));
+            if (scanStarted) Problems.Add("defender: an unknown av2 button started a scan");
+            lock (Sent) Sent.Clear();
+            var fake = new Threat(Path.Combine(Path.GetTempPath(), "ni-test-not-a-file.exe"), 85, "Опасно", new List<string> { "test reason" }, "00ff", false);
+            if (!tg.ThreatAlert(fake)) Problems.Add("threat alert: not sent to Telegram");
+            await Task.Delay(1500);
+            string alertJson;
+            lock (Sent) alertJson = Sent.Where(x => x.Method is "sendMessage" or "sendRichMessage").Select(x => x.Json).LastOrDefault() ?? "";
+            if (!alertJson.Contains("av2:q:") || !alertJson.Contains("av2:ok:")) Problems.Add("threat alert: no quarantine / trust buttons");
+            var qr = await tg.TestCallback(System.Text.RegularExpressions.Regex.Match(alertJson, @"av2:q:[A-Za-z0-9_-]+").Value);
+            if (qr == null || !qr.Contains("уже нет")) Problems.Add("threat alert: quarantine of a missing file: " + Short(qr ?? "null"));
+            {
+                bool? onUi = null;
+                System.ComponentModel.PropertyChangedEventHandler hh = (_, e) => { if (e.PropertyName == nameof(Settings.MascotHat)) onUi = System.Windows.Application.Current.Dispatcher.CheckAccess(); };
+                Store.Settings.PropertyChanged += hh;
+                var was = Store.Settings.MascotHat;
+                await Task.Run(() => Store.Settings.MascotHat = was == "crown" ? "cap" : "crown");
+                for (int i = 0; i < 20 && onUi == null; i++) await Task.Delay(50);
+                await Task.Run(() => Store.Settings.MascotHat = was);
+                await Task.Delay(300);
+                Store.Settings.PropertyChanged -= hh;
+                if (onUi != true) Problems.Add($"settings changed off the UI thread: handler ran on the UI thread = {onUi?.ToString() ?? "never"}");
+                // команды, которые меняют настройки из потока бота (как /mascot), не должны падать
+                foreach (var (c, a) in new[] { ("mascot", "crown"), ("mascot", was) })
+                {
+                    try { var r = await tg.TestCommand(c, a); if ((r?.Html ?? "").Contains("thread")) Problems.Add($"/{c} {a}: {Short(r?.Html)}"); }
+                    catch (Exception e) { Problems.Add($"/{c} {a}: {e.GetType().Name}: {e.Message}"); }
+                }
+                await Task.Delay(300);
+                log.AppendLine($"settings from a background thread: handler on UI = {onUi}");
+            }
+            log.AppendLine($"defender: menu ok, stale='{Short(stale ?? "")}', alert ok, quarantine of a missing file → '{Short(qr ?? "")}'");
             // персонаж собирается под скин, аксессуар и эмоцию — самый тяжёлый вариант тоже должен влезать в 4 КБ
             foreach (var pSk in new[] { "blob", "cat", "ghost", "robot", "bunny" })
                 foreach (var ht in new[] { "auto", "none", "cap", "crown", "bow", "party", "santa", "headphones", "glasses", "flower" })
@@ -315,6 +384,8 @@ namespace NIsland.Services
 
         static void Check(string method, string json)
         {
+            // ошибка «объект принадлежит другому потоку» — значит, код бота трогает интерфейс не из его потока
+            if (json.Contains("different thread owns it") || json.Contains("другой поток")) Problems.Add($"{method}: cross-thread: {Short(json)}");
             using var d = JsonDocument.Parse(json);
             var r = d.RootElement;
             if (r.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
@@ -330,6 +401,22 @@ namespace NIsland.Services
                         if (open != close) Problems.Add($"{method}: unbalanced <{tag}> {open}/{close}: {Short(s)}");
                     }
                 if (Regex.IsMatch(s, @"<(?!/?(b|i|u|s|code|pre|blockquote|a|tg-spoiler)[\s>])[a-zA-Z]")) Problems.Add($"{method}: unescaped '<': {Short(s)}");
+            }
+            if (method == "answerInlineQuery")
+            {
+                foreach (var it in r.GetProperty("results").EnumerateArray())
+                {
+                    var c = it.GetProperty("input_message_content");
+                    var html = c.GetProperty("html").GetString() ?? "";
+                    var raw = Encoding.UTF8.GetBytes(html);
+                    using var ms = new System.IO.MemoryStream();
+                    using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.SmallestSize, true)) z.Write(raw);
+                    if (ms.Length > 3900) Problems.Add($"inline {it.GetProperty("id")}: html compressed {ms.Length} > 3900");
+                    var cd = c.TryGetProperty("chat_data", out var cdv) ? cdv.GetString() ?? "" : "";
+                    if (Encoding.UTF8.GetByteCount(cd) > 1024) Problems.Add($"inline {it.GetProperty("id")}: chat_data > 1024 bytes");
+                    if (c.TryGetProperty("allow_queries", out var aq) && aq.ValueKind == JsonValueKind.True) Problems.Add($"inline {it.GetProperty("id")}: a forwarded widget must not send queries");
+                    if (cd.StartsWith("{\"ro\":1,") is false && cd.StartsWith("{\"k\":")) Problems.Add($"inline {it.GetProperty("id")}: card is not read-only");
+                }
             }
             if (method == "sendWidget")
             {
@@ -385,7 +472,8 @@ namespace NIsland.Services
                     {
                         if (b.TryGetProperty("callback_data", out var cd) && Encoding.UTF8.GetByteCount(cd.GetString()) > 64) Problems.Add($"callback_data > 64 bytes: {cd.GetString()}");
                         if (!b.TryGetProperty("text", out var bt) || string.IsNullOrWhiteSpace(bt.GetString())) Problems.Add($"{method}: button without text");
-                        if (!b.TryGetProperty("callback_data", out _) && !b.TryGetProperty("url", out _) && !b.TryGetProperty("copy_text", out _)) Problems.Add($"{method}: button without action");
+                        if (!b.TryGetProperty("callback_data", out _) && !b.TryGetProperty("url", out _) && !b.TryGetProperty("copy_text", out _) && !b.TryGetProperty("switch_inline_query_chosen_chat", out _)) Problems.Add($"{method}: button without action");
+                        if (b.TryGetProperty("switch_inline_query_chosen_chat", out var sq) && !(sq.TryGetProperty("query", out var qq) && qq.GetString() is { Length: > 0 } && sq.TryGetProperty("allow_user_chats", out _))) Problems.Add($"{method}: bad chat-picker button");
                         if (b.TryGetProperty("url", out var bu) && !Regex.IsMatch(bu.GetString() ?? "", @"^(https?|tg)://\S+$")) Problems.Add($"{method}: bad button url: {bu.GetString()}");
                         if (b.TryGetProperty("style", out var bs) && bs.GetString() is not ("danger" or "success" or "primary")) Problems.Add($"{method}: bad button style {bs}");
                         if (b.TryGetProperty("copy_text", out var ctx) && (ctx.ValueKind != JsonValueKind.Object || (ctx.GetProperty("text").GetString()?.Length ?? 0) is 0 or > 256)) Problems.Add($"{method}: bad copy_text");

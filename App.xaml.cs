@@ -204,7 +204,9 @@ namespace NIsland
                 },
                 OnClick = () => ShowCenter("av"),
             });
-            Integrations.Publish("alert", (t.Score >= 70 ? "Опасный файл: " : "Подозрительный файл: ") + name, string.Join("; ", t.Reasons.Take(2)) + " · " + t.Path);
+            var tg = Integrations.Get("telegram") as TelegramHub;
+            bool toTg = tg?.ThreatAlert(t) == true;
+            Integrations.Publish("alert", (t.Score >= 70 ? "Опасный файл: " : "Подозрительный файл: ") + name, string.Join("; ", t.Reasons.Take(2)) + " · " + t.Path, toTg ? tg : null);
         }
 
         /// <summary>ИИ-агент ждёт подтверждения или закончил: всплывашка (клик — к окну агента), звук, телефон.</summary>

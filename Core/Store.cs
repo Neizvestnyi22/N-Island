@@ -19,11 +19,26 @@ namespace NIsland.Core
         {
             if (EqualityComparer<T>.Default.Equals(field, value)) return false;
             field = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+            Notify(name);
             return true;
         }
 
-        protected void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        protected void Raise(string name) => Notify(name);
+
+        /// <summary>Подписчики (окна, таймеры) живут в потоке интерфейса — из фонового потока уведомление уходит туда же.
+        /// Иначе «The calling thread cannot access this object because a different thread owns it».</summary>
+        void Notify(string name)
+        {
+            var h = PropertyChanged;
+            if (h == null) return;
+            var ui = System.Windows.Application.Current?.Dispatcher;
+            if (ui != null && !ui.CheckAccess())
+            {
+                if (!ui.HasShutdownStarted) ui.BeginInvoke(new Action(() => h(this, new PropertyChangedEventArgs(name))));
+                return;
+            }
+            h(this, new PropertyChangedEventArgs(name));
+        }
     }
 
     /// <summary>Все настройки приложения. Каждое свойство сохраняется в settings.json.</summary>

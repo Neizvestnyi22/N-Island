@@ -281,12 +281,26 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
             long msgId = q.TryGetProperty("message_id", out var mi) ? mi.GetInt64() : 0;
             var data = Integrations.S(q, "data");
             string result = null;
-            try { result = await WidgetAction(data, msgId); }
-            catch (Exception e) { Log.Info("telegram widget query: " + e.Message); }
+            var work = WidgetAction(data, msgId);
+            if (await Task.WhenAny(work, Task.Delay(12000)) == work)
+            {
+                try { result = await work; } catch (Exception e) { Log.Info("telegram widget query: " + e.Message); }
+            }
+            else
+            {
+                // долго: сразу «выполняется», а готовое состояние — в само сообщение, когда закончится
+                var kind = data.StartsWith("c:") && data.IndexOf(':', 2) is int p and > 2 ? data[2..p] : data.StartsWith("w:") ? "remote" : null;
+                if (kind != null && WK(kind) != null) result = WState(kind, T("⏳ Выполняется…"));
+                _ = work.ContinueWith(async t =>
+                {
+                    if (t.Status != TaskStatus.RanToCompletion || t.Result == null || msgId == 0) return;
+                    try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = msgId, chat_data = t.Result }); } catch (TgError) { }
+                });
+            }
             try { await Call("answerWidgetQuery", result != null ? new { widget_query_id = qid, data = result } : (object)new { widget_query_id = qid }); } catch { }
         }
 
-        internal Task<string> TestWidgetAction(string data) => WidgetAction(data, 7);
+        internal Task<string> TestWidgetAction(string data) => Task.Run(() => WidgetAction(data, 7));
 
         async Task<string> WidgetAction(string data, long msgId)
         {
@@ -307,8 +321,7 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
                     case "dnd": await Ui(() => App.Island?.SetMode(Store.Settings.Mode == "dnd" ? "normal" : "dnd")); break;
                 }
                 if (op is "prev" or "next" or "play") await Task.Delay(700);   // плеер обновляет трек не мгновенно
-                lock (_widgets) if (_widgets.TryGetValue(msgId, out var w)) _widgets[msgId] = (w.Kind, DateTime.Now.AddMinutes(LiveMin));
-                else { _widgets[msgId] = ("remote", DateTime.Now.AddMinutes(LiveMin)); _ = KeepFresh(msgId, "remote"); }
+                Live(msgId, "remote");
                 return RemoteState();
             }
             if (data.StartsWith("c:")) return await CardAction(data[2..], msgId);

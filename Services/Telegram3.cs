@@ -333,7 +333,11 @@ namespace NIsland.Services
                     var last = DateTime.TryParse(s.AvLastScan, null, DateTimeStyles.RoundtripKind, out var ls) ? ls.ToString("d MMM, HH:mm", Fmt.Ru) : T("ещё не было");
                     var text = $"🛡 <b>Защитник N-Island</b>\nЗащита в реальном времени: {(s.AvRealtime ? "🟢 включена" : "⚪ выключена")}\n" +
                                $"База угроз: {Antivirus.DbCount:N0} записей\nПоследняя проверка: {last}" + (s.AvLastCount > 0 ? $" · файлов {s.AvLastCount}" : "");
-                    return (text, K(Row(B("🔎 Быстрая проверка", "av2:scan"), B("🧾 Проверка Windows", "av2:audit")), Back("more")));
+                    int qn = Antivirus.Quarantined().Count;
+                    text += $"\n{T("В карантине")}: {qn}";
+                    return (text, K(Row(B("🔎 Быстрая проверка", "av2:scan"), B("🧾 Проверка Windows", "av2:audit")),
+                        Row(B(s.AvRealtime ? "⏸ Выключить защиту" : "▶ Включить защиту", "av2:rt"), B("🔄 Обновить базу", "av2:db")),
+                        Row(B($"🗂 Карантин ({qn})", "av2:ql"), B("🛡 Защитник Windows", "av2:wd")), Back("more")));
                 }
 
                 case "radio":
@@ -395,6 +399,8 @@ namespace NIsland.Services
                     return "💻 В буфере обмена ПК";
                 }
                 case "av2":
+                    if (rest is "rt" or "db" or "ql" or "wd" || rest.StartsWith("q:") || rest.StartsWith("ok:") || rest.StartsWith("qr:")) return await Av2(rest, msgId) ?? Stale;
+                    if (rest != "scan" && rest != "audit") return Stale;
                     if (rest == "audit")
                     {
                         _ = Task.Run(async () =>
@@ -416,11 +422,7 @@ namespace NIsland.Services
                         {
                             await Message("🔎 Быстрая проверка: автозагрузка, запущенные программы, «Загрузки», рабочий стол… (1–3 мин)");
                             var found = await Antivirus.QuickScan(null, default);
-                            var s = Store.Settings;
-                            await Message(found.Count == 0
-                                ? $"🛡 Угроз не найдено ✓ · проверено файлов: {s.AvLastCount}"
-                                : $"🛡 <b>Найдено подозрительных: {found.Count}</b>\n" + string.Join("\n", found.Take(10).Select(t => $"{(t.Score >= 70 ? "🔴" : "🟡")} {t.Score} · <code>{H(Cut(t.Path, 90))}</code>\n   <i>{H(t.Verdict)}</i>")) +
-                                  "\n\nПоместить в карантин — на ПК: Центр управления → Защитник N-Island.");
+                            await ReportScan(found, "Быстрая проверка");
                         }
                         catch (Exception e) { await Message("⚠️ " + H(e.Message)); }
                         finally { _avScanning = false; }

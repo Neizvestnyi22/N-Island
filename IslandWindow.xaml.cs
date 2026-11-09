@@ -571,6 +571,7 @@ namespace NIsland
 
         public void SetMode(string key)
         {
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(() => SetMode(key))); return; }
             if (S.Mode == key) return;
             S.Mode = key;
             if (key == "focus")
@@ -593,6 +594,7 @@ namespace NIsland
 
         public void Unhide()
         {
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(Unhide)); return; }
             if (S.Mode is "game" or "present") S.Mode = "normal";
             S.Hidden = false;
         }
@@ -609,6 +611,7 @@ namespace NIsland
 
         public void Expand(string page = null, bool activate = false)
         {
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(() => Expand(page, activate))); return; }
             Grow(false);
             if (_pages.Count == 0 || _hiddenFs) return;
             if (Modes.Hidden) Unhide();
@@ -728,6 +731,7 @@ namespace NIsland
 
         public void ShowActivity(Activity a)
         {
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(() => ShowActivity(a))); return; }
             // наружу (Telegram, ntfy, Discord, вебхук) — даже в «Не беспокоить»: туда это и нужно
             if (a.Kind != "alert") Integrations.Publish(Integrations.KindOf(a.Kind), a.Title, a.Sub);
             if (!Allowed(a)) return;

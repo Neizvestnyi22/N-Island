@@ -131,6 +131,8 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
         {
             lock (_widgets)
             {
+                // список отправленных виджетов не растёт бесконечно: помним последние 300
+                if (_widgets.Count > 300) foreach (var old in _widgets.Keys.OrderBy(k => k).Take(_widgets.Count - 300).ToList()) _widgets.Remove(old);
                 var live = _widgets.Where(w => w.Value.Until > DateTime.Now).OrderByDescending(w => w.Key).Skip(MaxLive).Select(w => w.Key).ToList();
                 foreach (var id in live) _widgets[id] = (_widgets[id].Kind, DateTime.Now);
             }
@@ -168,27 +170,108 @@ if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load
         /// <summary>Короткий отпечаток имени для запроса из виджета (имена программ бывают длинными, запрос должен быть коротким).</summary>
         static string WHash(string s) => Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(s ?? "")))[..8].ToLowerInvariant();
 
-        object ShareKeys(string kind) => _noWidgetKeys ? null : K(Row(B("📤 Переслать", "wg:share:" + kind)));
+        internal Task TestInline(string json) { using var d = JsonDocument.Parse(json); var el = d.RootElement.Clone(); return Task.Run(() => HandleInline(el)); }
+        internal static void TestInlineMode(bool on) { _inlineOk = on; _inlineAt = DateTime.Now; }
 
-        /// <summary>Копия для пересылки: общий снимок (public_data) без управления ПК — у получателя нажатия не работают.</summary>
-        async Task<string> ShareWidget(string kind)
+        static bool? _inlineOk;
+        static DateTime _inlineAt;
+
+        /// <summary>Включён ли у бота инлайн-режим (getMe → supports_inline_queries); раз в 10 минут.</summary>
+        async Task<bool> InlineOk()
         {
-            var wk = WK(kind);
-            if (wk == null) return Stale;
+            if (_inlineOk is bool b && (DateTime.Now - _inlineAt).TotalMinutes < 10) return b;
             try
             {
-                var body = new Dictionary<string, object> { ["chat_id"] = V("chat"), ["html"] = HtmlOf(kind), ["width"] = wk.W, ["is_shared"] = true, ["allow_queries"] = false, ["public_data"] = WState(kind) };
-                if (wk.H > 0) body["height"] = wk.H;
-                await Call("sendWidget", body);
-                await Message("⬆️ Эту копию можно переслать в любой чат: зажми её → «Переслать». У получателя будет снимок без управления ПК.");
-                return "📤";
+                var me = await Call("getMe", new { });
+                _inlineOk = me.ValueKind == JsonValueKind.Object && me.TryGetProperty("supports_inline_queries", out var s) && s.ValueKind == JsonValueKind.True;
             }
-            catch (TgError e)
+            catch { _inlineOk = false; }
+            _inlineAt = DateTime.Now;
+            return _inlineOk.Value;
+        }
+
+        /// <summary>«📤 Переслать» под виджетом: при инлайн-режиме — выбор любого чата Telegram, иначе — подсказка, как его включить.</summary>
+        async Task<object> ShareKeys(string kind)
+        {
+            if (_noWidgetKeys) return null;
+            if (await InlineOk())
+                return K(Row(new
+                {
+                    text = T("📤 Переслать"),
+                    switch_inline_query_chosen_chat = new { query = "w " + kind, allow_user_chats = true, allow_bot_chats = true, allow_group_chats = true, allow_channel_chats = true },
+                }));
+            return K(Row(B("📤 Переслать", "wg:share:" + kind)));
+        }
+
+        /// <summary>Инлайн-режим выключен: объясняем, как включить; переслать сам виджет можно всегда.</summary>
+        async Task<string> ShareHelp()
+        {
+            _inlineOk = null;   // вдруг уже включили — проверим заново при следующем виджете
+            await Message("📤 <b>Как переслать виджет в другой чат</b>\n\n" +
+                "1. Открой @BotFather → /setinline → выбери этого бота → напиши любую подсказку (например «виджеты»). Это включит инлайн-режим.\n" +
+                "2. После этого «📤 Переслать» откроет список чатов: выбираешь чат — и туда уходит виджет (снимок без управления ПК; калькулятор, игры, часы и календарь работают у всех).\n\n" +
+                "Уже сейчас можно переслать сам виджет: зажми его → «Переслать». Кнопки у получателя работать не будут.");
+            return "📤";
+        }
+
+        /// <summary>Только для чтения: у карточки в чужом чате нет кнопок управления (копирование остаётся).</summary>
+        static string ReadOnlyState(string st) =>
+            st.StartsWith("{\"k\":") ? "{\"ro\":1," + st[1..] : st;
+
+        static readonly string[] InlineFavorites = { "player", "viz", "weather", "sysmon", "clock", "pet", "calendar", "countdown", "ttt", "g2048", "dice", "calc", "battery", "network" };
+
+        /// <summary>Инлайн-запрос «@бот w player» из выбора чата: только владелец получает виджеты, остальным — пусто.</summary>
+        async Task HandleInline(JsonElement q)
+        {
+            var qid = Integrations.S(q, "id");
+            string from = q.TryGetProperty("from", out var f) && f.TryGetProperty("id", out var fid) ? fid.ToString() : "";
+            var results = new List<object>();
+            if (from != "" && from == V("chat") && Remote == null)
             {
-                Log.Info("telegram widget share: " + e.Message);
-                await Message("Telegram не дал сделать копию для пересылки — перешли сам виджет: зажми его → «Переслать» (у получателя кнопки работать не будут).");
-                return "📤";
+                var text = Integrations.S(q, "query").Trim();
+                var want = text.StartsWith("w ") ? text[2..].Trim() : text;
+                var kind = want == "" ? null : WAliases.TryGetValue(want, out var al) ? al : WK(want.ToLowerInvariant())?.Key;
+                IEnumerable<WKind> kinds = kind != null ? new[] { WK(kind) }.Concat(InlineFavorites.Where(k => k != kind).Select(WK))
+                    : want == "" ? InlineFavorites.Select(WK)
+                    : WKinds.Where(k => T(k.Name).Contains(want, StringComparison.OrdinalIgnoreCase) || k.Name.Contains(want, StringComparison.OrdinalIgnoreCase) || k.Key.Contains(want, StringComparison.OrdinalIgnoreCase));
+                foreach (var wk in kinds.Where(k => k != null && k.Key != "remote" && WFlag(k.Key) is null or "control").Take(10))
+                {
+                    string st;
+                    try { st = ReadOnlyState(WState(wk.Key)); } catch (Exception e) { Log.Info("inline widget: " + e.Message); continue; }
+                    var content = new Dictionary<string, object> { ["html"] = HtmlOf(wk.Key), ["width"] = wk.W, ["allow_queries"] = false, ["chat_data"] = st };
+                    if (wk.H > 0) content["height"] = wk.H;
+                    bool local = wk.Key is "calc" or "dice" or "clock" or "calendar" or "breath" or "ttt" or "g2048" or "countdown";
+                    results.Add(new Dictionary<string, object>
+                    {
+                        ["type"] = "article", ["id"] = wk.Key, ["title"] = T(wk.Name),
+                        ["description"] = T(local ? "Работает у всех в чате" : "Снимок без управления ПК"),
+                        ["input_message_content"] = content,
+                    });
+                }
             }
+            try { await Call("answerInlineQuery", new { inline_query_id = qid, results, cache_time = 0, is_personal = true }); }
+            catch (TgError e) { Log.Info("telegram inline: " + e.Message); }
+        }
+
+        // ---- живые обновления: один цикл на сообщение ----
+        static readonly HashSet<long> _freshRunning = new();
+
+        /// <summary>Продлить живые обновления виджета и запустить цикл, если он уже закончился.</summary>
+        void Live(long id, string kind)
+        {
+            var wk = WK(kind);
+            if (wk == null || wk.LiveSec <= 0 || id == 0) return;
+            lock (_widgets) _widgets[id] = (kind, DateTime.Now.AddMinutes(LiveMin));
+            bool start;
+            lock (_freshRunning) start = _freshRunning.Add(id);
+            if (start) _ = KeepFreshLoop(id, kind);
+            TrimLive();
+        }
+
+        async Task KeepFreshLoop(long id, string kind)
+        {
+            try { await KeepFresh(id, kind); }
+            finally { lock (_freshRunning) _freshRunning.Remove(id); }
         }
     }
 }

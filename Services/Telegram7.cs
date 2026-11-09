@@ -64,7 +64,7 @@ namespace NIsland.Services
 
         internal static IEnumerable<WKind> TestKinds => WKinds;
         internal static string TestHtml(string kind) => HtmlOf(kind);
-        internal string TestWState(string kind) => WState(kind);
+        internal string TestWState(string kind) => Task.Run(() => WState(kind)).GetAwaiter().GetResult();
 
         // ------------------------------------------------------------------
         //  Универсальная карточка
@@ -95,7 +95,7 @@ if(t=='t')return'<div class="t">'+x(r[1])+'</div>';if(t=='T')return'<div class="
 if(t=='k')return'<div class="k"><span>'+x(r[1])+'</span><b>'+x(r[2])+'</b></div>';
 if(t=='p')return'<div class="g"><span id="pa'+i+'"></span><div class="bb"><i id="pb'+i+'"></i></div><span>'+f(r[2])+'</span></div>';
 if(t=='d'||t=='u')return'<div class="T" id="cd'+i+'"></div>'+(r[3]?'<div class="t">'+x(r[3])+'</div>':'');
-if(t=='l')return'<div class="l"><span>'+x(r[1])+'</span>'+(r[2]?'<button data-q="'+x(r[2])+'">'+x(r[3]||'›')+'</button>':'')+'</div>';
+if(t=='l')return'<div class="l"><span>'+x(r[1])+'</span>'+(r[2]&&!D.ro?'<button data-q="'+x(r[2])+'">'+x(r[3]||'›')+'</button>':'')+'</div>';
 if(t=='y')return'<div class="l"><span>'+x(r[2])+'</span><button data-y="'+i+'">'+x(r[1])+'</button></div>';if(t=='L')return'<div id="ly'+i+'"></div>';return''}
 function tick(){(D.r||[]).forEach(function(r,i){var t=r[0],e;
 if(t=='p'&&(e=$('pa'+i))){var p=Math.min(r[2],r[1]+(r[3]?el():0));e.textContent=f(p);var b=$('pb'+i);b.style.width=(r[2]?p/r[2]*100:0)+'%';b.style.background='var(--tg-theme-button-color,#3390ec)'}
@@ -103,7 +103,7 @@ if((t=='d'||t=='u')&&(e=$('cd'+i)))e.textContent=f(t=='d'?r[1]-(r[2]?el():0):r[1
 if(t=='L'&&(e=$('ly'+i))){var s=r[1]?el():0,c=-1,a=r[2];a.forEach(function(l,j){if(l[0]<=s)c=j});if(e.dataset.c!=String(c)){e.dataset.c=c;
 e.innerHTML=(c>0?'<div class="t">'+x(a[c-1][1])+'</div>':'')+'<div class="Lc">'+x(c>=0?a[c][1]:'♪')+'</div>'+(a[c+1]?'<div class="t">'+x(a[c+1][1])+'</div>':'')}}})}
 function show(){var h='<div class="h">'+x(D.h)+'</div>'+(D.s?'<div class="s">'+x(D.s)+'</div>':'');(D.r||[]).forEach(function(r,i){h+=row(r,i)});
-(D.b||[]).forEach(function(w){h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
+(D.ro?[]:D.b||[]).forEach(function(w){h+='<div class="r">';w.forEach(function(b){h+='<button class="'+(b[2]||'')+'" data-q="'+x(b[1])+'">'+x(b[0])+'</button>'});h+='</div>'});
 $('c').innerHTML=h;$('e').textContent=D.e||'';tick();
 document.querySelectorAll('button[data-q]').forEach(function(b){b.onclick=function(){ask(b.getAttribute('data-q'))}});
 document.querySelectorAll('button[data-y]').forEach(function(b){b.onclick=function(){if(T&&T.copyText)T.copyText(D.r[+b.getAttribute('data-y')][2]);b.textContent='✓'}})}
@@ -272,10 +272,12 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 case "player":
                     d = Card(kind, "🎵 " + (m.HasSession ? Cut(m.Title ?? m.TrackLine, 50) : "Ничего не играет"), m.HasSession ? Cut(m.Artist, 50) : null);
                     if (m.HasTime) CRows(d).Add(new object[] { "p", (int)m.Position.TotalSeconds, (int)m.Duration.TotalSeconds, m.IsPlaying ? 1 : 0 });
-                    if (LyricsRow(340) is { } plr) CRows(d).Add(plr);
+                    if (LyricsRow(280) is { } plr) CRows(d).Add(plr);
                     CRows(d).Add(new object[] { "b", "🔊", Math.Round(a.Volume * 100), null, a.Muted ? "off" : Math.Round(a.Volume * 100) + "%" });
                     Btns(d, Bt("⏮", "prev"), Bt(m.IsPlaying ? "⏸" : "▶", "play", "p"), Bt("⏭", "next"), Bt("♥", "like"));
                     Btns(d, Bt($"⏪ {MediaService.Step}с", "back"), Bt($"⏩ {MediaService.Step}с", "fwd"), Bt("🔀", "shuffle"), Bt("🔁", "repeat"), Bt(m.LoopB != null ? "A–B ✓" : m.LoopA != null ? "A…" : "A–B", "ab", m.LoopA != null ? "p" : null));
+                    Btns(d, Bt("🔉", "vd"), Bt(a.Muted ? "🔈" : "🔇", "mute"), Bt("🔊", "vu"), Bt(TimerService.I.SleepAt != null ? "💤 ✓" : "💤 30", "sleep"));
+                    Btns(d, Bt("🎤 Текст", "open|lyrics"), Bt("🌈 Виз", "open|viz"), Bt("🎛 EQ", "open|eq"));
                     return d;
                 case "lyrics":
                 {
@@ -290,6 +292,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                         for (int k = i + 1; k < Math.Min(lines.Count, i + 3); k++) CRows(d).Add(new object[] { "t", Cut(lines[k].Text, 80) });
                     }
                     Btns(d, Bt("⏮", "prev"), Bt(m.IsPlaying ? "⏸" : "▶", "play", "p"), Bt("⏭", "next"));
+                    Btns(d, Bt("⏪", "back"), Bt("♥", "like"), Bt("⏩", "fwd"));
                     return d;
                 }
                 case "mixer":
@@ -298,6 +301,8 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     foreach (var app in a.Apps().Take(5))
                         CRows(d).Add(new object[] { "l", $"{Cut(app.Name, 18)} · {(app.Muted ? "off" : Math.Round(app.Volume * 100) + "%")}", "m|" + WHash(app.Name), app.Muted ? "🔈" : "🔇" });
                     Btns(d, Bt("−10", "vd"), Bt("🔇", "mute"), Bt("+10", "vu"));
+                    Btns(d, Bt("0", "v|0"), Bt("25", "v|25"), Bt("50", "v|50"), Bt("75", "v|75"), Bt("100", "v|100"));
+                    Btns(d, Bt("🎧 Куда идёт звук", "open|audioout"));
                     return d;
                 case "eq":
                     d = Card(kind, "🎛 Эквалайзер", T(Store.Settings.EqOn ? "включён · " : "выключен · ") + T(Equalizer.PresetName(Store.Settings.EqPreset)));
@@ -311,6 +316,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     d = Card(kind, "⏲ Таймер на ПК");
                     CRows(d).Add(new object[] { "d", (int)t.Left.TotalSeconds, t.Running ? 1 : 0, T(t.Running ? "идёт" : t.Paused ? "на паузе" : "не запущен") });
                     Btns(d, Bt("1 мин", "1"), Bt("5", "5"), Bt("10", "10"), Bt("25", "25"));
+                    Btns(d, Bt("+1", "add|1"), Bt("+5", "add|5"), Bt("+15", "add|15"), Bt("60", "60"));
                     Btns(d, Bt(t.Running ? "⏸ Пауза" : "▶ Старт", "toggle", "p"), Bt("⟲ Сброс", "reset"), Bt("✍️ Мин.", "in"));
                     return d;
                 }
@@ -341,7 +347,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     if (w.Sunrise is { } sr) CRows(d).Add(new object[] { "k", T("Восход и закат"), $"{sr:HH:mm} – {w.Sunset:HH:mm}" });
                     foreach (var hr in w.Hours.Where(h => h.T > DateTime.Now).Take(4))
                         CRows(d).Add(new object[] { "k", hr.T.ToString("HH:mm"), $"{WeatherService.Describe(hr.Code).Icon} {Math.Round(hr.Temp):0}°" + (hr.Rain > 0 ? $" · ☔ {hr.Rain}%" : "") });
-                    Btns(d, Bt("⟳ Обновить", "ref"));
+                    Btns(d, Bt("⟳ Обновить", "ref"), Bt("🌗 Солнце и луна", "open|sky"));
                     return d;
                 }
                 case "battery":
@@ -353,6 +359,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                         CRows(d).Add(new object[] { "k", T("Состояние"), T(sys.Charging ? "заряжается" : "от батареи") });
                     }
                     foreach (var pl in Maint.PowerPlans().Take(3)) CRows(d).Add(new object[] { "l", (pl.Active ? "✓ " : "") + Cut(pl.Name, 30), pl.Active ? null : "pl|" + pl.Guid, T("Включить") });
+                    Btns(d, Bt("⏻ Питание", "open|power"), Bt("🩺 Здоровье ПК", "open|health"));
                     return d;
                 case "network":
                 {
@@ -363,6 +370,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     if (link != null) CRows(d).Add(new object[] { "k", Cut(link.Ssid, 24), $"{link.Band} · к{link.Channel} · {link.RxMbps:0} Мбит/с" });
                     CRows(d).Add(new object[] { "k", "↓ / ↑", $"{NetSpeed.Fmt(NetSpeed.Down)} / {NetSpeed.Fmt(NetSpeed.Up)}" });
                     Btns(d, Bt("🔄 Переподключить", "reconnect"), Bt("⟳", "ref"));
+                    Btns(d, Bt("📡 Вокруг", "open|wifiscan"), Bt("🚀 Скорость", "open|speed"), Bt("📶 Пинг", "open|ping"));
                     return d;
                 }
                 case "disks":
@@ -379,7 +387,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     d = Card(kind, "📊 Кто грузит ПК", $"CPU {sys.CpuPercent()}% · RAM {sys.RamPercent()}%");
                     foreach (var (name, pct) in TopCpu(6))
                         CRows(d).Add(new object[] { "l", $"{Cut(name, 20)} · {pct:0.#}%", Critical.Contains(name) ? null : "k|" + WHash(name), "✖" });
-                    Btns(d, Bt("⟳ Обновить", "ref"));
+                    Btns(d, Bt("⟳ Обновить", "ref"), Bt("🪟 Окна", "open|windows"), Bt("📈 График", "open|sysmon"));
                     return d;
                 case "todo":
                 {
@@ -426,14 +434,17 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     if (br is int b) CRows(d).Add(new object[] { "b", "☀", b, "#ffd60a", b + "%" });
                     else CRows(d).Add(new object[] { "t", T("Яркость этого монитора не регулируется") });
                     Btns(d, Bt("−10", "bd"), Bt("+10", "bu"));
+                    if (br is int) Btns(d, Bt("10", "b|10"), Bt("40", "b|40"), Bt("70", "b|70"), Bt("100", "b|100"));
                     Btns(d, Bt("🌗 Тема", "theme"), Bt("⬛ Выкл. экран", "off"));
+                    Btns(d, Bt("🖥 Только ПК", "pr|pc"), Bt("⧉ Повтор", "pr|clone"), Bt("⇆ Расширить", "pr|extend"));
                     return d;
                 }
                 case "power":
                     d = Card(kind, "⏻ Питание", sys.HasBattery ? $"🔋 {sys.BatteryPercent}%" : null);
                     if (Laptop.OffAt is DateTime off) CRows(d).Add(new object[] { "d", (int)Math.Max(0, (off - DateTime.Now).TotalSeconds), 1, T("до выключения") });
                     Btns(d, Bt("🔒 Блок", "lock"), Bt("😴 Сон", "sleep"));
-                    Btns(d, Bt("⏲ Выкл. 30 мин", "in30"), Bt("✖ Отменить", "cancel"));
+                    Btns(d, Bt("⏲ 15 мин", "in15"), Bt("⏲ 30 мин", "in30"), Bt("⏲ 60 мин", "in60"), Bt("✖ Отменить", "cancel"));
+                    Btns(d, Bt("⏰ Отложенные команды", "open|jobs"));
                     Btns(d, Bt("🔄 Перезагрузка", "restart", "d"), Bt("⏻ Выключить", "shutdown", "d"));
                     return d;
             }
@@ -453,6 +464,12 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             string flag = WFlag(kind) ?? "control";
             WStateDirty(kind);
             string head0 = op.Contains('|') ? op[..op.IndexOf('|')] : op;
+            if (head0 == "open")
+            {
+                var target = op[5..];
+                if (WK(target) == null) return WState(kind, T("Нет такого виджета"));
+                return WState(kind, await SendW(target) ? T("🧩 Виджет — ниже в чате") : T("Виджеты недоступны в этом Telegram"));
+            }
             // нажатие, которого у этого вида нет (старый виджет, подделка) — ничего не делаем
             if (!KnownOp(kind, head0)) return WState(kind, T("Неизвестное действие"));
             if (op is not ("ref" or "") && !Flag(flag)) return WState(kind, T($"🔐 «{FlagNames[flag]}» выключено — включается на ПК"));
@@ -466,8 +483,28 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 case ("player" or "lyrics", "next"): await Ui(m.Next); await Task.Delay(700); break;
                 case ("player" or "lyrics", "play"): await Ui(m.TogglePlay); await Task.Delay(300); break;
                 case ("player", "like"): note = await Ui(() => m.ToggleFavorite()) ? "💖" : null; break;
-                case ("player", "back"): await Ui(() => m.SeekStep(-1)); break;
-                case ("player", "fwd"): await Ui(() => m.SeekStep(1)); break;
+                case ("player" or "lyrics", "back"): await Ui(() => m.SeekStep(-1)); break;
+                case ("player" or "lyrics", "fwd"): await Ui(() => m.SeekStep(1)); break;
+                case ("lyrics", "like"): note = await Ui(() => m.ToggleFavorite()) ? "💖" : null; break;
+                case ("player", "vu"): await Ui(() => a.SetVolume(Math.Min(1, a.Volume + 0.1))); break;
+                case ("player", "vd"): await Ui(() => a.SetVolume(Math.Max(0, a.Volume - 0.1))); break;
+                case ("player", "mute"): await Ui(a.ToggleMute); break;
+                case ("player", "sleep"):
+                {
+                    bool on = TimerService.I.SleepAt == null;
+                    await Ui(() => TimerService.I.SetSleep(on ? 30 : 0));
+                    note = T(on ? "💤 Музыка остановится через 30 минут" : "💤 Таймер сна выключен");
+                    break;
+                }
+                case ("mixer", "v") when int.TryParse(arg, out var mv) && mv is >= 0 and <= 100:
+                    await Ui(() => { a.SetVolume(mv / 100.0); if (mv > 0 && a.Muted) a.ToggleMute(); }); break;
+                case ("timer", "add") when int.TryParse(arg, out var tadd) && tadd is > 0 and <= 120:
+                    await Ui(() => { var tm = TimerService.I; if (tm.Running || tm.Paused) tm.Add(tadd); else { tm.SetMinutes(tadd); tm.Start(); } }); break;
+                case ("display", "b") when int.TryParse(arg, out var bv) && bv is >= 0 and <= 100:
+                    await Ui(() => sys.SetBrightness(bv)); break;
+                case ("display", "pr") when arg is "pc" or "clone" or "extend" or "second":
+                    note = Cut(System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace((await Command4("project", arg))?.Html ?? "", "<[^>]+>", "")), 80); break;
+                case ("power", "in15" or "in60"): await Ui(() => Laptop.ScheduleOff("shutdown", head == "in15" ? 15 : 60)); break;
                 case ("player", "ab"): note = await Ui(() => m.CycleLoop()) switch { "A" => T("🅰 Начало отмечено — нажми ещё раз в конце"), "AB" => T("🔂 Фрагмент повторяется"), _ => T("Повтор фрагмента выключен") }; break;
                 case ("player", "shuffle"): await Command2("shuffle", ""); break;
                 case ("player", "repeat"): await Command2("repeat", ""); break;
@@ -541,7 +578,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             }
             // нажали — живой виджет обновляется ещё 5 минут
             var wk = WK(kind);
-            if (wk.LiveSec > 0) lock (_widgets) { bool had = _widgets.ContainsKey(msgId); _widgets[msgId] = (kind, DateTime.Now.AddMinutes(LiveMin)); if (!had) _ = KeepFresh(msgId, kind); } TrimLive();
+            Live(msgId, kind);
             return WState(kind, note);
         }
 
@@ -571,7 +608,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 // высоту 0 («по содержимому») не передаём — так делает и тестовый бот Telegram
                 var body = new Dictionary<string, object> { ["chat_id"] = V("chat"), ["html"] = HtmlOf(kind), ["width"] = wk.W, ["allow_queries"] = queries, ["chat_data"] = WState(kind) };
                 if (wk.H > 0) body["height"] = wk.H;
-                if (ShareKeys(kind) is { } sk) body["reply_markup"] = sk;
+                if (await ShareKeys(kind) is { } sk) body["reply_markup"] = sk;
                 JsonElement r;
                 try { r = await Call("sendWidget", body); }
                 catch (TgError e) when (body.ContainsKey("reply_markup") && e.Code == 400)
@@ -582,9 +619,8 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     r = await Call("sendWidget", body);
                 }
                 long id = r.ValueKind == JsonValueKind.Object && r.TryGetProperty("message_id", out var mid) ? mid.GetInt64() : 0;
-                if (id != 0) lock (_widgets) _widgets[id] = (kind, DateTime.Now.AddMinutes(wk.LiveSec > 0 ? LiveMin : 0));
-                if (id != 0 && wk.LiveSec > 0) _ = KeepFresh(id, kind);
-                TrimLive();
+                if (id != 0) lock (_widgets) _widgets[id] = (kind, DateTime.Now);
+                Live(id, kind);
                 return true;
             }
             catch (TgError e)
@@ -615,6 +651,8 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 last = key;
                 try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = st }); }
                 catch (TgError e) when (e.Message.Contains("not modified")) { }
+                // «слишком часто» — подождать и продолжить, а не бросать живой виджет
+                catch (TgError e) when (e.Code == 429) { await Task.Delay(15000); }
                 catch (TgError e) { Log.Info("telegram widget live: " + e.Message); lock (_widgets) _widgets.Remove(id); return; }
             }
         }
@@ -664,17 +702,17 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
 
         async Task<string> WidgetsCallback(string rest)
         {
-            if (rest.StartsWith("share:")) return await ShareWidget(rest[6..]);
+            if (rest.StartsWith("share:")) return await ShareHelp();
             if (rest == "!stop") { lock (_widgets) _widgets.Clear(); return T("⏹ Живые виджеты больше не обновляются"); }
             if (rest == "!ref")
             {
+                // последние 20 виджетов (а не все когда-либо отправленные); живые продлеваются, цикл на сообщение — один
                 List<(long, string)> list;
-                lock (_widgets) list = _widgets.Select(w => (w.Key, w.Value.Kind)).ToList();
+                lock (_widgets) list = _widgets.OrderByDescending(w => w.Key).Take(20).Select(w => (w.Key, w.Value.Kind)).ToList();
                 foreach (var (id, kind) in list)
                 {
                     try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = WState(kind) }); } catch (TgError) { }
-                    lock (_widgets) _widgets[id] = (kind, DateTime.Now.AddMinutes(LiveMin));
-                    _ = KeepFresh(id, kind);
+                    Live(id, kind);
                 }
                 return T("🔄 Обновлено: ") + list.Count;
             }

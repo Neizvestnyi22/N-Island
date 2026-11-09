@@ -118,10 +118,17 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
             ("Alt+Tab", "alt+tab", null), ("Win+D", "win+d", null), ("Win+V", "win+v", null), ("PrtSc", "prtsc", null),
             ("Esc", "esc", null), ("Tab", "tab", null), ("␣", "space", null), ("Enter ⏎", "enter", "p"),
             ("←", "left", null), ("↑", "up", null), ("↓", "down", null), ("→", "right", null),
+            ("F5", "f5", null), ("F11", "f11", null), ("Win", "win", null), ("Ctrl+T", "ctrl+t", null),
+            ("Ctrl+W", "ctrl+w", null), ("Ctrl+⇧+T", "ctrl+shift+t", null), ("Win+Shift+S", "win+shift+s", null), ("Ctrl+F", "ctrl+f", null),
             ("Диспетчер задач", "ctrl+shift+esc", null), ("Alt+F4", "alt+f4", "d"),
         };
 
-        static readonly Dictionary<string, string> SlideKeys = new() { ["left"] = "left", ["right"] = "right", ["f5"] = "f5", ["sf5"] = "shift+f5", ["b"] = "b", ["esc"] = "esc" };
+        static readonly Dictionary<string, string> JobPresets = new()
+        {
+            ["lock10"] = "10m /lock", ["mute30"] = "30m /mute", ["sleep60"] = "60m /sleep", ["pause15"] = "15m /pause",
+        };
+
+        static readonly Dictionary<string, string> SlideKeys = new() { ["left"] = "left", ["right"] = "right", ["f5"] = "f5", ["sf5"] = "shift+f5", ["b"] = "b", ["w"] = "w", ["esc"] = "esc", ["home"] = "home", ["end"] = "end", ["space"] = "space" };
 
         static List<string[]> ParseRates(string text)
         {
@@ -307,7 +314,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     d = Card(kind, "🪟 Открытые окна", T("всего: ") + wins.Count);
                     foreach (var w in wins.Take(8))
                         CRows(d).Add(new object[] { "l", (w.Active ? "▶ " : w.Minimized ? "▫ " : "") + Cut(w.Title, 24) + " · " + Cut(w.Process, 12), "f|" + w.Handle.ToInt64(), "↗" });
-                    Btns(d, Bt("🗕 Свернуть все", "min"), Bt("⟳", "ref"));
+                    Btns(d, Bt("🗕 Свернуть все", "min"), Bt("⧉ Alt+Tab", "alttab"), Bt("⟳", "ref"));
                     return d;
                 }
                 case "upgrades":
@@ -345,7 +352,8 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     d = Card(kind, "📽 Пульт презентации", fg == null ? null : "▶ " + Cut(fg.Title, 40));
                     Btns(d, Bt("◀ Назад", "left"), Bt("Вперёд ▶", "right", "p"));
                     Btns(d, Bt("▶ С начала", "f5"), Bt("▶ С текущего", "sf5"));
-                    Btns(d, Bt("⬛ Чёрный экран", "b"), Bt("✖ Выйти", "esc"));
+                    Btns(d, Bt("⏮ Первый", "home"), Bt("⏯ Пробел", "space"), Bt("⏭ Последний", "end"));
+                    Btns(d, Bt("⬛ Чёрный экран", "b"), Bt("⬜ Белый", "w"), Bt("✖ Выйти", "esc"));
                     return d;
                 }
                 case "jobs":
@@ -357,7 +365,8 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     else CRows(d).Add(new object[] { "d", (int)Math.Max(0, (js[0].At - DateTime.Now).TotalSeconds), 1, T("до ближайшей") });
                     foreach (var j in js.Take(7))
                         CRows(d).Add(new object[] { "l", $"{j.At:HH:mm} · /{j.Cmd} {Cut(j.Arg ?? "", 20)}", "x|" + j.Id, "✖" });
-                    Btns(d, Bt("⟳", "ref"));
+                    Btns(d, Bt("🔒 10 мин", "q|lock10"), Bt("🔇 30 мин", "q|mute30"), Bt("😴 60 мин", "q|sleep60"));
+                    Btns(d, Bt("⏸ Пауза 15 мин", "q|pause15"), Bt("⟳", "ref"));
                     return d;
                 }
                 case "defender":
@@ -371,9 +380,11 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     try { q = Antivirus.Quarantined().Count; } catch { }
                     CRows(d).Add(new object[] { "k", T("В карантине"), q.ToString() });
                     if (WC<string>("avscan") is { } sc) CRows(d).Add(new object[] { "k", T("Быстрая проверка"), sc });
+                    if (WC<string>("wdscan") is { } wsc) CRows(d).Add(new object[] { "k", T("Проверка Защитником Windows"), wsc });
                     if (Busy(kind)) CRows(d).Add(new object[] { "t", wait });
                     foreach (var x in wd ?? new()) CRows(d).Add(new object[] { "k", x[0], x[1] });
-                    Btns(d, Bt("🔍 Быстрая проверка", "scan", "p"), Bt("⟳", "ref"));
+                    Btns(d, Bt("🔍 Быстрая проверка", "scan", "p"), Bt("🛡 Windows", "wd"));
+                    Btns(d, Bt(Store.Settings.AvRealtime ? "⏸ Защита" : "▶ Защита", "rt"), Bt("🔄 База", "db"), Bt("🗂 Карантин", "ql"), Bt("⟳", "ref"));
                     return d;
                 }
             }
@@ -457,6 +468,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     return "↗ " + Cut(w.Title, 40);
                 }
                 case ("windows", "min"): PcControl.Hotkey("win+d"); await Task.Delay(400); return null;
+                case ("windows", "alttab"): PcControl.Hotkey("alt+tab"); await Task.Delay(400); return null;
                 case ("upgrades", "run"): Bg("upgrades", CheckUpgrades); return null;
                 case ("upgrades", "u"):
                 {
@@ -475,6 +487,8 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     if (int.TryParse(arg, out var ki) && ki >= 0 && ki < WKeys.Length) return PcControl.Hotkey(WKeys[ki].Combo) ?? "⌨ " + WKeys[ki].Label;
                     return null;
                 case ("slides", _) when SlideKeys.TryGetValue(head, out var combo): return PcControl.Hotkey(combo);
+                case ("jobs", "q") when JobPresets.TryGetValue(arg, out var preset):
+                    return Cut(Schedule(false, preset), 90);
                 case ("jobs", "x"):
                 {
                     Job j;
@@ -488,9 +502,21 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
                     {
                         var th = await Antivirus.QuickScan((_, _, _) => { }, CancellationToken.None);
                         WCSet("avscan", $"{DateTime.Now:HH:mm} · " + (th.Count == 0 ? "🟢 " + T("чисто") : "🔴 " + T("найдено: ") + th.Count));
+                        if (th.Count > 0) await ReportScan(th, "Быстрая проверка");   // находки — сообщением с кнопками «В карантин»
                         return null;
                     });
                     return T("🔍 Проверка запущена");
+                case ("defender", "wd"):
+                    Bg("defender", async () =>
+                    {
+                        var (txt, threats) = await WindowsDefenderScan();
+                        WCSet("wdscan", $"{DateTime.Now:HH:mm} · " + (threats ? "🔴" : "🟢"));
+                        return Cut(System.Net.WebUtility.HtmlDecode(Regex.Replace(txt, "<[^>]+>", "")), 120);
+                    });
+                    return T("🛡 Защитник Windows проверяет… (2–10 мин)");
+                case ("defender", "rt"): return await Av2("rt", 0);
+                case ("defender", "db"): Bg("defender", async () => await Antivirus.UpdateDb() ?? T("🔄 База обновлена: ") + Antivirus.DbCount.ToString("N0")); return null;
+                case ("defender", "ql"): return await Av2("ql", 0);
             }
             return null;
         }

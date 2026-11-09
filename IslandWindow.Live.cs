@@ -20,6 +20,8 @@ namespace NIsland
         Mascot _mascot;
         Image _lens;
         Border _glint, _shine;
+        Canvas _glintHost;
+        (double X, double Y)? _glintTest;
         RadialGradientBrush _lensMask;
         bool _liveHooked;
         double _mouseX = -1, _mouseY = -1, _glintX, _glintY = -1, _liveT, _rimLevel;
@@ -54,7 +56,17 @@ namespace NIsland
             gb.GradientStops.Add(new GradientStop(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF), 0));
             gb.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 1));
             _glint = new Border { IsHitTestVisible = false, Width = 160, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Background = gb, RenderTransform = new TranslateTransform(), Opacity = 0 };
-            Stage.Children.Insert(Math.Min(Stage.Children.Count, 3), _glint);
+            _glint.HorizontalAlignment = HorizontalAlignment.Left;
+            _glint.VerticalAlignment = VerticalAlignment.Top;
+            // холст не обрезает детей по своей ячейке — остров сам обрежет блик по своей форме
+            _glintHost = new Canvas { IsHitTestVisible = false };
+            _glintHost.Children.Add(_glint);
+            Stage.Children.Insert(Math.Min(Stage.Children.Count, 3), _glintHost);
+            // тестовый режим: NISLAND_GLINT=x,y (доли ширины и высоты) — «курсор» в этой точке без мыши, для скриншотов
+            var gt = Environment.GetEnvironmentVariable("NISLAND_GLINT");
+            if (gt != null && gt.Split(',') is { Length: 2 } gp && double.TryParse(gp[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gx)
+                && double.TryParse(gp[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gy))
+                _glintTest = (gx, gy);
 
             // отблеск, пробегающий по острову при новом событии
             var sb = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
@@ -401,7 +413,11 @@ namespace NIsland
         }
 
         /// <summary>Сердечки, когда трек добавили в избранное.</summary>
-        public void MascotLove() { if (_mascot != null && MascotOn) _mascot.Flash("love", 2.5); }
+        public void MascotLove()
+        {
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(MascotLove)); return; }
+            if (_mascot != null && MascotOn) _mascot.Flash("love", 2.5);
+        }
 
         // ------------------------------------------------------------------
         //  Отблеск
@@ -425,7 +441,7 @@ namespace NIsland
         {
             // кадры нужны только под курсором (блик) или пока играет музыка (ободок в такт); таймер, а не CompositionTarget.Rendering —
             // тот заставляет WPF перерисовывать окно на частоте монитора даже без изменений
-            bool want = !S.LiteMode && !_hiddenFs && ((S.IslandGlint && _hover) || (S.BeatRim && MediaService.I.IsPlaying));
+            bool want = !S.LiteMode && !_hiddenFs && ((S.IslandGlint && (_hover || _glintTest != null)) || (S.BeatRim && MediaService.I.IsPlaying));
             if (want && !_liveHooked)
             {
                 _liveHooked = true;
@@ -473,18 +489,31 @@ namespace NIsland
             {
                 // 2.2: блик ходит за курсором по ВСЕЙ панели — и по горизонтали, и по вертикали (раньше был прибит к верхнему краю
                 // и в раскрытом острове закрывал только верхнюю половину); размер — от короткой стороны, мягкий край
-                double tx = _mouseX >= 0 ? _mouseX : w / 2 + Math.Sin(_liveT * 0.35) * w * 0.35;
-                double ty = _mouseY >= 0 ? _mouseY : h / 2 + Math.Cos(_liveT * 0.27) * h * 0.25;
+                bool mouse = _mouseX >= 0 || _glintTest != null;
+                double mx = _glintTest is { } gt0 ? gt0.X * w : _mouseX, my = _glintTest is { } gt1 ? gt1.Y * h : _mouseY;
+                // центр не уходит за край панели — яркое место доходит до каждого угла, а не обрывается
+                double tx = mouse ? Math.Clamp(mx, 0, w) : w / 2 + Math.Sin(_liveT * 0.35) * w * 0.35;
+                double ty = mouse ? Math.Clamp(my, 0, h) : h / 2 + Math.Cos(_liveT * 0.27) * h * 0.25;
                 if (_glintY < 0) _glintY = ty;
                 double k = Math.Min(1, dt * 9);
                 _glintX += (tx - _glintX) * k;
                 _glintY += (ty - _glintY) * k;
-                double size = Math.Clamp(Math.Min(w, h) * (_mode == Mode.Expanded ? 1.1 : 2.6), 90, 360) * S.GlintSize / 100.0;
-                _glint.Width = size * 1.35;
-                _glint.Height = size;
+                double gk = S.GlintSize / 100.0;
+                if (_mode == Mode.Expanded)
+                {
+                    double size = Math.Clamp(Math.Min(w, h) * 1.1, 90, 360) * gk;
+                    _glint.Width = size * 1.35;
+                    _glint.Height = size;
+                }
+                else
+                {
+                    // свёрнутая чёлка низкая и широкая: пятно вытянуто по ней и выше неё — светится вся высота, края мягкие
+                    _glint.Width = Math.Clamp(w * 0.55, 110, 300) * gk;
+                    _glint.Height = Math.Max(h * 2.4, 64) * gk;
+                }
                 ((TranslateTransform)_glint.RenderTransform).X = _glintX - _glint.Width / 2;
                 ((TranslateTransform)_glint.RenderTransform).Y = _glintY - _glint.Height / 2;
-                double op = (_mouseX >= 0 ? 0.95 : _mode == Mode.Expanded ? 0.3 : 0.5) * S.GlintStrength / 100.0;
+                double op = (mouse ? 0.95 : _mode == Mode.Expanded ? 0.3 : 0.5) * S.GlintStrength / 100.0;
                 // цвет блика: белый, акцент или цвет обложки — кисть пересобирается только при смене цвета
                 var gc = S.GlintColor switch
                 {

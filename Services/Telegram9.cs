@@ -21,11 +21,11 @@ namespace NIsland.Services
         /// <summary>Какие действия умеет каждый вид ("#" — число, "ref" есть у всех). Пустой список — только просмотр.</summary>
         internal static readonly Dictionary<string, string[]> WOps = new()
         {
-            ["player"] = new[] { "prev", "next", "play", "like", "back", "fwd", "shuffle", "repeat", "ab" },
-            ["lyrics"] = new[] { "prev", "next", "play" },
-            ["mixer"] = new[] { "vu", "vd", "mute", "m" },
+            ["player"] = new[] { "prev", "next", "play", "like", "back", "fwd", "shuffle", "repeat", "ab", "vu", "vd", "mute", "sleep" },
+            ["lyrics"] = new[] { "prev", "next", "play", "back", "fwd", "like" },
+            ["mixer"] = new[] { "vu", "vd", "mute", "m", "v" },
             ["eq"] = new[] { "p", "toggle" },
-            ["timer"] = new[] { "toggle", "reset", "in", "#" },
+            ["timer"] = new[] { "toggle", "reset", "in", "add", "#" },
             ["stopwatch"] = new[] { "toggle", "lap", "reset" },
             ["pomodoro"] = new[] { "toggle", "skip", "reset" },
             ["weather"] = Array.Empty<string>(), ["sysmon"] = Array.Empty<string>(), ["clock"] = Array.Empty<string>(),
@@ -38,8 +38,8 @@ namespace NIsland.Services
             ["clipboard"] = new[] { "in" },
             ["modes"] = new[] { "m" },
             ["scenes"] = new[] { "s" },
-            ["display"] = new[] { "bu", "bd", "theme", "off" },
-            ["power"] = new[] { "lock", "sleep", "in30", "cancel", "restart", "shutdown" },
+            ["display"] = new[] { "bu", "bd", "theme", "off", "b", "pr" },
+            ["power"] = new[] { "lock", "sleep", "in15", "in30", "in60", "cancel", "restart", "shutdown" },
             ["calc"] = Array.Empty<string>(), ["dice"] = Array.Empty<string>(), ["calendar"] = Array.Empty<string>(), ["breath"] = Array.Empty<string>(),
             ["water"] = new[] { "undo", "#" },
             ["notif"] = new[] { "read", "clear" },
@@ -51,13 +51,13 @@ namespace NIsland.Services
             ["rates"] = Array.Empty<string>(), ["sky"] = Array.Empty<string>(),
             ["health"] = new[] { "run" },
             ["startup"] = new[] { "s" },
-            ["windows"] = new[] { "f", "min" },
+            ["windows"] = new[] { "f", "min", "alttab" },
             ["upgrades"] = new[] { "run", "u" },
             ["history"] = Array.Empty<string>(),
             ["keys"] = new[] { "k" },
-            ["slides"] = new[] { "left", "right", "f5", "sf5", "b", "esc" },
-            ["jobs"] = new[] { "x" },
-            ["defender"] = new[] { "scan" },
+            ["slides"] = new[] { "left", "right", "f5", "sf5", "b", "w", "esc", "home", "end", "space" },
+            ["jobs"] = new[] { "x", "q" },
+            ["defender"] = new[] { "scan", "wd", "rt", "db", "ql" },
             // третья партия
             ["mouse"] = new[] { "mv", "c", "w", "step" },
             ["typer"] = new[] { "in", "k" },
@@ -77,7 +77,7 @@ namespace NIsland.Services
         internal static IEnumerable<string> TestDefaultCmds => WDefaults.Keys;
 
         static bool KnownOp(string kind, string head) =>
-            head is "ref" or "" || (WOps.TryGetValue(kind, out var ops) && (ops.Contains(head) || (ops.Contains("#") && int.TryParse(head, out _))));
+            head is "ref" or "" or "open" || (WOps.TryGetValue(kind, out var ops) && (ops.Contains(head) || (ops.Contains("#") && int.TryParse(head, out _))));
 
         /// <summary>Команда без аргументов → вид виджета (настройка «Отвечать виджетами»).</summary>
         static readonly Dictionary<string, string> WDefaults = new()

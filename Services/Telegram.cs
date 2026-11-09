@@ -77,8 +77,8 @@ namespace NIsland.Services
 
         /// <summary>Самопроверка: вместо Telegram запросы уходят сюда (метод, JSON) → JSON ответа.</summary>
         internal static Func<string, string, string> TestSink;
-        internal Task<(string Html, object Keys)?> TestCommand(string cmd, string arg) => Command(cmd, arg);
-        internal Task<string> TestCallback(string data) => Callback(data, 1);
+        internal Task<(string Html, object Keys)?> TestCommand(string cmd, string arg) => Task.Run(() => Command(cmd, arg));
+        internal Task<string> TestCallback(string data) => Task.Run(() => Callback(data, 1));
 
         async Task<JsonElement> Call(string method, object body, CancellationToken ct = default)
         {
@@ -390,7 +390,7 @@ namespace NIsland.Services
                     try
                     {
                         long.TryParse(St("offset"), out var offset);
-                        var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query", "widget_query" } }, ct);
+                        var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query", "widget_query", "inline_query" } }, ct);
                         foreach (var u in res.EnumerateArray())
                         {
                             offset = Math.Max(offset, u.GetProperty("update_id").GetInt64() + 1);
@@ -470,6 +470,7 @@ namespace NIsland.Services
         async Task Handle(JsonElement u)
         {
             if (u.TryGetProperty("widget_query", out var wq)) { await HandleWidgetQuery(wq); return; }
+            if (u.TryGetProperty("inline_query", out var iq)) { await HandleInline(iq); return; }
             if (u.TryGetProperty("callback_query", out var cq))
             {
                 if (!cq.TryGetProperty("message", out var cm) || cm.GetProperty("chat").GetProperty("id").ToString() != V("chat")) return;
@@ -504,6 +505,7 @@ namespace NIsland.Services
                 await Reply(await Command(cmd, sp > 0 ? text[(sp + 1)..].Trim() : ""));
                 return;
             }
+            if (ReplyButtons.Any(b => b.Label == text || T(b.Label) == text)) _await = null;
             if (TakeAwait() is { } kind)
             {
                 if (text.ToLowerInvariant() is "отмена" or "cancel" or "скасувати" or "-") { await Message("Отменено"); return; }
