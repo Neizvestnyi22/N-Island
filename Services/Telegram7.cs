@@ -76,6 +76,7 @@ namespace NIsland.Services
             new("shelf", "📦 Полка", "Дела", 320, 0, 0), new("translate", "🌐 Переводчик", "Дела", 340, 0, 0),
             new("cleanup", "🧹 Очистка", "Система", 340, 0, 0), new("news", "📰 Новости", "Сводки", 340, 0, 0),
             new("browser", "🧭 Браузер", "Управление", 340, 0, 6),
+            new("menu", "🧩 Все виджеты", "Главное", 340, 0, 0),
         };
 
         static WKind WK(string key) => WKinds.FirstOrDefault(k => k.Key == key);
@@ -501,7 +502,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     Btns(d, Bt("🔄 Перезагрузка", "restart", "d"), Bt("⏻ Выключить", "shutdown", "d"));
                     return d;
             }
-            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? CardState5(kind) ?? Card(kind, "Неизвестный виджет");
+            return CardState2(kind) ?? CardState3(kind) ?? CardState4(kind) ?? CardState5(kind) ?? CardState6(kind) ?? Card(kind, "Неизвестный виджет");
         }
 
         // ------------------------------------------------------------------
@@ -517,15 +518,21 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             string flag = WFlag(kind) ?? "control";
             WStateDirty(kind);
             string head0 = op.Contains('|') ? op[..op.IndexOf('|')] : op;
+            // каталог «🧩 Все виджеты» и «⬅ Назад» — меняют этот же виджет на месте
+            if (kind == "menu")
+                return head0 is "ref" or "" ? Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1)))) : await MenuAction(head0, op.Contains('|') ? op[(op.IndexOf('|') + 1)..] : "", msgId);
+            if (head0 == "nav") return NavBack(msgId, kind);
             if (head0 == "open")
             {
                 var target = op[5..];
                 if (WK(target) == null) return WState(kind, T("Нет такого виджета"));
+                // карточка → карточка: тот же виджет становится нужным (без нового сообщения)
+                if (msgId != 0 && IsCard(target) && IsCard(kind) && (WFlag(target) is not { } tneed || Flag(tneed))) return Morph(msgId, kind, target);
                 return WState(kind, await SendW(target) ? T("🧩 Виджет — ниже в чате") : T("Виджеты недоступны в этом Telegram"));
             }
             // нажатие, которого у этого вида нет (старый виджет, подделка) — ничего не делаем
-            if (!KnownOp(kind, head0)) return WState(kind, T("Неизвестное действие"));
-            if (op is not ("ref" or "") && !Flag(flag)) return WState(kind, T($"🔐 «{FlagNames[flag]}» выключено — включается на ПК"));
+            if (!KnownOp(kind, head0)) return Wrap(msgId, WState(kind, T("Неизвестное действие")));
+            if (op is not ("ref" or "") && !Flag(flag)) return Wrap(msgId, WState(kind, T($"🔐 «{FlagNames[flag]}» выключено — включается на ПК")));
             string note = null;
             var m = MediaService.I; var a = AudioService.I; var sys = SystemService.I;
             string arg = op.Contains('|') ? op[(op.IndexOf('|') + 1)..] : "";
@@ -632,7 +639,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             // нажали — живой виджет обновляется ещё 5 минут
             var wk = WK(kind);
             Live(msgId, kind);
-            return WState(kind, note);
+            return Wrap(msgId, WState(kind, note));
         }
 
         /// <summary>Какое разрешение нужно виду (null — «Управление с телефона» для нажатий, просмотр свободный).</summary>
@@ -696,13 +703,16 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 (string Kind, DateTime Until) w;
                 lock (_widgets) if (!_widgets.TryGetValue(id, out w)) return;
                 if (DateTime.Now > w.Until) return;
+                // виджет сменили на месте — дальше обновляем уже новый вид
+                if (w.Kind != kind) { kind = w.Kind; wk = WK(kind); last = null; if (wk == null || wk.LiveSec <= 0) return; }
                 await Task.Delay(wk.LiveSec * 1000);
+                lock (_widgets) if (!_widgets.TryGetValue(id, out w) || w.Kind != kind) continue;
                 string st;
                 try { st = WStateCached(kind); } catch (Exception e) { Log.Info("widget state: " + e.Message); continue; }
                 var key = LiveKey(kind, st);
                 if (key == last) continue;
                 last = key;
-                try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = st }); }
+                try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = Wrap(id, st) }); }
                 catch (TgError e) when (e.Message.Contains("not modified")) { }
                 // «слишком часто» — подождать и продолжить, а не бросать живой виджет
                 catch (TgError e) when (e.Code == 429) { await Task.Delay(15000); }
@@ -732,7 +742,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
             ["лимиты"] = "limits", ["фокус"] = "focus", ["слежка"] = "procwatch", ["будильник"] = "alarms", ["будильники"] = "alarms",
             ["починки"] = "fixes", ["починить"] = "fixes", ["незасыпать"] = "awake", ["сторож"] = "guard", ["радио"] = "radios", ["bluetooth"] = "radios",
             ["приватность"] = "privacy", ["слежка камеры"] = "privacy", ["молитвы"] = "prayer", ["намаз"] = "prayer", ["полка"] = "shelf",
-            ["переводчик"] = "translate", ["перевод"] = "translate", ["очистка"] = "cleanup", ["мусор"] = "cleanup", ["новости"] = "news",
+            ["переводчик"] = "translate", ["перевод"] = "translate", ["очистка"] = "cleanup", ["мусор"] = "cleanup", ["новости"] = "news", ["каталог"] = "menu", ["меню"] = "menu",
             ["браузер"] = "browser", ["вкладки"] = "browser", ["ссылки"] = "browser", ["chrome"] = "browser",
         };
 
@@ -747,19 +757,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     K(Row(B("📡 Живая панель", "do2:live"))));
         }
 
-        (string, object) WidgetsMenu(string title = null)
-        {
-            int live; lock (_widgets) live = _widgets.Count(w => w.Value.Until > DateTime.Now);
-            var sb = new StringBuilder($"🧩 <b>{T(title ?? "Виджеты в чате")}</b>\n" +
-                T("Интерактивные мини-приложения прямо в сообщении (Bot API 10.4): нажимаешь — меняется на ПК, данные обновляются сами.") +
-                $"\n\n{T("Живых сейчас")}: {live} · /widget имя");
-            var rows = new List<object[]>();
-            foreach (var g in WKinds.GroupBy(k => k.Group))
-                foreach (var chunk in g.Chunk(3)) rows.Add(chunk.Select(k => B(k.Name, "wg:" + k.Key)).ToArray());
-            rows.Add(Row(B("🔄 Обновить живые", "wg:!ref"), B("⏹ Остановить обновления", "wg:!stop")));
-            rows.Add(Row(B("⬅️ Назад", "nav:main")));
-            return (sb.ToString(), K(rows.ToArray()));
-        }
+        (string, object) WidgetsMenu(string title = null) => WidgetsCats(title);
 
         async Task<string> WidgetsCallback(string rest, long msgId = 0)
         {
@@ -778,8 +776,14 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                 }
                 return T("🔄 Обновлено: ") + list.Count;
             }
+            if (rest.StartsWith("@c:") && int.TryParse(rest[3..], out var ci))
+            {
+                var (h, k) = ci < 0 ? WidgetsCats() : WidgetsCat(ci);
+                await Edit(msgId, h, k);
+                return "";
+            }
             if (WK(rest) == null) return Stale;
-            return await SendW(rest) ? "🧩" : T("Виджеты недоступны в этом Telegram");
+            return await OpenFromMenu(rest);
         }
     }
 }

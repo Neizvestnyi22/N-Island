@@ -80,6 +80,7 @@ namespace NIsland.Services
             ["awake"] = new[] { "on", "off", "h" }, ["guard"] = new[] { "cpu", "ram" },
             ["radios"] = new[] { "t" }, ["privacy"] = Array.Empty<string>(), ["prayer"] = Array.Empty<string>(), ["agenda"] = Array.Empty<string>(),
             ["shelf"] = new[] { "send" }, ["translate"] = new[] { "in", "to" }, ["cleanup"] = new[] { "scan", "clean" }, ["news"] = Array.Empty<string>(),
+            ["menu"] = new[] { "cat", "go" },
             ["browser"] = new[] { "back", "fwd", "reload", "newtab", "close", "reopen", "next", "prev", "up", "down", "top", "bottom", "zin", "zout", "z0", "full",
                                   "play", "vmute", "in", "inc", "fav", "o", "w", "view", "tab", "shot", "link", "sum", "find", "type", "clip",
                                   "rw", "ff", "faster", "slower", "fc", "quit" },
@@ -90,7 +91,7 @@ namespace NIsland.Services
         internal static IEnumerable<string> TestDefaultCmds => WDefaults.Keys;
 
         static bool KnownOp(string kind, string head) =>
-            head is "ref" or "" or "open" || (WOps.TryGetValue(kind, out var ops) && (ops.Contains(head) || (ops.Contains("#") && int.TryParse(head, out _))));
+            head is "ref" or "" or "open" or "nav" || (WOps.TryGetValue(kind, out var ops) && (ops.Contains(head) || (ops.Contains("#") && int.TryParse(head, out _))));
 
         /// <summary>Команда без аргументов → вид виджета (настройка «Отвечать виджетами»).</summary>
         static readonly Dictionary<string, string> WDefaults = new()

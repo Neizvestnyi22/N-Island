@@ -152,11 +152,12 @@ namespace NIsland.Services
         }
 
         /// <summary>Состояние виджета без действия (для повторного тапа).</summary>
-        string CurrentWidgetState(string data)
+        string CurrentWidgetState(string data, long msgId = 0)
         {
             if (data.StartsWith("w:")) return RemoteState();
             if (data.StartsWith("p:")) return PetState();
-            if (data.StartsWith("c:") && data.IndexOf(':', 2) is int p and > 2 && WK(data[2..p]) != null) return WState(data[2..p]);
+            if (data.StartsWith("c:") && data.IndexOf(':', 2) is int p and > 2 && WK(data[2..p]) != null)
+                return data[2..p] == "menu" ? Wrap(msgId, Fit(MenuState(_hubCat.GetValueOrDefault(msgId, -1)))) : Wrap(msgId, WState(data[2..p]));
             return null;
         }
 

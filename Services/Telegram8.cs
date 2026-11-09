@@ -106,7 +106,7 @@ document.querySelectorAll('button').forEach(function(x){x.className=x==b?'a':''}
             lock (_widgets) ids = _widgets.Where(w => w.Value.Kind == kind).Select(w => w.Key).OrderByDescending(x => x).Take(5).ToList();
             foreach (var id in ids)
             {
-                try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = WState(kind, note) }); }
+                try { await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = Wrap(id, WState(kind, note)) }); }
                 catch (TgError e) when (e.Message.Contains("not modified")) { }
                 catch (TgError e) { Log.Info("telegram widget push: " + e.Message); }
             }

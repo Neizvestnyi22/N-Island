@@ -105,7 +105,7 @@ namespace NIsland.Services
                         lock (_pushedKey) if (_pushedKey.TryGetValue(id, out var was) && was == key) continue;
                         try
                         {
-                            await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = st });
+                            await Call("editMessageWidgetData", new { chat_id = V("chat"), message_id = id, chat_data = Wrap(id, st) });
                             lock (_pushedKey) { _pushedKey[id] = key; if (_pushedKey.Count > 200) _pushedKey.Remove(_pushedKey.Keys.Min()); }
                         }
                         catch (TgError e) when (e.Message.Contains("not modified")) { lock (_pushedKey) _pushedKey[id] = key; }

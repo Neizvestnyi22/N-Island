@@ -284,7 +284,7 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
             var data = Integrations.S(q, "data");
             string result = null;
             // случайный двойной тап (то же нажатие в том же виджете за 0,4 с) не повторяет действие — кроме повторяемых (громкость, мышь, клавиши…)
-            var work = DoubleTap(msgId, data) ? Task.Run(() => CurrentWidgetState(data)) : Serialized(msgId, () => WidgetAction(data, msgId));
+            var work = DoubleTap(msgId, data) ? Task.Run(() => CurrentWidgetState(data, msgId)) : Serialized(msgId, () => WidgetAction(data, msgId));
             if (await Task.WhenAny(work, Task.Delay(12000)) == work)
             {
                 try { result = await work; } catch (Exception e) { Log.Info("telegram widget query: " + e.Message); }
@@ -293,7 +293,7 @@ $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEa
             {
                 // долго: сразу «выполняется», а готовое состояние — в само сообщение, когда закончится
                 var kind = data.StartsWith("c:") && data.IndexOf(':', 2) is int p and > 2 ? data[2..p] : data.StartsWith("w:") ? "remote" : null;
-                if (kind != null && WK(kind) != null) result = WState(kind, T("⏳ Выполняется…"));
+                if (kind != null && WK(kind) != null && kind != "menu") result = Wrap(msgId, WState(kind, T("⏳ Выполняется…")));
                 _ = work.ContinueWith(async t =>
                 {
                     if (t.Status != TaskStatus.RanToCompletion || t.Result == null || msgId == 0) return;

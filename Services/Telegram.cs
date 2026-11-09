@@ -894,7 +894,7 @@ namespace NIsland.Services
                    "<b>📊 Отслеживание</b>\n/screentime · /week · /sessions · /batlog · /traffic · /wifilog · /usblog · /iplog · /downloads · /notifstats · /speedlog · /temps · /ramtop · /timeline · /report 21:00\n\n" +
                    "<b>🎛 Контроль</b>\n/limits · /limit chrome 120 · /focusmode 25 · /watchproc steam · /alarm 07:30 Подъём · /alarms · /miclevel 70 · /wallnext · /awakefor 2 · /loadalert cpu 90 · /fixes\n" +
                    "/prayer · /agenda · /shelf · /news · /privacy · /cleanscan\n\n" +
-                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 92 виджета · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
+                   "<b>🧩 Виджеты Telegram</b>\n/widgets — все 93 виджета · /widget — живой пульт в сообщении · /widget плеер · /widget таймер · /widget нагрузка · /pet — персонаж\n\n" +
                    "<b>🖥 Программы и Windows</b>\n" +
                    "/installed · /appinfo имя · /launch · /quit · /relaunch · /focus · /hang · /freeze · /unfreeze · /priority · /appmute · /appcpu · /autostart · /uninstall\n" +
                    "/upgrades · /upgrade id · /wsearch · /winstall id · /winset · /project · /layout · /caps · /saver · /emptybin · /recent · /printers · /printq\n" +

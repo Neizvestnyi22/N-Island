@@ -458,6 +458,37 @@ namespace NIsland.Services
                 if (TelegramHub.TestFindLinks("просто текст. и точка").Count != 0) Problems.Add("links: plain text has links");
                 log.AppendLine("links: ok");
             }
+            // каталог и переходы на месте: категория → виджет → «⬅ Назад», всё в том же сообщении (7), без новых сообщений
+            {
+                Sent.Clear();
+                string Kind(string st) { try { using var d = JsonDocument.Parse(st); return d.RootElement.GetProperty("k").GetString(); } catch { return null; } }
+                bool HasNav(string st) => st != null && st.Contains("\"nav\"");
+                var s1 = await tg.TestWidgetAction("c:menu:cat|0");
+                var s2 = await tg.TestWidgetAction("c:menu:go|timer");
+                var s3 = await tg.TestWidgetAction("c:timer:open|stopwatch");
+                var s4 = await tg.TestWidgetAction("c:stopwatch:nav");
+                var s5 = await tg.TestWidgetAction("c:timer:nav");
+                var s6 = await tg.TestWidgetAction("c:menu:nav");
+                int sends; lock (Sent) sends = Sent.Count(s => s.Method == "sendWidget");
+                if (Kind(s1) != "menu" || !s1.Contains("go|")) Problems.Add("catalog: category view: " + Short(s1));
+                if (Kind(s2) != "timer" || !HasNav(s2)) Problems.Add("catalog: go → timer in place: " + Short(s2));
+                if (Kind(s3) != "stopwatch" || !HasNav(s3)) Problems.Add("open → stopwatch in place: " + Short(s3));
+                if (Kind(s4) != "timer") Problems.Add("nav back → timer: " + Short(s4));
+                if (Kind(s5) != "menu") Problems.Add("nav back → catalog: " + Short(s5));
+                if (Kind(s6) != "menu" || s6.Contains("go|")) Problems.Add("nav → categories: " + Short(s6));
+                if (sends != 0) Problems.Add($"catalog: {sends} new widget message(s) instead of updating in place");
+                foreach (var st in new[] { s1, s2, s3, s4, s5, s6 }) if (st != null && Encoding.UTF8.GetByteCount(st) > 1024) Problems.Add("catalog: state > 1024 bytes");
+                // меню /widgets: категория листается в том же сообщении, второй выбор обновляет виджет выше
+                tg.TestForgetMenuWidget();
+                var c0 = await tg.TestCallbackAt("wg:@c:0", 55);
+                lock (Sent) Sent.Clear();
+                await tg.TestCallbackAt("wg:timer", 55);
+                await tg.TestCallbackAt("wg:stopwatch", 55);
+                int sends2, morph2;
+                lock (Sent) { sends2 = Sent.Count(s => s.Method == "sendWidget"); morph2 = Sent.Count(s => s.Method == "editMessageWidgetData" && s.Json.Contains("stopwatch")); }
+                if (sends2 != 1 || morph2 < 1) Problems.Add($"widgets menu: second pick should update the widget above (sent {sends2}, updated {morph2})");
+                log.AppendLine($"catalog: ok · menu sends {sends2}, updates {morph2}");
+            }
             foreach (var q in new[] { "w:ref", "w:zzz", "p:poke", "p:love", "p:ref" })
             {
                 var res = await tg.TestWidgetAction(q);
