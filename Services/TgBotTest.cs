@@ -162,6 +162,8 @@ namespace NIsland.Services
             lock (log2) foreach (var l in log2.Distinct()) log.AppendLine(l);
 
             // 3. пульт из других мессенджеров: тот же движок, ответы не уходят в Telegram
+            // живые виджеты из шагов выше сами обновляются в фоне — останавливаем, иначе их правки выглядят как «утечка» в Telegram
+            await tg.TestCallbackAt("wg:!stop", 1);
             await Task.Delay(6000);   // кнопки обхода (автозагрузка, здоровье ПК) досылают ответы в фоне — дождаться их
             lock (Sent) Sent.Clear();
             var none = new Func<string, bool>(_ => false);
