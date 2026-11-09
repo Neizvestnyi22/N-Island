@@ -159,7 +159,7 @@ namespace NIsland.Core
                     columns=7;for(int h=0;h<3;h++)for(int i=1;i<=7;i++)Button(i<=r.Board[h]?"−"+i:"·",i<=r.Board[h]?h+"."+i:"");break;
                 case "take21":for(int i=1;i<=3;i++)Button("−"+i,i<=r.Pot?i.ToString():"");break;
                 case "race":Button("🎲", "roll");break;
-                case "pig":Button("🎲","roll");Button(t("Забрать"),r.Pot>0?"bank":"");break;
+                case "pig":Button("🎲","roll");Button(t("Забрать очки"),r.Pot>0?"bank":"");break;
                 case "guess":columns=5;for(int i=1;i<=20;i++)Button(i.ToString(),i>=r.Low&&i<=r.High?i.ToString():"");break;
                 case "rps":columns=3;for(int i=0;i<3;i++)Button(new[]{"✊","📄","✂️"}[i],i.ToString());break;
                 case "sea":columns=4;for(int i=0;i<16;i++){int idx=(1-p)*16+i;Button(r.Board[idx]==2?"💥":r.Board[idx]==1?"≈":"·",r.Board[idx]==0?i.ToString():"");}break;

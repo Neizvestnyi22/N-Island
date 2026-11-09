@@ -1757,7 +1757,7 @@
   "Заблокировать": "Lock",
   "Заблокировать ПК": "Lock the PC",
   "Заблокировать компьютер": "Lock the computer",
-  "Забрать": "Bank",
+  "Забрать": "Pick up",
   "Забрать разрешения": "Take permissions",
   "Забыть": "Forget",
   "Забыть сеть Wi-Fi": "Forget Wi-Fi network",
@@ -7096,5 +7096,6 @@
   "Игры с друзьями по приглашению": "Play with friends by invitation",
   "🎲 Игры": "🎲 Games",
   "Сервер игр с друзьями": "Game server for friends",
-  "/games и приглашения — только игры, без доступа к ПК. Работает, пока N-Island включён. Порты открывать не нужно.": "/games and invites: games only, no PC access. Runs while N-Island is on. No open ports needed."
+  "/games и приглашения — только игры, без доступа к ПК. Работает, пока N-Island включён. Порты открывать не нужно.": "/games and invites: games only, no PC access. Runs while N-Island is on. No open ports needed.",
+  "Забрать очки": "Bank points"
 }
