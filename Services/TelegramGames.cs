@@ -64,6 +64,21 @@ namespace NIsland.Services
         async Task GameSend(FriendGames.Room room,long user)
         {
             string state=GameState(room,user);string lang=user==room.A?room.LanguageA:room.LanguageB;
+            long previous=user==room.A?room.MessageA:room.MessageB;
+            if(previous>0)
+            {
+                // Reopening the same invitation must not orphan its still-visible board.
+                // Keep the ID (also after restart) unless Telegram confirms that message is gone.
+                try
+                {
+                    await Call("editMessageWidgetData",new{chat_id=user,message_id=previous,chat_data=state});
+                    return;
+                }
+                catch(TgError e) when(e.Code==400&&e.Message.Contains("message is not modified",StringComparison.OrdinalIgnoreCase)) { return; }
+                catch(TgError e) when(e.Code==400&&e.Message.Contains("message to edit not found",StringComparison.OrdinalIgnoreCase)) { }
+                // Timeouts, forbidden chats, invalid data or non-editable messages are NOT
+                // proof of deletion. Let the caller report failure without sending another board.
+            }
             string html=FriendGameWidget.Html;WidgetPolicy.ValidateHtml(html);
             var result=await Call("sendWidget",new{chat_id=user,html,width=340,allow_queries=true,chat_data=state,caption=GameText(lang,"Игры с друзьями")+" · N-Island"});
             if(result.TryGetProperty("message_id",out var mi))

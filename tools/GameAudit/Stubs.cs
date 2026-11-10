@@ -13,8 +13,12 @@ namespace NIsland.Services {
         static object B(string text,string data)=>new{text,callback_data=data};
         static object[] Row(params object[] buttons)=>buttons;
         static object K(params object[][] rows)=>new{inline_keyboard=rows};
-        public sealed class TgError:Exception{public TgError(string m):base(m){}}
-        Task<JsonElement> Call(string method,object body,CancellationToken ct=default){Sent.Add((method,JsonSerializer.Serialize(body,WidgetJson)));return Task.FromResult(JsonSerializer.Deserialize<JsonElement>(method=="getMe"?"{\"username\":\"audit_bot\"}":"{\"message_id\":777}"));}
+        public sealed class TgError:Exception{public readonly int Code;public TgError(string m,int code=400):base(m){Code=code;}}
+        public Func<string,string,Exception> Failure;
+        public long NextMessageId=777;
+        public FriendGames.Room Room(string id)=>Games.Get(id);
+        public void ClearThrottle()=>_gameLastMenu.Clear();
+        Task<JsonElement> Call(string method,object body,CancellationToken ct=default){var json=JsonSerializer.Serialize(body,WidgetJson);Sent.Add((method,json));if(Failure?.Invoke(method,json) is {} error)throw error;return Task.FromResult(JsonSerializer.Deserialize<JsonElement>(method=="getMe"?"{\"username\":\"audit_bot\"}":"{\"message_id\":"+NextMessageId+"}"));}
         public Task<bool> Update(string json){using var d=JsonDocument.Parse(json);return FriendGameUpdate(d.RootElement.Clone());}
     }
 }

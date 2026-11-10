@@ -84,7 +84,7 @@ namespace NIsland.Core
             if(r.Kind=="chess")
             {
                 if(r.Fen==null||r.Fen.Length>100||r.Pot is < -1 or >63||!new[]{"q","r","b","n"}.Contains(r.Promotion)||r.Positions==null||r.Positions.Count>1000||r.DrawOffer is < -1 or >1)return false;
-                try {var b=Chess.ChessBoard.LoadFromFen(r.Fen);if((b.Turn==Chess.PieceColor.White?0:1)!=r.Turn)return false;}catch{return false;}
+                try {var b=Chess.ChessBoard.LoadFromFen(r.Fen);if(r.Winner==-1&&(b.Turn==Chess.PieceColor.White?0:1)!=r.Turn)return false;}catch{return false;}
             }
             if(r.Kind is "eights" or "blackjack")
             {

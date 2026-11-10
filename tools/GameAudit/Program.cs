@@ -73,6 +73,39 @@ hub.Sent.Clear();await hub.Update(Query(70,"g:"+gameId+":"+(rev+1)+":1"));Check(
 hub.Sent.Clear();await hub.Update(Query(60,"g:"+gameId+":"+(rev+1)+":1",999));Check(hub.Sent.Count==1&&!hub.Sent[0].Json.Contains("data"),"forged message allowed move");
 Check(Log.Errors.Count==0,"handler exception: "+string.Join(";",Log.Errors));
 
+// P2: reopening invitations must retain an existing board, including persisted IDs.
+foreach(long player in new[]{50L,60L})
+{
+ long before=player==50?hub.Room(gameId).MessageA:hub.Room(gameId).MessageB;
+ int version=hub.Room(gameId).Revision;
+ hub.ClearThrottle();hub.Sent.Clear();await hub.Update(Msg(player,"/start game_"+gameId));
+ Check(hub.Sent.Count(x=>x.Method=="editMessageWidgetData")==1&&!hub.Sent.Any(x=>x.Method=="sendWidget"),"reopen duplicated board player="+player);
+ Check((player==50?hub.Room(gameId).MessageA:hub.Room(gameId).MessageB)==before,"reopen changed ID");
+ hub.Sent.Clear();await hub.Update(Query(player,"g:"+gameId+":"+version+":ref",before));
+ Check(hub.Sent.Any(x=>x.Method=="answerWidgetQuery"&&x.Json.Contains("data")),"existing board stopped responding");
+}
+var restart=new TelegramHub();restart.ClearThrottle();await restart.Update(Msg(60,"/start game_"+gameId));
+Check(!restart.Sent.Any(x=>x.Method=="sendWidget")&&restart.Room(gameId).MessageB==777,"restart lost existing board");
+foreach(var failure in new Exception[]{new TelegramHub.TgError("Bad Request: message is not modified"),new HttpRequestException("temporary network failure"),new TelegramHub.TgError("server failure",503),new TelegramHub.TgError("Forbidden: blocked",403),new TelegramHub.TgError("Bad Request: message can't be edited"),new TelegramHub.TgError("message to edit not found",500)})
+{
+ restart.Failure=(method,_)=>method=="editMessageWidgetData"?failure:null;
+ restart.ClearThrottle();restart.Sent.Clear();await restart.Update(Msg(60,"/start game_"+gameId));
+ Check(!restart.Sent.Any(x=>x.Method=="sendWidget")&&restart.Room(gameId).MessageB==777,"API failure orphaned board: "+failure.Message);
+ if(failure.Message.Contains("not modified"))Check(!restart.Sent.Any(x=>x.Method=="sendMessage"),"not modified reported as failure");
+}
+restart.NextMessageId=900;restart.Failure=(method,_)=>method=="editMessageWidgetData"?new TelegramHub.TgError("Bad Request: message to edit not found"):null;
+restart.ClearThrottle();restart.Sent.Clear();await restart.Update(Msg(60,"/start game_"+gameId));
+Check(restart.Sent.Count(x=>x.Method=="sendWidget")==1&&restart.Room(gameId).MessageB==900&&restart.Room(gameId).MessageA==777,"missing board replacement failed");
+restart.Failure=null;restart.ClearThrottle();restart.Sent.Clear();await restart.Update(Msg(60,"/start game_"+gameId));
+Check(!restart.Sent.Any(x=>x.Method=="sendWidget")&&restart.Room(gameId).MessageB==900,"replacement duplicated on next reopen");
+restart.Sent.Clear();await restart.Update(Query(60,"g:"+gameId+":"+restart.Room(gameId).Revision+":ref",900));
+Check(restart.Sent.Any(x=>x.Method=="answerWidgetQuery"&&x.Json.Contains("data")),"replacement board rejected");
+restart.Sent.Clear();await restart.Update(Query(60,"g:"+gameId+":"+restart.Room(gameId).Revision+":ref",777));
+Check(!restart.Sent.Any(x=>x.Method=="answerWidgetQuery"&&x.Json.Contains("data")),"deleted ID still authorized");
+var restoredAgain=new TelegramHub();restoredAgain.ClearThrottle();await restoredAgain.Update(Msg(60,"/start game_"+gameId));
+Check(restoredAgain.Room(gameId).MessageB==900&&!restoredAgain.Sent.Any(x=>x.Method=="sendWidget"),"replacement ID not persisted");
+Console.WriteLine("PASS P2 reopen regressions: both players, existing queries, restart, not-modified, missing board, transient/403/503/noneditable failures, replacement persistence and stale-ID rejection.");
+
 // Deterministic win/loss, phase transitions and all 26 persisted rulesets.
 FriendGames.Room R(string kind){var r=games.Create(kind,9000+checks);Check(r!=null,kind+" create");Check(games.Join(r.Id,r.A+1,"en"),kind+" join deterministic");return r;}
 bool M(FriendGames.Room r,string op)=>games.Move(r.Id,r.Turn==0?r.A:r.B,r.Revision,op);
@@ -102,6 +135,7 @@ foreach(var fen in new[]{new Chess.ChessBoard().ToFen(),"r3k2r/p1ppqpb1/bn2pnp1/
  long expected=fen.StartsWith("rnbq")?8902:97862;Check(Perft(cb,3)==expected,"perft depth3 "+fen);
 }
 Check(!M(chess,"36"),"unselected chess move");ChessOp("s53");ChessOp("45");ChessOp("s12");ChessOp("28");ChessOp("s54");ChessOp("38");ChessOp("s3");ChessOp("39");Check(chess.Winner==2,"fools mate");
+var mateFile=Path.Combine(Store.Dir,"checkmate-restore.json");File.WriteAllText(mateFile,JsonSerializer.Serialize(new[]{chess}));Check(new FriendGames(mateFile).Get(chess.Id)?.Winner==2,"completed chess restore");
 void Position(string fen){chess=R("chess");chess.Fen=fen;chess.Pot=-1;chess.Turn=fen.Contains(" b ")?1:0;chess.Positions=new(){FriendGames.ChessPositionKey(Chess.ChessBoard.LoadFromFen(fen,Chess.AutoEndgameRules.None))};}
 Position("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");ChessOp("s60");ChessOp("62");Check(chess.Fen.StartsWith("r3k2r/8/8/8/8/8/8/R4RK1"),"castle rook");
 Position("4kr2/8/8/8/8/8/8/4K2R w K - 0 1");ChessOp("s60");Check(!M(chess,"62"),"castle through check");
