@@ -8,10 +8,10 @@ using System.Text.Json;
 namespace NIsland.Core
 {
     /// <summary>Isolated two-player rules/state. No PC APIs, processes, files supplied by users or host commands.</summary>
-    public sealed class FriendGames
+    public sealed partial class FriendGames
     {
         public record Game(string Key, string Title, string Rules);
-        public static readonly Game[] Catalog = {
+        public static readonly Game[] Catalog = new Game[] {
             new("ttt", "❌ Крестики-нолики онлайн", "Собери три в ряд на поле 3×3."),
             new("four", "🔴 Четыре в ряд", "Выбирай колонку. Собери четыре в ряд."),
             new("reversi", "⚫ Реверси 4×4", "Зажимай фишки соперника. Если ходов нет, ход пропускается."),
@@ -23,7 +23,7 @@ namespace NIsland.Core
             new("rps", "✊ Камень, ножницы, бумага", "Выбор скрыт до ответа соперника. Одна партия."),
             new("sea", "🚢 Морской бой 4×4", "Три однопалубных корабля расставлены случайно. Попадание даёт ещё один выстрел."),
             new("dots", "🔲 Квадраты", "Добавляй рёбра. Замкни квадрат — получишь очко и ещё один ход. Поле 2×2.")
-        };
+        }.Concat(NewExtraCatalog()).Concat(ChessCardCatalog).ToArray();
         public sealed class Room
         {
             public string Id { get; set; }
@@ -46,6 +46,16 @@ namespace NIsland.Core
             public int Low { get; set; } = 1;
             public int High { get; set; } = 20;
             public int Last { get; set; }
+            public int Passes { get; set; }
+            public string Fen { get; set; }
+            public string Promotion { get; set; }="q";
+            public string ChessLast { get; set; }
+            public List<string> Positions { get; set; }=new();
+            public int DrawOffer { get; set; }=-1;
+            public int[] Deck { get; set; }=Array.Empty<int>();
+            public int[] Discard { get; set; }=Array.Empty<int>();
+            public int[][] Hands { get; set; }=new[]{Array.Empty<int>(),Array.Empty<int>()};
+            public int[] CardPages { get; set; }=new int[2];
         }
         readonly Dictionary<string, Room> rooms = new();
         readonly string file;
@@ -55,11 +65,38 @@ namespace NIsland.Core
             if (file == null || !File.Exists(file)) return;
             // A corrupted file must fail closed, not reset rooms and accept arbitrary moves.
             var saved = JsonSerializer.Deserialize<List<Room>>(File.ReadAllText(file)) ?? new();
-            foreach(var room in saved.Where(r=>r.Expires>DateTime.UtcNow).Take(100))
+            foreach(var room in saved.Where(r=>r!=null&&r.Expires>DateTime.UtcNow).Take(100))
                 if (Valid(room)) rooms[room.Id] = room;
         }
-        static bool Valid(Room r) => r != null && r.Id?.Length==24 && r.A>0 && r.B>=0 && r.Turn is 0 or 1 && r.Winner is >= -1 and <=2 && Catalog.Any(g=>g.Key==r.Kind) && r.Board!=null && r.Aux!=null && r.Scores?.Length==2;
+        static bool Valid(Room r)
+        {
+            if(r==null||r.Id?.Length!=24||!r.Id.All(c=>c is >= 'a' and <= 'f' or >= '0' and <= '9')||r.A<=0||r.B<0||r.B==r.A||r.Turn is <0 or >1||r.Winner is < -1 or >2||r.Revision<0||r.Board==null||r.Aux==null||r.Scores?.Length!=2||r.Scores.Any(v=>v<0)||!Catalog.Any(g=>g.Key==r.Kind))return false;
+            int length=r.Kind switch{"ttt" or "sos" or "numberttt"=>9,"four"=>42,"reversi" or "hex" or "domineering" or "chomp" or "obstruction" or "isolation" or "breakthrough"=>16,"sea"=>32,"dots" or "kayles" or "silver"=>12,"nim"=>3,"gomoku"=>25,"wythoff" or "euclid"=>2,"mancala"=>8,"treble"=>13,_=>0};
+            if(r.Board.Length!=length||r.Board.Any(v=>v<0||v>100))return false;
+            if(r.Kind=="sea"&&(r.Aux.Length!=32||r.Aux.Any(v=>v is <0 or >1)))return false;
+            if(r.Kind=="rps"&&(r.Aux.Length!=2||r.Aux.Any(v=>v is < -1 or >2)))return false;
+            if(r.Kind=="dots"&&r.Aux.Length!=4)return false;
+            if(r.Kind=="breakthrough"&&(r.Aux.Length!=1||r.Aux[0] is < -1 or >15))return false;
+            if(r.Kind=="isolation"&&(r.Board.Count(v=>v==1)!=1||r.Board.Count(v=>v==2)!=1||r.Pot is <0 or >1))return false;
+            if(r.Kind=="silver"&&r.Pot is < -1 or >11)return false;
+            if(r.Kind=="sos"&&r.Pot is <1 or >2)return false;
+            if(r.Kind=="numberttt"&&r.Pot is <0 or >9)return false;
+            if(r.Kind=="chess")
+            {
+                if(r.Fen==null||r.Fen.Length>100||r.Pot is < -1 or >63||!new[]{"q","r","b","n"}.Contains(r.Promotion)||r.Positions==null||r.Positions.Count>1000||r.DrawOffer is < -1 or >1)return false;
+                try {var b=Chess.ChessBoard.LoadFromFen(r.Fen);if((b.Turn==Chess.PieceColor.White?0:1)!=r.Turn)return false;}catch{return false;}
+            }
+            if(r.Kind is "eights" or "blackjack")
+            {
+                if(r.Hands?.Length!=2||r.Hands.Any(h=>h==null)||r.Deck==null||r.Discard==null||r.Aux.Length!=2||r.Aux.Any(v=>v is <0 or >1)||r.CardPages?.Length!=2||r.CardPages.Any(v=>v is <0 or >6))return false;
+                var all=r.Deck.Concat(r.Discard).Concat(r.Hands[0]).Concat(r.Hands[1]).ToArray();
+                if(all.Length!=52||all.Distinct().Count()!=52||all.Any(c=>c<0||c>51))return false;
+                if(r.Kind=="eights"&&(r.Discard.Length==0||r.Pot is <0 or >3||r.Last is <0 or >1))return false;
+            }
+            return true;
+        }
         public Room Get(string id) => id != null && rooms.TryGetValue(id,out var r) && r.Expires>DateTime.UtcNow ? r : null;
+        public Room Pending(string kind,long owner)=>rooms.Values.FirstOrDefault(r=>r.Kind==kind&&r.A==owner&&r.B==0&&r.Winner==-1&&r.Expires>DateTime.UtcNow);
         public Room Create(string kind,long owner,string language="ru")
         {
             foreach(var id in rooms.Where(p=>p.Value.Expires<=DateTime.UtcNow).Select(p=>p.Key).ToArray()) rooms.Remove(id);
@@ -73,7 +110,7 @@ namespace NIsland.Core
             if(kind=="reversi"){r.Board[5]=r.Board[10]=1;r.Board[6]=r.Board[9]=2;}
             if(kind=="sea"){r.Aux=new int[32];for(int p=0;p<2;p++){var cells=Enumerable.Range(p*16,16).OrderBy(_=>RandomNumberGenerator.GetInt32(int.MaxValue)).Take(3);foreach(var i in cells)r.Aux[i]=1;}}
             if(kind=="dots")r.Aux=new int[4];
-            rooms[r.Id]=r;Save();return r;
+            InitExtra(r);InitChessCards(r);rooms[r.Id]=r;Save();return r;
         }
         public static string Lang(string language) => language?.StartsWith("uk")==true?"uk":language?.StartsWith("ru")==true?"ru":"en";
         public bool Join(string id,long user,string language)
@@ -85,7 +122,15 @@ namespace NIsland.Core
         public bool Move(string id,long user,int revision,string op)
         {
             var r=Get(id);if(r==null||r.B==0||r.Winner!=-1||revision!=r.Revision)return false;
-            int player=user==r.A?0:user==r.B?1:-1;if(player<0||(r.Kind!="rps"&&player!=r.Turn))return false;
+            int player=user==r.A?0:user==r.B?1:-1;if(player<0)return false;
+            if(op=="resign"){r.Winner=2-player;r.Revision++;Save();return true;}
+            if(r.Kind=="chess"&&op=="draw")
+            {
+                if(r.DrawOffer==1-player){r.Winner=0;r.DrawOffer=-1;}
+                else if(player==r.Turn)r.DrawOffer=player;else return false;
+                r.Revision++;Save();return true;
+            }
+            if(r.Kind!="rps"&&player!=r.Turn)return false;
             bool extra=false;int n;int mark=player+1;
             switch(r.Kind)
             {
@@ -125,7 +170,9 @@ namespace NIsland.Core
                     if(!int.TryParse(op,out n)||n<0||n>=12||r.Board[n]!=0)return false;r.Board[n]=mark;
                     for(int i=0;i<4;i++){int y=i/2,x=i%2;var edges=new[]{y*2+x,(y+1)*2+x,6+y*3+x,6+y*3+x+1};if(r.Aux[i]==0&&edges.All(e=>r.Board[e]!=0)){r.Aux[i]=mark;r.Scores[player]++;extra=true;}}
                     if(r.Aux.All(v=>v!=0))r.Winner=r.Scores[0]==r.Scores[1]?0:r.Scores[0]>r.Scores[1]?1:2;break;
-                default:return false;
+                case "chess":if(!ChessMove(r,player,op,out extra))return false;break;
+                case "eights":case "blackjack":if(!CardMove(r,player,op,out extra))return false;break;
+                default:if(!MoveExtra(r,player,op,out extra))return false;break;
             }
             if(!extra)r.Turn=1-r.Turn;r.Revision++;Save();return true;
         }
@@ -147,6 +194,7 @@ namespace NIsland.Core
         public object View(Room r,long user,Func<string,string> t)
         {
             int p=user==r.A?0:user==r.B?1:-1;if(p<0)throw new UnauthorizedAccessException();
+            if(r.Kind=="chess")return ChessView(r,user,t);
             var game=Catalog.First(g=>g.Key==r.Kind);bool can=r.B>0&&r.Winner==-1&&(r.Kind=="rps"?r.Aux[p]<0:r.Turn==p);
             var labels=new List<string>();var ops=new List<string>();int columns=3;
             void Button(string label,string op){labels.Add(label);ops.Add(can?op:"");}
@@ -165,13 +213,15 @@ namespace NIsland.Core
                 case "sea":columns=4;for(int i=0;i<16;i++){int idx=(1-p)*16+i;Button(r.Board[idx]==2?"💥":r.Board[idx]==1?"≈":"·",r.Board[idx]==0?i.ToString():"");}break;
                 case "dots":columns=4;for(int i=0;i<12;i++)Button((i<6?"H":"V")+(i<6?i+1:i-5)+(r.Board[i]==1?"●":r.Board[i]==2?"○":""),r.Board[i]==0?i.ToString():"");break;
             }
+            string extraInfo="";if(ExtraCatalog.Any(g=>g.Key==r.Kind)) ViewExtra(r,p,t,Button,ref columns,out extraInfo);
+            if(r.Kind is "eights" or "blackjack")CardsView(r,p,t,Button,out extraInfo);
             string info=r.Kind switch{
                 "nim"=>string.Join(" · ",r.Board),"take21"=>r.Pot.ToString(),"pig"=>r.Scores[0]+":"+r.Scores[1]+" · "+t("На кону")+" "+r.Pot+" · 🎲"+r.Last,
                 "race"=>r.Scores[0]+":"+r.Scores[1]+" · 🎲"+r.Last,"guess"=>r.Low+"…"+r.High,
                 "rps"=>r.Winner==-1?(r.Aux[p]>=0?t("Выбор принят"):""):new[]{"✊","📄","✂️"}[r.Aux[0]]+" : "+new[]{"✊","📄","✂️"}[r.Aux[1]],
                 "sea"=>t("Твои корабли")+": "+string.Join(",",Enumerable.Range(p*16,16).Where(i=>r.Aux[i]==1).Select(i=>(i%16+1)+(r.Board[i]==2?"💥":""))),
-                "dots"=>r.Scores[0]+":"+r.Scores[1]+" · "+string.Join("",r.Aux.Select(v=>v==1?"●":v==2?"○":"□")),_=>""};
-            return new { id=r.Id,k=r.Kind,h=t(game.Title),s=r.B==0?t("Ожидание друга"):r.Winner==0?t("Ничья"):r.Winner>0?t("Победил игрок")+" "+(r.Winner==1?"●":"○"):can?t("Твой ход"):t("Ход соперника"),i=info,l=labels,o=ops,c=columns,v=r.Revision,me=p==0?"●":"○",rule=t(game.Rules) };
+                "dots"=>r.Scores[0]+":"+r.Scores[1]+" · "+string.Join("",r.Aux.Select(v=>v==1?"●":v==2?"○":"□")),_=>extraInfo};
+            return new { id=r.Id,k=r.Kind,h=t(game.Title),s=r.B==0?t("Ожидание друга"):r.Winner==0?t("Ничья"):r.Winner>0?t("Победил игрок")+" "+(r.Winner==1?"●":"○"):can?t("Твой ход"):t("Ход соперника"),i=info,l=labels,o=ops,c=columns,v=r.Revision,done=r.Winner!=-1,joined=r.B>0,me=p==0?"●":"○",rule=t(game.Rules) };
         }
         public void Save()
         {

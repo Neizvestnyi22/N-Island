@@ -140,7 +140,7 @@ var B=0,et,L=navigator.language||'',E=/^uk/.test(L)?{RATE_LIMITED:'Занадт�
 :{RATE_LIMITED:'Too fast — tap later',BUSY:'Busy — tap later',TIMEOUT:'The PC did not answer — tap again',NOT_ALLOWED:'Buttons do not work in this copy',FAILED:'Failed'};
 function note(s,k){$('e').textContent=s;clearTimeout(et);if(k)et=setTimeout(function(){$('e').textContent=''},k)}
 function ask(q,b,n){if(!T||B)return;if(!q||new TextEncoder().encode('c:'+D.k+':'+q).length>64){note('⚠ Слишком длинная команда',6000);return;}B=1;if(b)b.classList.add('w');note('…');
-T.request('c:'+D.k+':'+q).then(function(a){B=0;if(b)b.classList.remove('w');note('');if(a.result)load(a.result)},function(e){B=0;if(b)b.classList.remove('w');
+T.request('c:'+D.k+':'+q).then(function(a){B=0;if(b)b.classList.remove('w');note('');if(a.result)load(a.result)},function(e){e=e||{};B=0;if(b)b.classList.remove('w');
 note('⚠ '+(E[e.code]||e.code||E.FAILED),6000)})}
 function PE(c,X,Y,a,b){c.beginPath();c.ellipse(X,Y,a,b,0,0,7);c.fill()}
 function pm(){var c=$('pm');if(c){var g=c.getContext('2d'),s=Date.now()/1e3,u=Math.abs(Math.sin(s*3.7));g.clearRect(0,0,92,92);g.save();g.translate(46,82-u*11);g.rotate(Math.sin(s*1.85)*.2);g.scale(1+u*.07,1-u*.07);
@@ -564,7 +564,7 @@ var e=document.getElementById('v');e.classList.remove('r');void e.offsetWidth;e.
                     break;
                 }
                 case ("mixer", "v") when int.TryParse(arg, out var mv) && mv is >= 0 and <= 100:
-                    await Ui(() => { a.SetVolume(mv / 100.0); if (mv > 0 && a.Muted) a.ToggleMute(); }); break;
+                    await Ui(() => a.SetVolume(mv / 100.0)); break;
                 case ("timer", "add") when int.TryParse(arg, out var tadd) && tadd is > 0 and <= 120:
                     await Ui(() => { var tm = TimerService.I; if (tm.Running || tm.Paused) tm.Add(tadd); else { tm.SetMinutes(tadd); tm.Start(); } }); break;
                 case ("display", "b") when int.TryParse(arg, out var bv) && bv is >= 0 and <= 100:

@@ -77,7 +77,7 @@ namespace NIsland.Core
         public static string ProfileHtml(string html)
         {
             // Applied to every template: timestamp inset, wrapping and motion preference.
-            const string css = "<style>body{padding-bottom:max(12px,env(safe-area-inset-bottom))}button.w{opacity:1;color:var(--tg-theme-hint-color,#888)}.h,.s,.t,.k{overflow-wrap:anywhere}.o{opacity:1;color:var(--tg-theme-hint-color,#888)}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style>";
+            const string css = "<style>body{padding-bottom:max(12px,env(safe-area-inset-bottom))}button.w{opacity:1;color:var(--tg-theme-hint-color,#888)}.h,.s,.t,.k{overflow-wrap:anywhere}button:disabled{cursor:default}.o{opacity:1;color:var(--tg-theme-hint-color,#888)}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style>";
             return html.Replace("</head>", css + "</head>");
         }
     }

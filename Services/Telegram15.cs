@@ -19,6 +19,7 @@ namespace NIsland.Services
         static readonly string[] SyncMenus = { "music", "sound", "eq", "mixer" };
         readonly Dictionary<string, (long Id, DateTime At, string Sig)> _menuMsgs = new();
         readonly Dictionary<long, string> _pushedKey = new();
+        readonly SemaphoreSlim _flushGate=new(1,1);
         readonly HashSet<string> _dirtyKinds = new(), _dirtyMenus = new();
         int _syncHooked;
         bool _syncScheduled;
@@ -30,7 +31,7 @@ namespace NIsland.Services
             lock (_menuMsgs) _menuMsgs[menu] = (id, DateTime.Now, null);
         }
 
-        static string MenuOfCommand(string cmd) => cmd switch { "music" or "now" => "music", "sound" or "output" => "sound", "eq" => "eq", "mixer" => "mixer", _ => null };
+        static string MenuOfCommand(string cmd) => cmd switch { "music" or "now" => "music", "sound" or "output" or "vol" or "volume" => "sound", "eq" => "eq", "mixer" => "mixer", _ => null };
 
         void HookPcSync()
         {
@@ -43,11 +44,12 @@ namespace NIsland.Services
                 m.TrackChanged += () => { Dirty(media, "music"); RestartMediaLive(); };
                 m.Changed += () => Dirty(media, "music");
                 AudioService.I.Changed += (_, __, ___) => Dirty(vol, "music", "sound", "mixer");
-                AudioService.I.OutputChanged += _ => Dirty(new[] { "audioout", "mixer" }, "sound");
+                AudioService.I.OutputChanged += _ => Dirty(vol, "music", "sound", "mixer");
                 Store.Settings.PropertyChanged += (_, e) =>
                 {
                     switch (e.PropertyName)
                     {
+                        case nameof(Settings.Mascot): case nameof(Settings.MascotHat): case nameof(Settings.WidgetPetDance): Dirty(new[]{"pet","player"});break;
                         case nameof(Settings.EqOn): case nameof(Settings.EqPreset): case nameof(Settings.EqGains): case nameof(Settings.EqBoost): Dirty(new[] { "eq" }, "eq"); break;
                         case nameof(Settings.Mode): Dirty(new[] { "modes", "remote" }); break;
                         case nameof(Settings.IpAlert): Dirty(new[] { "iplog" }); break;
@@ -87,6 +89,13 @@ namespace NIsland.Services
         }
 
         async Task FlushSync()
+        {
+            await _flushGate.WaitAsync();
+            try { await FlushSyncCore(); }
+            catch(Exception e){Log.Info("telegram sync: "+e.Message);}
+            finally{_flushGate.Release();}
+        }
+        async Task FlushSyncCore()
         {
             List<string> kinds, menus;
             lock (_dirtyKinds)
@@ -133,7 +142,7 @@ namespace NIsland.Services
                     var (h, k) = await Menu(menu);
                     var sig = System.Text.RegularExpressions.Regex.Replace(h, "<code>.*?</code>|<i>.*?</i>", "") + JsonSerializer.Serialize(k);   // позиция и строка текста идут сами — из-за них не правим
                     if (sig == mm.Sig) continue;
-                    await Edit(mm.Id, h, k);
+                    await Edit(mm.Id, h, k, recreate:false);
                     lock (_menuMsgs) if (_menuMsgs.TryGetValue(menu, out var cur) && cur.Id == mm.Id) _menuMsgs[menu] = (mm.Id, mm.At, sig);
                 }
                 catch (TgError e) when (e.Message.Contains("not found") || e.Message.Contains("can't be edited")) { lock (_menuMsgs) _menuMsgs.Remove(menu); }

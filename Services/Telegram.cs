@@ -103,7 +103,7 @@ namespace NIsland.Services
                 var raw0 = TestSink(method, JsonSerializer.Serialize(body, JsonOpts));
                 using var d0 = JsonDocument.Parse(raw0);
                 if (d0.RootElement.TryGetProperty("ok", out var ok0) && !ok0.GetBoolean()) throw new TgError(Integrations.S(d0.RootElement, "description"), 400);
-                return d0.RootElement.GetProperty("result").Clone();
+                var result=d0.RootElement.GetProperty("result").Clone(); ObserveReply(method,body,result); return result;
             }
             using var content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
             using var resp = await Long.PostAsync(Api(method), content, ct);
@@ -115,7 +115,8 @@ namespace NIsland.Services
             {
                 if (!doc.RootElement.TryGetProperty("ok", out var ok) || !ok.GetBoolean())
                     throw new TgError(Integrations.S(doc.RootElement, "description"), (int)resp.StatusCode);
-                return doc.RootElement.TryGetProperty("result", out var r) ? r.Clone() : default;
+                var result = doc.RootElement.TryGetProperty("result", out var r) ? r.Clone() : default;
+                ObserveReply(method, body, result);return result;
             }
         }
 
@@ -173,7 +174,7 @@ namespace NIsland.Services
             return id;
         }
 
-        async Task Edit(long msgId, string html, object keys)
+        async Task Edit(long msgId, string html, object keys, bool recreate = true)
         {
             html = Tr(html);
             if (RichOn && html.Length < 30000)
@@ -186,7 +187,7 @@ namespace NIsland.Services
             if (html.Length > 4000) html = html[..4000];
             try { await Call("editMessageText", new { chat_id = V("chat"), message_id = msgId, text = html, parse_mode = "HTML", link_preview_options = NoPreview, reply_markup = keys }); }
             catch (TgError e) when (e.Message.Contains("not modified")) { }
-            catch (TgError) { await Message(html, keys, translate: false); }   // старое сообщение или фото — присылаем новое
+            catch (TgError) { if(!recreate)throw;await Message(html, keys, translate: false); }   // старое сообщение или фото — присылаем новое
         }
 
         /// <summary>Отправить файл (фото, документ). Возвращает номер сообщения — нужен «живому экрану», чтобы менять картинку.</summary>
@@ -202,7 +203,7 @@ namespace NIsland.Services
             using var resp = await Big.PostAsync(Api(method), form);
             var raw = await resp.Content.ReadAsStringAsync();
             if (!resp.IsSuccessStatusCode) throw new TgError(Integrations.Snip(raw), (int)resp.StatusCode);
-            try { using var d = JsonDocument.Parse(raw); return d.RootElement.GetProperty("result").GetProperty("message_id").GetInt64(); } catch { return 0; }
+            try { using var d = JsonDocument.Parse(raw); var result=d.RootElement.GetProperty("result");ObserveReply(method,new{chat_id=V("chat")},result);return result.GetProperty("message_id").GetInt64(); } catch { return 0; }
         }
 
         static ByteArrayContent Bytes(byte[] data, string mime)
@@ -483,7 +484,7 @@ namespace NIsland.Services
         void Await(string kind) { if (Remote != null) return; _await = kind; _awaitUntil = DateTime.Now.AddMinutes(3); }
         string TakeAwait() { var k = _await; _await = null; return k != null && DateTime.Now < _awaitUntil ? k : null; }
 
-        async Task Handle(JsonElement u)
+        async Task HandleCore(JsonElement u)
         {
             if (u.TryGetProperty("shared_widget_query", out var sq))
             {
@@ -496,7 +497,7 @@ namespace NIsland.Services
             if (u.TryGetProperty("inline_query", out var iq)) { await HandleInline(iq); return; }
             if (u.TryGetProperty("callback_query", out var cq))
             {
-                if (!cq.TryGetProperty("message", out var cm) || cm.GetProperty("chat").GetProperty("id").ToString() != V("chat")) return;
+                if (!cq.TryGetProperty("message", out var cm) || cm.GetProperty("chat").GetProperty("id").ToString() != V("chat") || !cq.TryGetProperty("from",out var sender) || !sender.TryGetProperty("id",out var senderId) || senderId.ToString()!=V("chat")) return;
                 var data = Integrations.S(cq, "data");
                 App.Island?.MascotReact("curious", 1.2);   // нажали кнопку в Telegram
                 long msgId = cm.TryGetProperty("message_id", out var mi) ? mi.GetInt64() : 0;
@@ -543,7 +544,7 @@ namespace NIsland.Services
                 return;
             }
             var btn = ReplyButtons.FirstOrDefault(b => b.Label == text || T(b.Label) == text);
-            if (btn.Cmd != null) { await Reply(await Command(btn.Cmd, "")); return; }
+            if (btn.Cmd != null) { var response=await Command(btn.Cmd, "");if(response?.Html!=null){long id=await Message(response.Value.Html,response.Value.Keys);if(MenuOfCommand(btn.Cmd) is {} mn)TrackMenu(mn,id);}return; }
             // ссылки: только ссылка — сразу открывается в браузере ПК (подозрительная — после подтверждения), в тексте — кнопки «Открыть на ПК»
             try { if (await HandleLinks(text)) return; } catch (Exception e) { Log.Info("telegram links: " + e.Message); }
             if (Flag("aitext")) { await Reply(await AskAi(text)); return; }
@@ -628,8 +629,8 @@ namespace NIsland.Services
                     if ((no = Need("control")) != null) return (no, null);
                     if (!int.TryParse(arg.TrimEnd('%'), out var v)) return ("Напиши так: /vol 40", null);
                     v = Math.Clamp(v, 0, 100);
-                    await Ui(() => AudioService.I.SetVolume(v / 100.0));
-                    return ($"🔊 Громкость {v}%", null);
+                    int actual=await Ui(() => {AudioService.I.SetVolume(v / 100.0);return (int)Math.Round(AudioService.I.Volume*100);});
+                    return ($"🔊 Громкость {actual}%", null);
                 case "mute":
                     if ((no = Need("control")) != null) return (no, null);
                     return (await Ui(() => { bool was = AudioService.I.Muted; AudioService.I.ToggleMute(); return was ? "🔊 Звук включён" : "🔇 Звук выключен"; }), null);

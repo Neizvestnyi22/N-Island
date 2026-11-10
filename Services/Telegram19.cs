@@ -38,7 +38,7 @@ namespace NIsland.Services
             List<long> old;
             lock (_widgets)
                 lock (_wSentAt)
-                    old = _widgets.Where(w => w.Value.Kind == kind && w.Key != keep && _wSentAt.TryGetValue(w.Key, out var at) && (DateTime.Now - at).TotalHours < 47)
+                    old = _widgets.Where(w => w.Value.Kind == kind && w.Key < keep && _wSentAt.TryGetValue(w.Key, out var at) && (DateTime.Now - at).TotalHours < 47)
                                   .Select(w => w.Key).ToList();
             foreach (var id in old)
             {

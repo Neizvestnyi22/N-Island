@@ -46,23 +46,31 @@ namespace NIsland.Services
             if(!WidgetPolicy.ValidData(state))throw new ArgumentException("Game state exceeds 1024 UTF-8 bytes");
             return state;
         }
-        async Task GameMenu(long chat,string language)
+        async Task GameMenu(long chat,string language,int page=0)
         {
             string TGame(string key)=>GameText(language,key);
-            var rows=FriendGames.Catalog.Select(g=>Row(B(TGame(g.Title),"game:new:"+g.Key))).ToArray();
-            await Call("sendMessage",new{chat_id=chat,text=TGame("Игры с друзьями")+"\n"+TGame("ПК с N-Island должен быть включён. Приглашение действует 24 часа. Игроки не получают доступ к управлению ПК."),reply_markup=K(rows)});
+            int pages=(FriendGames.Catalog.Length+7)/8;page=Math.Clamp(page,0,pages-1);
+            var rows=FriendGames.Catalog.Skip(page*8).Take(8).Select(g=>Row(B(TGame(g.Title),"game:new:"+g.Key))).ToList();
+            rows.Add(Row(page>0?B("◀","game:page:"+(page-1)):null,B((page+1)+" / "+pages,"game:page:"+page),page+1<pages?B("▶","game:page:"+(page+1)):null));
+            var message=await Call("sendMessage",new{chat_id=chat,text=TGame("Игры с друзьями")+"\n"+TGame("ПК с N-Island должен быть включён. Приглашение действует 24 часа. Игроки не получают доступ к управлению ПК."),reply_markup=K(rows.ToArray())});
+            if(message.TryGetProperty("message_id",out var id))await CleanupReplies("games-menu",chat,new[]{new ReplyLedger.Entry(chat,id.GetInt64(),DateTime.UtcNow)},Array.Empty<long>());
         }
         async Task GameInvite(FriendGames.Room room)
         {
             string lang=room.LanguageA;string link="https://t.me/"+await GameBotName()+"?start=game_"+room.Id;
-            await Call("sendMessage",new{chat_id=room.A,text=GameText(lang,"Отправь эту ссылку другу:")+"\n"+link+"\n"+GameText(lang,"Один соперник. Ссылка действует 24 часа. ПК должен быть включён."),disable_web_page_preview=true});
+            var message=await Call("sendMessage",new{chat_id=room.A,text=GameText(lang,"Отправь эту ссылку другу:")+"\n"+link+"\n"+GameText(lang,"Один соперник. Ссылка действует 24 часа. ПК должен быть включён."),link_preview_options=new{is_disabled=true}});
+            if(message.TryGetProperty("message_id",out var id))await CleanupReplies("invite:"+room.Kind,room.A,new[]{new ReplyLedger.Entry(room.A,id.GetInt64(),DateTime.UtcNow)},Array.Empty<long>());
         }
         async Task GameSend(FriendGames.Room room,long user)
         {
             string state=GameState(room,user);string lang=user==room.A?room.LanguageA:room.LanguageB;
             string html=FriendGameWidget.Html;WidgetPolicy.ValidateHtml(html);
             var result=await Call("sendWidget",new{chat_id=user,html,width=340,allow_queries=true,chat_data=state,caption=GameText(lang,"Игры с друзьями")+" · N-Island"});
-            if(result.TryGetProperty("message_id",out var mi))Games.RememberMessage(room,user,mi.GetInt64());
+            if(result.TryGetProperty("message_id",out var mi))
+            {
+                Games.RememberMessage(room,user,mi.GetInt64());
+                await CleanupReplies("game:"+room.Id,user,new[]{new ReplyLedger.Entry(user,mi.GetInt64(),DateTime.UtcNow)},Array.Empty<long>());
+            }
         }
         async Task GamePush(FriendGames.Room room)
         {
@@ -113,10 +121,11 @@ namespace NIsland.Services
                     try
                     {
                         if(data=="game:menu"){await GameMenu(user,lang);return true;}
+                        if(data.StartsWith("game:page:")&&int.TryParse(data[10..],out int page)){await GameMenu(user,lang,page);return true;}
                         if(!data.StartsWith("game:new:",StringComparison.Ordinal))return true;
                         if(_gameLastMenu.TryGetValue(user,out var last)&&(DateTime.UtcNow-last).TotalSeconds<2)return true;
                         _gameLastMenu[user]=DateTime.UtcNow;
-                        var room=Games.Create(data[9..],user,lang);
+                        var room=Games.Pending(data[9..],user)??Games.Create(data[9..],user,lang);
                         if(room==null){await Call("sendMessage",new{chat_id=user,text=GameText(lang,"Лимит активных игр. Дождись окончания или истечения приглашений.")});return true;}
                         await GameSend(room,user);await GameInvite(room);
                     }

@@ -606,8 +606,7 @@ namespace NIsland.Services
                     if ((no = Need("control")) != null) return (no, null);
                     int step = int.TryParse(arg, out var st) ? Math.Clamp(st, 1, 50) : 10;
                     var a = AudioService.I;
-                    double nv = Math.Clamp(a.Volume + (cmd == "volup" ? step : -step) / 100.0, 0, 1);
-                    await Ui(() => a.SetVolume(nv));
+                    double nv = await Ui(() => { a.RefreshLevels(); a.SetVolume(Math.Clamp(a.Volume + (cmd == "volup" ? step : -step) / 100.0, 0, 1)); return a.Volume; });
                     return ($"🔊 {Math.Round(nv * 100)}%\n<code>{Bar(nv)}</code>", null);
                 }
                 case "like":

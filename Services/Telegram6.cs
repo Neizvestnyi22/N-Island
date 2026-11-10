@@ -56,7 +56,7 @@ var p=d.pos+(d.p?(Date.now()-t0)/1e3*(d.rate||1):0);p=Math.min(p,d.dur);$('pr').
 function load(s){try{D=JSON.parse(s||'{}');t0=Date.now();show();$('s').textContent=D.e||''}catch(e){}}
 if(T){load(T.chatData||T.publicData);T.onEvent('chatDataChanged',function(){load(T.chatData)})}
 function go(b,n){if(!T||b.B)return;b.B=1;b.style.opacity=.5;$('s').textContent='…';
-T.request('w:'+b.dataset.q).then(function(a){b.B=0;b.style.opacity='';$('s').textContent='';if(a.result)load(a.result)},function(e){b.B=0;b.style.opacity='';
+T.request('w:'+b.dataset.q).then(function(a){b.B=0;b.style.opacity='';$('s').textContent='';if(a.result)load(a.result)},function(e){e=e||{};b.B=0;b.style.opacity='';
 $('s').textContent=e.code==='NOT_ALLOWED'?'🔐':e.code==='RATE_LIMITED'?'⏳ Нажми ещё раз позже':'⚠ '+e.code})}
 document.querySelectorAll('button').forEach(function(b){b.onclick=function(){go(b)}});
 setInterval(tick,1000);
@@ -197,10 +197,10 @@ case'headbang':Tx('🤘',cx+s*.44,top+s*.3,s*.22,.9);break;
 case'sneeze':if(t*1.6%1>=.7)Tx('апчхи!',cx+s*.1,top-s*.12,s*.17,1);break;
 case'bored':Tx('…',cx+s*.38,top,s*.25,.7);break;
 }}
-setInterval(function(){t+=1/30;J=M.max(0,J-.08);draw()},33);
+var rm=matchMedia('(prefers-reduced-motion:reduce)'),lastDraw=0;setInterval(function(){if(document.hidden)return;var now=Date.now(),slow=rm.matches||S.m=='sleep';if(slow&&now-lastDraw<160)return;lastDraw=now;t+=slow?.16:1/30;J=M.max(0,J-.08);if(rm.matches){t=0;J=0}draw()},33);
 function fl(m){F=m;FU=Date.now()+1800;J=1}
-function show(s,tap){var d={};try{d=JSON.parse(s||'{}')}catch(e){}if(tap&&d.m)fl(d.m);else for(var k in d)S[k]=d[k];$('n').textContent=S.n||''}
-function ask(q){fl(q=='poke'?'happy':q);if(!T)return;$('h').textContent='…';T.request('p:'+q).then(function(a){$('h').textContent='';a.result&&show(a.result,1)},function(e){$('h').textContent='⚠ '+e.code})}
+function show(s,tap){var d={};try{d=JSON.parse(s||'{}')}catch(e){return}if(tap&&d.m)fl(d.m);for(var k in d)if(!tap||k!='m')S[k]=d[k];$('n').textContent=S.n||''}
+var petBusy=0;function ask(q){if(petBusy)return;fl(q=='poke'?'happy':q);if(!T)return;petBusy=1;$('h').textContent='…';T.request('p:'+q).then(function(a){petBusy=0;$('h').textContent='';a&&a.result&&show(a.result,1)},function(e){petBusy=0;$('h').textContent='⚠ '+(e&&e.code||'ERROR')})}
 if(T){show(T.chatData);T.onEvent('chatDataChanged',function(){show(T.chatData)})}
 $('v').onclick=function(){ask('poke')};document.querySelectorAll('button').forEach(function(b,i){b.onclick=function(){ask(['love','party','laugh','dance','sleep','ref'][i])}});
 </script></body></html>

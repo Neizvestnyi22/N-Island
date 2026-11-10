@@ -13,3 +13,6 @@ dist/
 *.log
 Thumbs.db
 desktop.ini
+
+# WPF temporary projects
+*_wpftmp.csproj

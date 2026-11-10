@@ -71,51 +71,7 @@ namespace NIsland.Services
         /// Наш HTML Telegram → Rich HTML (Bot API 10.1): переносы строк превращаются в абзацы и &lt;br&gt;
         /// (в rich HTML они, как в вебе, иначе бы склеились), первая жирная строка — заголовок, таблицы — &lt;table&gt;.
         /// </summary>
-        public static string ToRichHtml(string html)
-        {
-            html ??= "";
-            var sb = new StringBuilder();
-            // блочные куски, внутри которых переносы трогать нельзя
-            var parts = Regex.Split(html, @"(<pre[^>]*>.*?</pre>|<blockquote[^>]*>.*?</blockquote>|\u0002.*?\u0003)", RegexOptions.Singleline);
-            bool first = true;
-            foreach (var part in parts)
-            {
-                if (part.Length == 0) continue;
-                if (part.StartsWith("<pre", StringComparison.Ordinal)) { sb.Append(part); first = false; continue; }
-                if (part.StartsWith("<blockquote", StringComparison.Ordinal)) { sb.Append(Regex.Replace(part, "\r?\n", "<br>")); first = false; continue; }
-                if (part[0] == '\u0002')   // не StartsWith(string): управляющие символы при сравнении по культуре игнорируются, и подходил любой текст
-                {
-                    var rows = TblData(TblRx.Match(part));
-                    if (rows.Count == 0) continue;
-                    sb.Append("<table bordered striped compact>");
-                    for (int i = 0; i < rows.Count; i++)
-                    {
-                        sb.Append("<tr>");
-                        foreach (var c in rows[i]) sb.Append(i == 0 ? "<th>" : "<td>").Append(H(c)).Append(i == 0 ? "</th>" : "</td>");
-                        sb.Append("</tr>");
-                    }
-                    sb.Append("</table>");
-                    first = false;
-                    continue;
-                }
-                foreach (var para in Regex.Split(part.Trim('\n'), @"\n\s*\n"))
-                {
-                    var p = para.Trim('\n');
-                    if (p.Trim().Length == 0) continue;
-                    // «🎛 <b>Заголовок</b>» в самом начале — настоящий заголовок
-                    var head = Regex.Match(p, @"^([^\n<]{0,6})<b>([^<\n]{1,80})</b>([^\n<]{0,40})(\n|$)");
-                    if (first && head.Success)
-                    {
-                        sb.Append("<h3>").Append(head.Groups[1].Value).Append(head.Groups[2].Value).Append(head.Groups[3].Value).Append("</h3>");
-                        p = p[head.Length..];
-                        if (p.Trim().Length == 0) { first = false; continue; }
-                    }
-                    sb.Append("<p>").Append(p.Replace("\n", "<br>")).Append("</p>");
-                    first = false;
-                }
-            }
-            return sb.ToString();
-        }
+        public static string ToRichHtml(string html) => MenuRichRenderer.Render(html);
 
         /// <summary>Markdown модели для rich-сообщения: только экранируем то, что в нашей шапке.</summary>
         static string MdEsc(string s) => Regex.Replace(s ?? "", @"([\\`*_\[\]#|~=<>])", @"\$1");

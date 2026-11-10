@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using NIsland.Core;
@@ -432,11 +432,17 @@ namespace NIsland.Services
                 }
                 catch { _meter = null; }
             }
+            RefreshLevels();
+        }
+
+        // Refresh synchronously after a successful write: otherwise two quick +10 commands
+        // both calculate from the pre-write value until the next 150ms poll.
+        public void RefreshLevels()
+        {
             if (_vol == null) return;
             try
             {
-                _vol.GetMasterVolumeLevelScalar(out var v);
-                _vol.GetMute(out var m);
+                if (_vol.GetMasterVolumeLevelScalar(out var v) != 0 || _vol.GetMute(out var m) != 0) return;
                 bool changed = Math.Abs(v - Volume) > 0.004 || m != Muted;
                 Volume = v; Muted = m;
                 if (changed && _init) Changed?.Invoke(Volume, Muted, (DateTime.Now - _selfChange).TotalMilliseconds < 600);
@@ -448,12 +454,15 @@ namespace NIsland.Services
         public void SetVolume(double v)
         {
             if (_vol == null) return;
+            if (!double.IsFinite(v)) return;
+            v = Math.Clamp(v, 0, 1);
             _selfChange = DateTime.Now;
             var g = Guid.Empty;
             try
             {
-                _vol.SetMasterVolumeLevelScalar((float)Math.Clamp(v, 0, 1), ref g);
+                _vol.SetMasterVolumeLevelScalar((float)v, ref g);
                 if (Muted && v > 0) _vol.SetMute(false, ref g);
+                RefreshLevels();
             }
             catch { }
         }
@@ -462,7 +471,8 @@ namespace NIsland.Services
         {
             if (_vol == null) return;
             var g = Guid.Empty;
-            try { _vol.SetMute(!Muted, ref g); } catch { }
+            _selfChange = DateTime.Now;
+            try { RefreshLevels(); _vol.SetMute(!Muted, ref g); RefreshLevels(); } catch { }
         }
 
         /// <summary>Микрофон по умолчанию (устройство связи). Берём на время вызова и сразу отпускаем.</summary>

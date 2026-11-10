@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -1037,7 +1037,7 @@ namespace NIsland
                 Background = new LinearGradientBrush(Color.FromArgb(0x30, 0x0A, 0x84, 0xFF), Color.FromArgb(0x18, 0xBF, 0x5A, 0xF2), 25),
                 BorderBrush = UI.Hex("#26FFFFFF"), BorderThickness = new Thickness(1),
                 Child = UI.Grid("a,*").Add(logo,
-                    UI.Col(UI.Text("N-Island", 26, true), UI.Text("Версия " + AppInfo.Version + " · Dynamic Island для Windows", 12.5, false, UI.Dim),
+                    UI.Col(UI.Text("N-Island", 26, true), UI.Text("Версия " + AppInfo.DisplayVersion + " · Dynamic Island для Windows", 12.5, false, UI.Dim),
                            new TextBlock { Text = AppInfo.Credits, FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0),
                                            Foreground = new LinearGradientBrush(Color.FromRgb(0x64, 0xD2, 0xFF), Color.FromRgb(0xBF, 0x5A, 0xF2), 0) })
                       .M(18, 0, 0, 0).At(0, 1)),
@@ -1058,8 +1058,9 @@ namespace NIsland
                     Row("Сделано", "Идея, дизайн и тесты — @Ne1zvestny1i в Telegram. Код написан вместе с Claude (Anthropic). " +
                                    "WPF и .NET 8, без рекламы и телеметрии, данные хранятся только на этом компьютере.",
                         UI.Pill("Telegram", () => SystemService.Run(AppInfo.Telegram)))),
+                CopiesPanel(),
                 Group("Версия и обновления",
-                    Row("Версия", $"{AppInfo.Version} · {(Updater.IsLite ? "lite" : "полная")} {Updater.Arch} · .NET {Environment.Version} · {Maint.WindowsVersion}",
+                    Row("Версия", $"{AppInfo.DisplayVersion} · {(Updater.IsLite ? "lite" : "полная")} {Updater.Arch} · .NET {Environment.Version} · {Maint.WindowsVersion}",
                         UI.Pill("Проверить", () => _ = CheckUpdates(update, install, notes))),
                     UpdatePanel(update, install, notes),
                     Row("Проверять обновления сами", "Раз в сутки спрашивать GitHub и показывать уведомление в чёлке. Ставится только по твоей кнопке",

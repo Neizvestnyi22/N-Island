@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -69,6 +69,8 @@ namespace NIsland.Controls
         /// <summary>Короткая эмоция поверх основной (удивление, любовь, радость).</summary>
         public void Flash(string mood, double seconds = 2.2, bool jump = true)
         {
+            if(string.IsNullOrEmpty(mood))return;
+            seconds=double.IsFinite(seconds)?Math.Clamp(seconds,0.1,60):2.2;
             _flash = mood;
             _flashUntil = DateTime.Now.AddSeconds(seconds);
             if (jump) _jump = 1;
@@ -165,7 +167,9 @@ namespace NIsland.Controls
         void Step(double dt)
         {
             NIsland.Core.Perf.Hit("mascot-draw");
-            dt *= Math.Clamp(Speed, 0.3, 3);
+            if(!double.IsFinite(dt)||dt<0)return;
+            dt=Math.Min(dt,0.25);
+            dt *= double.IsFinite(Speed)?Math.Clamp(Speed, 0.3, 3):1;
             _t += dt;
             // в покое — оглядывается и иногда что-нибудь делает сам
             if (Current == "idle")
