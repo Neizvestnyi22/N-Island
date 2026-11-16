@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -53,6 +53,11 @@ namespace NIsland
                 status,
                 curve.M(8, 4, 8, 4),
                 presets,
+                Row("Убрать ослабление", "Без автоматического ослабления; ручное усиление сохраняется. Подъём полос может вызвать клиппинг — сначала уменьши громкость Windows",
+                    ToggleAct(nameof(Settings.EqKeepLevel), on => {
+                        if(on&&MessageBox.Show(this,I18n.T("Убрать ослабление эквалайзера? Сначала уменьши громкость Windows. Подъём полос может вызвать хрип; при нём отключи этот режим или опусти полосы."),"N-Island",MessageBoxButton.YesNo,MessageBoxImage.Warning)!=MessageBoxResult.Yes)S.EqKeepLevel=false;
+                        Equalizer.Apply();
+                    })),
                 Row("Не терять громкость", "Раньше при подъёме полос весь звук делался тише на величину подъёма. Теперь запас вдвое меньше — громкость почти как без эквалайзера",
                     ToggleAct(nameof(Settings.EqAutoGain), _ => Equalizer.Apply())),
                 Row("Усиление громкости", "Для тихих динамиков ноутбука: добавляет громкости всем приложениям. Больше +6 дБ на громкой музыке может хрипеть",

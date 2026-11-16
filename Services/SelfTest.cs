@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -205,12 +205,14 @@ namespace NIsland.Services
                 Ok(rel?.Sha256?.Length == 64, "latest release has SHA-256");
                 Ok(Equalizer.IsNewer("1.4.10", "1.4.2") && !Equalizer.IsNewer("1.4.2", "1.4.2") && !Equalizer.IsNewer("1.3", "1.4.2") && Equalizer.IsNewer("1.5", "?"), "version compare");
                 var s = Store.Settings;
-                s.EqAutoGain = true; s.EqBoost = 0;
+                s.EqKeepLevel = false; s.EqAutoGain = true; s.EqBoost = 0;
                 Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == -3, "preamp keeps loudness: +6 dB → −3 dB");
                 s.EqBoost = 4;
                 Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == 1, "volume boost +4 dB → +1 dB");
                 s.EqAutoGain = false; s.EqBoost = 0;
                 Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == -6.5, "old safe mode → −6.5 dB");
+                Ok(Equalizer.Preamp(new[] { 0.0, -3 }) == 0, "flat/cut curve: no unnecessary attenuation");
+                s.EqKeepLevel=true;Ok(Equalizer.Preamp(new[] { 6.0, 3, 0 }) == 0,"explicit keep-level mode");
             }
             catch (Exception e) { sb.AppendLine("FATAL " + e); bad++; }
             sb.AppendLine($"problems={bad}");

@@ -67,12 +67,13 @@ namespace NIsland.Services
         string Api(string method) => $"https://api.telegram.org/bot{V("token")}/{method}";
         CancellationTokenSource _loop;
         string _loopToken;
+        Task _loopTask;
         bool _commandsSet;
 
         sealed class TgError : Exception
         {
-            public readonly int Code;
-            public TgError(string m, int code) : base(m) { Code = code; }
+            public readonly int Code, RetryAfter;
+            public TgError(string m, int code,int retryAfter=0) : base(m) { Code = code;RetryAfter=retryAfter; }
         }
 
         // ------------------------------------------------------------------
@@ -105,18 +106,33 @@ namespace NIsland.Services
                 if (d0.RootElement.TryGetProperty("ok", out var ok0) && !ok0.GetBoolean()) throw new TgError(Integrations.S(d0.RootElement, "description"), 400);
                 var result=d0.RootElement.GetProperty("result").Clone(); ObserveReply(method,body,result); return result;
             }
-            using var content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
-            using var resp = await Long.PostAsync(Api(method), content, ct);
-            var raw = await resp.Content.ReadAsStringAsync(ct);
-            JsonDocument doc;
-            try { doc = JsonDocument.Parse(raw); }
-            catch { throw new TgError("Telegram: " + Integrations.Snip(raw), (int)resp.StatusCode); }
-            using (doc)
+            // Only idempotent reads/state refreshes may be retried. Never replay sends,
+            // uploads or commands after an ambiguous network outcome.
+            for(int attempt=0;;attempt++)
             {
-                if (!doc.RootElement.TryGetProperty("ok", out var ok) || !ok.GetBoolean())
-                    throw new TgError(Integrations.S(doc.RootElement, "description"), (int)resp.StatusCode);
-                var result = doc.RootElement.TryGetProperty("result", out var r) ? r.Clone() : default;
-                ObserveReply(method, body, result);return result;
+                try
+                {
+                    using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    deadline.CancelAfter(TimeSpan.FromSeconds(method=="getUpdates"?60:method=="editMessageWidgetData"?3:12));
+                    using var content=new StringContent(JsonSerializer.Serialize(body,JsonOpts),Encoding.UTF8,"application/json");
+                    using var resp=await Long.PostAsync(Api(method),content,deadline.Token);
+                    var raw=await resp.Content.ReadAsStringAsync(deadline.Token);
+                    JsonDocument doc;
+                    try{doc=JsonDocument.Parse(raw);}catch{throw new TgError("Telegram: "+Integrations.Snip(raw),(int)resp.StatusCode);}
+                    using(doc)
+                    {
+                        if(!doc.RootElement.TryGetProperty("ok",out var ok)||!ok.GetBoolean())
+                        {
+                            int code=doc.RootElement.TryGetProperty("error_code",out var ec)&&ec.TryGetInt32(out var c)?c:(int)resp.StatusCode;
+                            int wait=doc.RootElement.TryGetProperty("parameters",out var par)&&par.TryGetProperty("retry_after",out var ra)&&ra.TryGetInt32(out var n)?n:0;
+                            throw new TgError(Integrations.S(doc.RootElement,"description"),code,wait);
+                        }
+                        var result=doc.RootElement.TryGetProperty("result",out var r)?r.Clone():default;
+                        ObserveReply(method,body,result);return result;
+                    }
+                }
+                catch(Exception e) when(attempt<1&&BotRetryPolicy.MayRetry(method)&&!ct.IsCancellationRequested&&(e is HttpRequestException||e is OperationCanceledException||e is TgError {Code:>=500}))
+                { await Task.Delay(400,ct); }
             }
         }
 
@@ -198,12 +214,16 @@ namespace NIsland.Services
             if (caption != null) { form.Add(new StringContent(Legacy(Tr(caption))), "caption"); form.Add(new StringContent("HTML"), "parse_mode"); }
             if (keys != null) form.Add(new StringContent(JsonSerializer.Serialize(keys, JsonOpts)), "reply_markup");
             if (QuietNow()) form.Add(new StringContent("true"), "disable_notification");
+            if(method=="sendDocument")form.Add(new StringContent("true"),"disable_content_type_detection");
             form.Add(file, field, fileName);
             if (TestSink != null) { TestSink(method, JsonSerializer.Serialize(new { file = fileName, caption, reply_markup = keys }, JsonOpts)); return 7; }
             using var resp = await Big.PostAsync(Api(method), form);
             var raw = await resp.Content.ReadAsStringAsync();
             if (!resp.IsSuccessStatusCode) throw new TgError(Integrations.Snip(raw), (int)resp.StatusCode);
-            try { using var d = JsonDocument.Parse(raw); var result=d.RootElement.GetProperty("result");ObserveReply(method,new{chat_id=V("chat")},result);return result.GetProperty("message_id").GetInt64(); } catch { return 0; }
+            using var document=JsonDocument.Parse(raw);
+            if(!document.RootElement.TryGetProperty("ok",out var uploaded)||!uploaded.GetBoolean()||!document.RootElement.TryGetProperty("result",out var result)||!result.TryGetProperty("message_id",out var mid)||!mid.TryGetInt64(out var sentId))
+                throw new TgError("Не удалось подтвердить отправку файла. Проверь чат перед повтором.",(int)resp.StatusCode);
+            ObserveReply(method,new{chat_id=V("chat")},result);return sentId;
         }
 
         static ByteArrayContent Bytes(byte[] data, string mime)
@@ -377,7 +397,7 @@ namespace NIsland.Services
         public override Task Poll()
         {
             if (string.IsNullOrEmpty(V("chat"))) return Task.CompletedTask;
-            if (_loop == null || _loop.IsCancellationRequested || _loopToken != V("token")) StartLoop();
+            if (_loop == null || _loop.IsCancellationRequested || _loopTask?.IsCompleted==true || _loopToken != V("token")) StartLoop();
             return Task.CompletedTask;
         }
 
@@ -385,19 +405,20 @@ namespace NIsland.Services
         {
             StopLoop();
             _loop = new CancellationTokenSource();
+            if(_loopToken!=V("token"))_commandsSet=false;
             _loopToken = V("token");
+            string token=_loopToken;
             var ct = _loop.Token;
-            _ = Task.Run(async () =>
+            _loopTask = Task.Run(async () =>
             {
                 int fails = 0;
                 HookPcSync();   // изменения на ПК сами обновляют виджеты и пульты в чате
-                await SetCommands();
-                Greet();
-                while (!ct.IsCancellationRequested && Enabled && Ready && V("chat") != "" && V("token") == _loopToken)
+                try { await SetCommands();Greet(); }catch(Exception e){Log.Info("telegram init: "+e.Message);}
+                long.TryParse(St("offset"),out var offset);
+                while (!ct.IsCancellationRequested && Enabled && Ready && V("chat") != "" && V("token") == token)
                 {
                     try
                     {
-                        long.TryParse(St("offset"), out var offset);
                         var res = await Call("getUpdates", new { timeout = 25, limit = 30, offset, allowed_updates = new[] { "message", "callback_query", "widget_query", "shared_widget_query", "inline_query" } }, ct);
                         foreach (var u in res.EnumerateArray())
                         {
@@ -421,7 +442,7 @@ namespace NIsland.Services
                         Ok = false;
                         Status = "Ошибка: " + (e is TgError { Code: 409 } ? "этот бот уже опрашивается в другой программе или у него вебхук"
                                              : e is TgError { Code: 401 } ? "токен бота отозван или неверный" : Integrations.Reason(e));
-                        await Task.Delay(TimeSpan.FromSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(++fails, 6)))), ct).ContinueWith(_ => { });
+                        await Task.Delay(BotRetryPolicy.Delay(++fails,(e as TgError)?.Code??0,(e as TgError)?.RetryAfter??0), ct).ContinueWith(_ => { });
                     }
                 }
             });

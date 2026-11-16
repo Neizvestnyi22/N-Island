@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
+using System.Globalization;
 
 namespace NIsland.Core
 {
@@ -30,6 +32,8 @@ namespace NIsland.Core
             public string Kind { get; set; }
             public long A { get; set; }
             public long B { get; set; }
+            public string NameA { get; set; }
+            public string NameB { get; set; }
             public long MessageA { get; set; }
             public long MessageB { get; set; }
             public int Turn { get; set; }
@@ -118,6 +122,26 @@ namespace NIsland.Core
             var r=Get(id);if(r==null||user<=0||r.A==user||r.B!=0)return false;
             r.B=user;r.LanguageB=Lang(language);r.Revision++;Save();return true;
         }
+        public static string SafePlayerName(string name)
+        {
+            var result=new StringBuilder();int bytes=0;
+            foreach(var rune in (name??"").EnumerateRunes())
+            {
+                var kind=Rune.GetUnicodeCategory(rune);
+                if(kind is UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)continue;
+                if(bytes+rune.Utf8SequenceLength>32)break;
+                result.Append(rune.ToString());bytes+=rune.Utf8SequenceLength;
+            }
+            return result.ToString().Trim();
+        }
+        public void RememberPlayer(Room r,long user,string name)
+        {
+            name=SafePlayerName(name);
+            if(user==r.A){if(r.NameA==name)return;r.NameA=name;}
+            else if(user==r.B){if(r.NameB==name)return;r.NameB=name;}else return;
+            Save();
+        }
+        static string PlayerName(Room r,int player)=>SafePlayerName(player==0?r.NameA:r.NameB) is {Length:>0} name?name:"ID "+(player==0?r.A:r.B);
         public void RememberMessage(Room r,long user,long id){if(user==r.A)r.MessageA=id;else if(user==r.B)r.MessageB=id;Save();}
         public bool Move(string id,long user,int revision,string op)
         {
@@ -218,10 +242,10 @@ namespace NIsland.Core
             string info=r.Kind switch{
                 "nim"=>string.Join(" · ",r.Board),"take21"=>r.Pot.ToString(),"pig"=>r.Scores[0]+":"+r.Scores[1]+" · "+t("На кону")+" "+r.Pot+" · 🎲"+r.Last,
                 "race"=>r.Scores[0]+":"+r.Scores[1]+" · 🎲"+r.Last,"guess"=>r.Low+"…"+r.High,
-                "rps"=>r.Winner==-1?(r.Aux[p]>=0?t("Выбор принят"):""):new[]{"✊","📄","✂️"}[r.Aux[0]]+" : "+new[]{"✊","📄","✂️"}[r.Aux[1]],
+                "rps"=>r.Winner==-1?(r.Aux[p]>=0?t("Выбор принят"):""):(r.Aux[0]<0?"—":new[]{"✊","📄","✂️"}[r.Aux[0]])+" : "+(r.Aux[1]<0?"—":new[]{"✊","📄","✂️"}[r.Aux[1]]),
                 "sea"=>t("Твои корабли")+": "+string.Join(",",Enumerable.Range(p*16,16).Where(i=>r.Aux[i]==1).Select(i=>(i%16+1)+(r.Board[i]==2?"💥":""))),
                 "dots"=>r.Scores[0]+":"+r.Scores[1]+" · "+string.Join("",r.Aux.Select(v=>v==1?"●":v==2?"○":"□")),_=>extraInfo};
-            return new { id=r.Id,k=r.Kind,h=t(game.Title),s=r.B==0?t("Ожидание друга"):r.Winner==0?t("Ничья"):r.Winner>0?t("Победил игрок")+" "+(r.Winner==1?"●":"○"):can?t("Твой ход"):t("Ход соперника"),i=info,l=labels,o=ops,c=columns,v=r.Revision,done=r.Winner!=-1,joined=r.B>0,me=p==0?"●":"○",rule=t(game.Rules) };
+            return new { id=r.Id,k=r.Kind,h=t(game.Title),s=r.B==0?t("Ожидание друга"):r.Winner==0?t("Ничья"):r.Winner>0?t("Победитель")+": "+PlayerName(r,r.Winner-1)+" "+(r.Winner==1?"●":"○")+" · "+t("Проигравший")+": "+PlayerName(r,2-r.Winner)+" "+(r.Winner==1?"○":"●"):can?t("Твой ход"):t("Ход соперника"),i=info,l=labels,o=ops,c=columns,v=r.Revision,done=r.Winner!=-1,joined=r.B>0,me=p==0?"●":"○",rule=t(game.Rules) };
         }
         public void Save()
         {

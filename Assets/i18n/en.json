@@ -7169,5 +7169,12 @@
   "Удалить только выбранный файл в корзину?": "Recycle only the selected file?",
   "Нет гарантии удаления без следов: SSD, резервные копии и журналы Windows сохраняются.": "No guarantee of traceless deletion: SSD, backups and Windows logs remain.",
   "Файл отправлен в корзину": "File recycled",
-  "Сначала удаляй выбранные дополнительные файлы, EXE — последним. Неизвестные файлы, общие и текущие данные сохраняются.": "Remove selected companion files first, EXE last. Unknown files, shared and current data are preserved."
+  "Сначала удаляй выбранные дополнительные файлы, EXE — последним. Неизвестные файлы, общие и текущие данные сохраняются.": "Remove selected companion files first, EXE last. Unknown files, shared and current data are preserved.",
+  "Победитель": "Winner",
+  "Проигравший": "Loser",
+  "Убрать ослабление": "Remove attenuation",
+  "Без автоматического ослабления; ручное усиление сохраняется. Подъём полос может вызвать клиппинг — сначала уменьши громкость Windows": "No automatic attenuation; manual boost is retained. Raised bands can clip: lower Windows volume first.",
+  "Убрать ослабление эквалайзера? Сначала уменьши громкость Windows. Подъём полос может вызвать хрип; при нём отключи этот режим или опусти полосы.": "Remove equalizer attenuation? Lower Windows volume first. Raised bands can distort; if so, disable this mode or lower the bands.",
+  "Не удалось подтвердить отправку файла. Проверь чат перед повтором.": "File delivery could not be confirmed. Check the chat before trying again.",
+  "Файл больше лимита Telegram. Выбери файл меньше 50 МБ": "File exceeds the Telegram limit. Choose a file smaller than 50 MB"
 }

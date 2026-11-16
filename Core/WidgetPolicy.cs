@@ -74,11 +74,19 @@ namespace NIsland.Core
             return html.Replace("</body>", "<button onclick=\"" + refresh + "\" style=\"position:fixed;" + position + ";border:0;border-radius:8px;background:#8882;color:inherit;padding:2px 8px;font-size:13px;flex:none\">⟳</button></body>");
         }
 
+        public static string ReliableRequests(string html)
+        {
+            if(!html.Contains("T.request(")||html.Contains("function RQ(q)")||html.Contains("var petBusy=0;"))return html;
+            const string helper="function RQ(q){return new Promise(function(y,n){var z=0,t=setTimeout(function(){if(!z){z=1;n({code:'TIMEOUT'})}},8000);function f(c,v){if(z)return;z=1;clearTimeout(t);c(v)}try{T.request(q).then(function(a){f(y,a||{})},function(e){f(n,e)})}catch(e){f(n,e)}})}";
+            html=html.Replace("T.request(","RQ(");
+            return html.Insert(html.LastIndexOf("</script>",StringComparison.Ordinal),helper);
+        }
+
         public static string ProfileHtml(string html)
         {
             // Applied to every template: timestamp inset, wrapping and motion preference.
             const string css = "<style>body{padding-bottom:max(12px,env(safe-area-inset-bottom))}button.w{opacity:1;color:var(--tg-theme-hint-color,#888)}.h,.s,.t,.k{overflow-wrap:anywhere}button:disabled{cursor:default}.o{opacity:1;color:var(--tg-theme-hint-color,#888)}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}</style>";
-            return html.Replace("</head>", css + "</head>");
+            return ReliableRequests(html.Replace("</head>", css + "</head>"));
         }
     }
 }

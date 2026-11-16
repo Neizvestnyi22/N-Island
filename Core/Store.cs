@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -519,6 +519,7 @@ namespace NIsland.Core
         public bool EqOn { get => _eqOn; set => Set(ref _eqOn, value); } bool _eqOn;
         public string EqGains { get => _eqGains; set => Set(ref _eqGains, value); } string _eqGains = "";
         /// <summary>Не терять громкость: запас под подъём полос — половина самой большой прибавки, а не вся (раньше с басами звук становился заметно тише).</summary>
+        public bool EqKeepLevel { get => _eqKeepLevel; set => Set(ref _eqKeepLevel, value); } bool _eqKeepLevel;
         public bool EqAutoGain { get => _eqAutoGain; set => Set(ref _eqAutoGain, value); } bool _eqAutoGain = true;
         /// <summary>Усиление громкости через эквалайзер, дБ (−6…+12): тихим динамикам ноутбука.</summary>
         public int EqBoost { get => _eqBoost; set => Set(ref _eqBoost, value); } int _eqBoost;

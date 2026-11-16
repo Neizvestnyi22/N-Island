@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -245,6 +245,7 @@ namespace NIsland.Services
                 var fi = new FileInfo(path);
                 if (fi.Length > MaxUpload) return $"Файл {Maint.Size(fi.Length)} — больше 50 МБ, Telegram не примет его от бота";
                 await using var fs = File.OpenRead(path);
+                if(fs.Length>MaxUpload)return "Файл больше лимита Telegram. Выбери файл меньше 50 МБ";
                 var content = new StreamContent(fs);
                 content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                 await Upload("sendDocument", "document", content, fi.Name);

@@ -50,7 +50,7 @@ namespace NIsland.Services
                     switch (e.PropertyName)
                     {
                         case nameof(Settings.Mascot): case nameof(Settings.MascotHat): case nameof(Settings.WidgetPetDance): Dirty(new[]{"pet","player"});break;
-                        case nameof(Settings.EqOn): case nameof(Settings.EqPreset): case nameof(Settings.EqGains): case nameof(Settings.EqBoost): Dirty(new[] { "eq" }, "eq"); break;
+                        case nameof(Settings.EqOn): case nameof(Settings.EqPreset): case nameof(Settings.EqGains): case nameof(Settings.EqBoost): case nameof(Settings.EqKeepLevel): case nameof(Settings.EqAutoGain): Dirty(new[] { "eq" }, "eq"); break;
                         case nameof(Settings.Mode): Dirty(new[] { "modes", "remote" }); break;
                         case nameof(Settings.IpAlert): Dirty(new[] { "iplog" }); break;
                         case nameof(Settings.DownloadsNotify): Dirty(new[] { "downloads" }); break;

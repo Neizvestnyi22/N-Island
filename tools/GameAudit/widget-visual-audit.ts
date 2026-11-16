@@ -1,0 +1,5 @@
+import fs from 'node:fs';import {runWidget} from './packages/core/scripts/sandbox-node.ts';
+const dir=process.env.NISLAND_WIDGET_DIR||'visual5',html=fs.readFileSync(dir+'/game.html','utf8');let results:any[]=[];
+for(const file of fs.readdirSync(dir).filter(x=>/-ru-101.json$/.test(x))){
+ for(const theme of ['light','dark'] as const){const data=fs.readFileSync(dir+'/'+file,'utf8');const r=await runWidget(html,{locale:'ru',theme,policy:'strict',frames:0,timerRounds:0,data:{chatData:data,publicData:null},probes:["String(document.querySelectorAll('#g button').length)","document.getElementById('g').className"],script:[]});results.push({file,theme,diags:r.diags,logs:r.logs,probes:r.probes,stopped:r.stopped});if(r.diags.length||r.logs.some((x:any)=>x.level==='error')||r.stopped)throw Error(JSON.stringify(results.at(-1)));}}
+fs.writeFileSync(dir+'/sandbox-results.json',JSON.stringify(results,null,2));console.log('PASS '+results.length+' strict sandbox visual cases, 29 games x two themes. Not native Telegram touches.');

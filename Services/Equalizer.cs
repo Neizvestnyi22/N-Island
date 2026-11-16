@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -190,7 +190,7 @@ namespace NIsland.Services
             var g = new double[Freqs.Length];
             var parts = (csv ?? "").Split(',', StringSplitOptions.TrimEntries);
             for (int i = 0; i < g.Length && i < parts.Length; i++)
-                if (double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) g[i] = Math.Clamp(v, -MaxGain, MaxGain);
+                if (double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && double.IsFinite(v)) g[i] = Math.Clamp(v, -MaxGain, MaxGain);
             return g;
         }
 
@@ -288,14 +288,14 @@ namespace NIsland.Services
         }
 
         /// <summary>
-        /// Предусилитель. Раньше всегда «минус самая большая прибавка − 0,5 дБ»: с басами +6 дБ весь звук становился на 6,5 дБ тише,
-        /// и на ноутбуке казалось, что с эквалайзером тихо. Теперь (по умолчанию) запас — половина прибавки: громкость почти та же,
-        /// а хрип возможен только на самых громких местах с сильно поднятыми полосами. Плюс своё усиление (−6…+12 дБ) для тихих динамиков.
+        /// Keep compatibility headroom by default; flat/cut curves have no extra attenuation.
+        /// Explicit KeepLevel removes automatic attenuation only after a UI warning.
+        /// Manual positive boost remains an explicit setting and may clip; no hardware loudness guarantee.
         /// </summary>
         public static double Preamp(double[] g)
         {
             double up = Math.Max(0, g.Length > 0 ? g.Max() : 0);
-            double pre = S.EqAutoGain ? -up * 0.5 : -up - 0.5;
+            double pre = S.EqKeepLevel ? 0 : S.EqAutoGain ? -up * 0.5 : up>0 ? -up - 0.5 : 0;
             return Math.Round(pre + Math.Clamp(S.EqBoost, -6, 12), 1);
         }
 

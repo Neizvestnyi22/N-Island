@@ -120,7 +120,7 @@ namespace NIsland.Core
                 pieces[i]=b[i%8,7-i/8]?.ToFenChar()??'.';
                 ops[i]=moves.Any(m=>Index(m.OriginalPosition)==i)?"s"+i:moves.Any(m=>Index(m.OriginalPosition)==r.Pot&&Index(m.NewPosition)==i)?i.ToString():"";
             }
-            var status=r.B==0?t("Ожидание друга"):r.Winner==0?t("Ничья"):r.Winner>0?t("Победил игрок")+" "+(r.Winner==1?"♔":"♚"):can?t("Твой ход"):t("Ход соперника");
+            var status=r.B==0?t("Ожидание друга"):r.Winner==0?t("Ничья"):r.Winner>0?t("Победитель")+": "+PlayerName(r,r.Winner-1)+" "+(r.Winner==1?"♔":"♚")+" · "+t("Проигравший")+": "+PlayerName(r,2-r.Winner)+" "+(r.Winner==1?"♚":"♔"):can?t("Твой ход"):t("Ход соперника");
             return new{id=r.Id,k=r.Kind,h=t(game.Title),s=status,i=(b.WhiteKingChecked||b.BlackKingChecked?t("Шах")+" · ":"")+(r.ChessLast??"")+(r.DrawOffer>=0?" · ½?":""),z=new string(pieces),o=ops,c=8,v=r.Revision,done=r.Winner!=-1,joined=r.B>0,me=p==0?"♔":"♚",flip=p==1,sel=r.Pot,prom=r.Promotion,can,rule=t(game.Rules)};
         }
         static void CardsView(Room r,int p,Func<string,string> t,Action<string,string> button,out string info)

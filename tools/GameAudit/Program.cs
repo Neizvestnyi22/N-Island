@@ -2,6 +2,19 @@ using System.Text.Json;
 using System.Text;
 using NIsland.Core;
 using NIsland.Services;
+if(args.Contains("--visuals")){
+ string dir=args[0];Directory.CreateDirectory(dir);var visual=new FriendGames();
+ foreach(var kind in FriendGames.Catalog.Select(x=>x.Key)){
+ visual=new FriendGames();var r=visual.Create(kind,101);visual.Join(r.Id,202,"ru");visual.RememberPlayer(r,101,"Алиса");visual.RememberPlayer(r,202,"Богдан");
+ // Add one public opening move without exposing hidden hands to the other player.
+ var initial=JsonSerializer.SerializeToElement(visual.View(r,101,k=>k));
+ if(kind!="chomp"&&initial.TryGetProperty("o",out var ops)){var op=ops.EnumerateArray().Select(x=>x.GetString()).FirstOrDefault(x=>!string.IsNullOrEmpty(x));if(op!=null)visual.Move(r.Id,101,r.Revision,op);}
+ foreach(var lang in new[]{"ru","en","uk"}){
+ var dict=lang=="ru"?new Dictionary<string,string>():JsonSerializer.Deserialize<Dictionary<string,string>>(File.ReadAllText("Assets/i18n/"+lang+".json"));
+ foreach(long user in new[]{101L,202L})File.WriteAllText(Path.Combine(dir,kind+"-"+lang+"-"+user+".json"),JsonSerializer.Serialize(visual.View(r,user,k=>dict.GetValueOrDefault(k,k)),TelegramHub.WidgetJson));
+ }}File.WriteAllText(Path.Combine(dir,"game.html"),FriendGameWidget.Html);WidgetPolicy.ValidateHtml(FriendGameWidget.Html);
+ Console.WriteLine("PASS 174 visual states generated; HTML UTF8="+Encoding.UTF8.GetByteCount(FriendGameWidget.Html)+"; zlib="+WidgetPolicy.CompressedBytes(FriendGameWidget.Html));return;
+}
 int checks=0;
 void Check(bool value,string message){checks++;if(!value)throw new Exception(message);}
 var games=new FriendGames();
@@ -19,6 +32,15 @@ Check(!games.Move(sample.Id,84,sample.Revision,"0"),"occupied");
 Check(!games.Move(sample.Id,84,sample.Revision,"/cmd"),"command injection");
 foreach(var (user,cell) in new[]{(84L,"3"),(42L,"1"),(84L,"4"),(42L,"2")})Check(games.Move(sample.Id,user,sample.Revision,cell),"winning sequence");
 Check(sample.Winner==1,"ttt winner");Check(!games.Move(sample.Id,84,sample.Revision,"8"),"postgame move");
+games.RememberPlayer(sample,42,"Алиса");games.RememberPlayer(sample,84,"Богдан");
+foreach(var (lang,win,lose) in new[]{("ru","Победитель","Проигравший"),("en","Winner","Loser"),("uk","Переможець","Переможений")}){
+ string Tr(string k)=>k=="Победитель"?win:k=="Проигравший"?lose:k;
+ string result=JsonSerializer.Serialize(games.View(sample,42,Tr),TelegramHub.WidgetJson);
+ Check(result.Contains("Алиса")&&result.Contains("Богдан")&&result.Contains(win)&&result.Contains(lose),"named result "+lang);Check(WidgetPolicy.ValidData(result),"named result budget");}
+Check(FriendGames.SafePlayerName("A\u202eB\nC")=="ABC","unsafe name controls");
+Check(Encoding.UTF8.GetByteCount(FriendGames.SafePlayerName(string.Concat(Enumerable.Repeat("😀",30))))<=32,"name UTF8 cap");
+var unnamed=games.Create("ttt",12345);games.Join(unnamed.Id,67890,"en");games.Move(unnamed.Id,12345,unnamed.Revision,"resign");
+var unnamedResult=JsonSerializer.Serialize(games.View(unnamed,12345,k=>k),TelegramHub.WidgetJson);Check(unnamedResult.Contains("12345")&&unnamedResult.Contains("67890"),"legacy concrete identities");
 // All games: membership, state privacy, UTF-8 budget in all supported languages, legal random complete play.
 foreach(var kind in FriendGames.Catalog.Select(g=>g.Key).Where(k=>k!="chess"))
 {
@@ -153,6 +175,17 @@ foreach(var lang in new[]{"ru","en","uk"}){
 }
 var cards=R("eights");var cardView=JsonSerializer.Serialize(games.View(cards,cards.A,x=>x),TelegramHub.WidgetJson);Check(!cardView.Contains("Deck")&&!cardView.Contains("Hands"),"card internal state leak");
 Check(cards.Deck.Concat(cards.Discard).Concat(cards.Hands[0]).Concat(cards.Hands[1]).Distinct().Count()==52,"deck duplicate");
+// Every ruleset must name both sides, including chess/cards and hostile/long display names.
+foreach(var kind in FriendGames.Catalog.Select(x=>x.Key)){
+ var r=R(kind);games.RememberPlayer(r,r.A,string.Concat(Enumerable.Repeat("😀",20)));games.RememberPlayer(r,r.B,"<b>Богдан</b>\u202e");
+ foreach(int winner in new[]{1,2}){r.Winner=winner;
+ foreach(string lang in new[]{"ru","en","uk"}){
+ var dict=lang=="ru"?new Dictionary<string,string>():JsonSerializer.Deserialize<Dictionary<string,string>>(File.ReadAllText("Assets/i18n/"+lang+".json"));
+ var view=JsonSerializer.Serialize(games.View(r,r.A,k=>dict.GetValueOrDefault(k,k)),TelegramHub.WidgetJson);
+ Check(WidgetPolicy.ValidData(view),kind+" named endgame budget "+lang+" bytes="+Encoding.UTF8.GetByteCount(view));
+ var status=JsonDocument.Parse(view).RootElement.GetProperty("s").GetString();Check(status.Contains("Богдан")&&status.Contains("😀"),kind+" missing identities");
+ }}
+}
 WidgetPolicy.ValidateHtml(FriendGameWidget.Html);
 File.WriteAllText(Path.Combine(args.Length>0?args[0]:Store.Dir,"game.html"),FriendGameWidget.Html);
 Console.WriteLine($"PASS {checks} assertions; 29 rulesets; invite/join/move sync via actual handler; privacy, expiry, replay, persistence checked. No real Telegram network calls.");

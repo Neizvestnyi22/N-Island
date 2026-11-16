@@ -32,6 +32,11 @@ namespace NIsland.Services
             }
             return dict.GetValueOrDefault(key,key);
         }
+        static string GamePlayerName(JsonElement from)
+        {
+            var name=(Integrations.S(from,"first_name")+" "+Integrations.S(from,"last_name")).Trim();
+            return name.Length>0?name:Integrations.S(from,"username") is {Length:>0} username?"@"+username:"";
+        }
         async Task<string> GameBotName()
         {
             if(_gameBotName!=null)return _gameBotName;
@@ -117,9 +122,9 @@ namespace NIsland.Services
                     if(!invite){await GameMenu(user,lang);return true;}
                     string id=pieces[1][5..];var room=Regex.IsMatch(id,@"^[a-f0-9]{24}$")?Games.Get(id):null;
                     if(room==null){await Call("sendMessage",new{chat_id=user,text=GameText(lang,"Игра не найдена или приглашение истекло.")});return true;}
-                    if(room.A==user||room.B==user){await GameSend(room,user);return true;}
+                    if(room.A==user||room.B==user){Games.RememberPlayer(room,user,GamePlayerName(from));await GameSend(room,user);return true;}
                     if(!Games.Join(id,user,lang)){await Call("sendMessage",new{chat_id=user,text=GameText(lang,"В этой игре уже есть соперник.")});return true;}
-                    await GameSend(room,user);await GamePush(room);return true;
+                    Games.RememberPlayer(room,user,GamePlayerName(from));await GameSend(room,user);await GamePush(room);return true;
                 }
                 catch(Exception e){Log.Info("friend game: "+e.Message);try{await Call("sendMessage",new{chat_id=user,text=GameText(lang,"Игра сейчас недоступна. Обнови Telegram и попробуй /games позже.")});}catch{}return true;}
                 finally{_gameGate.Release();}
@@ -142,7 +147,7 @@ namespace NIsland.Services
                         _gameLastMenu[user]=DateTime.UtcNow;
                         var room=Games.Pending(data[9..],user)??Games.Create(data[9..],user,lang);
                         if(room==null){await Call("sendMessage",new{chat_id=user,text=GameText(lang,"Лимит активных игр. Дождись окончания или истечения приглашений.")});return true;}
-                        await GameSend(room,user);await GameInvite(room);
+                        Games.RememberPlayer(room,user,GamePlayerName(from));await GameSend(room,user);await GameInvite(room);
                     }
                     finally{_gameGate.Release();}
                 }
